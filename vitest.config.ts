@@ -15,6 +15,6 @@ export default defineConfig({
     noExternal: [/@deepseek-ai\//],
   },
   test: {
-    include: ['packages/*/tests/**/*.spec.{ts,tsx}'],
+    include: ['tests/**/*.spec.{ts,tsx}'],
   },
 })

@@ -1,13 +1,12 @@
 /**
- * Self-contained build for the visualizer browser half. Reproduces the
- * DeepSeek Harness client-bundle artifact: a closure-factory CJS bundle that
- * calls window.__ModuleLoader__.load({id, factory}) and resolves externals
- * through the loader's injected require (the frozen module table). CSS
- * Modules compile through lightningcss into hashed class maps whose css text
- * auto-injects a <style data-plugin> tag at factory execution.
- *
- * The node half (lib/index.js, lib/invariant.js) is emitted first from
- * lib/types, then the browser bundle lands beside it as lib/client.js.
+ * Self-contained build for the visualizer plugin: both halves in one package.
+ * The node half (lib/index.js, lib/invariant.js) is emitted first from tsc
+ * output in lib/types; the browser bundle lands beside it as lib/client.js,
+ * reproducing the DeepSeek Harness client-bundle artifact: a closure-factory
+ * CJS bundle that calls window.__ModuleLoader__.load({id, factory}) and
+ * resolves externals through the loader's injected require (the frozen module
+ * table). CSS Modules compile through lightningcss into hashed class maps
+ * whose css text auto-injects a <style data-plugin> tag at factory execution.
  */
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve as resolvePath, sep } from 'node:path'
@@ -16,7 +15,7 @@ import { defineConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 /** Package name stamped into the __ModuleLoader__.load handoff and style tags. */
-const PLUGIN_ID = 'dsh-client-ui-visualizer'
+const PLUGIN_ID = 'dsh-visualizer'
 
 /** Module specifiers the web shell seeds into the frozen module table. */
 const PLATFORM_MODULES = [

@@ -1,8 +1,8 @@
 /**
  * Model-facing Consumer of the streaming inline HTML presentation: the
  * `visualizer` tool. The model passes the complete self-contained document
- * as the `html` argument — last in the schema, so the browser card
- * (`dsh-client-ui-visualizer`) can decode a growing prefix of
+ * as the `html` argument — last in the schema, so this package's browser
+ * half (`./client`) can decode a growing prefix of
  * the streamed call arguments and paint a live preview while the model is
  * still writing. Nothing touches the workspace: the document's durable home
  * is the logged `tool/call` arguments themselves, so a replayed transcript
@@ -10,7 +10,7 @@
  * client-side download of the settled document. A document that must persist
  * as a workspace file uses `write` plus `show_html` instead.
  *
- * @module dsh-tool-visualizer
+ * @module dsh-visualizer
  */
 
 import type { Context } from '@deepseek-ai/cordis'

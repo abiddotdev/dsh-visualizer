@@ -1,0 +1,21 @@
+# The dsh-visualizer bundle patch. Installing the package into a profile
+# activates this layer automatically — no manual profile patch editing:
+#
+#   dsh plugin --profile <name> add git+https://github.com/abidhmuhsin/dsh-visualizer.git
+#
+# The single row mounts the host plugin, whose apply() registers the
+# model-facing `visualizer` tool. The same package declares a `dsh.client`
+# manifest, so the Web GUI's module system serves the inline preview card
+# from exports["./client"] of that very entry.
+#
+# A harness checkout that also ships the visualizer in-box mounts its own
+# card row (`ui-visualizer`); both cards register locale namespace
+# "visualizer", so mounting both fails loud. When installing alongside an
+# active built-in card, disable it in the profile patch layer:
+#
+#   - id: ui-visualizer
+#     disabled: true
+
+- insert:
+    - id: dsh-visualizer
+      name: 'dsh-visualizer'

@@ -1,5 +1,4 @@
 packages:
-  - packages/*
   - vendor/harness-client-runtime
 linkWorkspacePackages: true
 # The published harness manifests reference a few packages that were never

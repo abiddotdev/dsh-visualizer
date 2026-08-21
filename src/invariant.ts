@@ -1,22 +1,24 @@
 /**
- * Package-owned invariant companion for `dsh-tool-visualizer`.
- * @module dsh-tool-visualizer/invariant
+ * Package-owned invariant companion for `dsh-visualizer`.
+ * @module dsh-visualizer/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = 'dsh-tool-visualizer'
+const PACKAGE_NAME = 'dsh-visualizer'
 
 /** Cordis companion plugin name. */
-export const name = 'tool-visualizer-invariant'
+export const name = 'visualizer-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this model-facing adapter owns no lifecycle stream; the call/result
- * relation it produces is already the tools registry's owned event pair.
+ * No runtime invariant: the model-facing adapter owns no lifecycle stream — the
+ * call/result relation it produces is already the tools registry's owned event
+ * pair — and the cards are pure projections of the logged call arguments they
+ * render; the stream Context is folded by the shared conversation-event engine.
  */
 const install: InvariantInstaller = () => {}
 
