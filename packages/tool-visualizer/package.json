@@ -17,7 +17,6 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
@@ -46,6 +45,7 @@
   },
   "scripts": {
     "build": "tsc -b . && tsdown",
+    "prepare": "pnpm run build",
     "test": "vitest run"
   }
 }

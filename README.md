@@ -34,6 +34,28 @@ Ask the model to "visualize …" and the streamed document appears inline in the
 dsh plugin --profile <your-profile> remove dsh-visualizer-bundle
 ```
 
+### Straight from GitHub, no clone
+
+Both plugin packages declare a `prepare` script, so pnpm compiles them while installing them as git dependencies. Install the two halves directly and mount them with a profile patch instead of the bundle:
+
+```sh
+dsh plugin --profile <your-profile> add 'github:<owner>/dsh-visualizer#path:packages/tool-visualizer'
+dsh plugin --profile <your-profile> add 'github:<owner>/dsh-visualizer#path:packages/client-ui-visualizer'
+```
+
+Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml` — create the file with exactly this content if it does not exist (an empty or comments-only patch file is a load error):
+
+```yaml
+- insert:
+    - id: dsh-visualizer-tool
+      name: '@deepseek-ai/dsh-tool-visualizer'
+
+    - id: dsh-visualizer-ui
+      name: '@deepseek-ai/dsh-client-ui-visualizer'
+```
+
+Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:<owner>/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages and delete the `insert` block.
+
 ## How mounting works
 
 `packages/bundle` ships a `dsh.bundle` manifest whose `cordis.patch.yml` inserts two rows by package name:
