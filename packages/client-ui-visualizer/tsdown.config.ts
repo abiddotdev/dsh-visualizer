@@ -151,9 +151,13 @@ const client: UserConfig = {
   },
   noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
   plugins: [purityGate, cssModulesInline],
-  banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {`,
+  // The factory's `exports` declarations ride the banner, not tsdown's
+  // `intro` option: tsdown >= 0.22.3 silently drops `intro` (a Rollup-era
+  // option), which emitted a factory body referencing a never-declared
+  // `exports` and the browser loader failed with "exports is not defined".
+  banner: 'window.__ModuleLoader__.load({ id: ' + JSON.stringify(PLUGIN_ID)
+    + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
   footer: 'return module.exports; } });',
-  intro: 'var module = { exports: {} }; var exports = module.exports;',
 }
 
 export default defineConfig([lib, client])
