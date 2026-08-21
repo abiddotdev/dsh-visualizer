@@ -7,7 +7,7 @@
 // over, so this component only ever renders live evidence.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DisclosureRow, IconCodeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { downloadDocument } from './download.ts'
@@ -75,6 +75,7 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
                   downloadDocument(title, card.html)
                 }}
               >
+                <IconDownloadOutline16 size={14} />
                 {t('row.download')}
               </button>
             )}

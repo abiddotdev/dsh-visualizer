@@ -8,7 +8,7 @@
 // definition.
 
 import { useState } from 'react'
-import { DisclosureRow, IconCodeOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { downloadDocument } from './download.ts'
@@ -89,6 +89,7 @@ export function ResultRow({ block, t }: ResultRowProps) {
             downloadDocument(title, view.html)
           }}
         >
+          <IconDownloadOutline16 size={14} />
           {t('row.download')}
         </button>
       )}
