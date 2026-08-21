@@ -36,12 +36,27 @@ dsh plugin --profile <your-profile> remove dsh-visualizer-bundle
 
 ### Straight from GitHub, no clone
 
-Both plugin packages declare a `prepare` script, so pnpm compiles them while installing them as git dependencies. Install the two halves directly and mount them with a profile patch instead of the bundle:
+Both plugin packages declare a `prepare` script, so pnpm compiles them while installing them as git dependencies. Install the two halves directly and mount them with a profile patch instead of the bundle.
+
+First give the profile's pnpm project the dependency overrides the harness packages need. Create `~/.dsh/profiles/<your-profile>/pnpm-workspace.yaml` (dsh itself only reads `package.json` and `cordis.patch.yml` there, so this file is pnpm-only):
+
+```yaml
+overrides:
+  '@deepseek-ai/dsh-compact': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-type-meta': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-user-interaction': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-client-ui-slash': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-paths': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+```
+
+Then install both halves, approving each package's build script:
 
 ```sh
-dsh plugin --profile <your-profile> add 'github:<owner>/dsh-visualizer#path:packages/tool-visualizer'
-dsh plugin --profile <your-profile> add 'github:<owner>/dsh-visualizer#path:packages/client-ui-visualizer'
+dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-tool-visualizer 'github:<owner>/dsh-visualizer#path:packages/tool-visualizer'
+dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-client-ui-visualizer 'github:<owner>/dsh-visualizer#path:packages/client-ui-visualizer'
 ```
+
+pnpm 11's supply-chain gate answers some git-dependency resolutions with an "Add the package to allowBuilds" hint carrying an exact key; paste that block into the same `pnpm-workspace.yaml` and re-run the failed command — it converges on the first paste.
 
 Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml` — create the file with exactly this content if it does not exist (an empty or comments-only patch file is a load error):
 
@@ -54,7 +69,7 @@ Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.pa
       name: '@deepseek-ai/dsh-client-ui-visualizer'
 ```
 
-Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:<owner>/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages and delete the `insert` block.
+Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:<owner>/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block, and drop the added `allowBuilds` entries.
 
 ## How mounting works
 
