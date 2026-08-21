@@ -18,16 +18,7 @@ The equivalent shorthand works too: `'github:abidhmuhsin/dsh-visualizer'`. Both 
 
 First run fails with an "Add the package to allowBuilds" hint: pnpm 11's supply-chain gate blocks the package's `prepare` build until allowlisted, and the hint carries the exact key (keyed on the codeload URL and the resolved commit). Paste that block under `allowBuilds:` in `~/.dsh/profiles/<your-profile>/pnpm-workspace.yaml` (create the file if dsh has not made one) and re-run the command — it converges on the first paste. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
 
-If the profile does not have the harness dependency overrides yet, also add them to that `pnpm-workspace.yaml` (the published harness manifests reference names that were never pushed to npm):
-
-```yaml
-overrides:
-  '@deepseek-ai/dsh-compact': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
-  '@deepseek-ai/dsh-type-meta': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
-  '@deepseek-ai/dsh-user-interaction': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
-  '@deepseek-ai/dsh-client-ui-slash': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
-  '@deepseek-ai/dsh-paths': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
-```
+No dependency overrides are needed against harness 0.1.1-rc.2 or newer. Deployments pinned to the first 0.0.1-rc.1 tarballs needed five `overrides:` redirects in that same file (those manifests referenced package names that were never pushed to npm); upgrade the deployment instead of carrying them forward.
 
 ### Alongside the built-in visualizer
 
