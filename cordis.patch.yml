@@ -1,0 +1,9 @@
+# The dsh-visualizer bundle patch. Installing the package activates this
+# layer automatically. The single row mounts the host plugin, whose apply()
+# registers the model-facing `visualizer` tool; the same package declares a
+# `dsh.client` manifest, so the Web GUI's module system serves the inline
+# preview card from exports["./client"] of that entry.
+
+- insert:
+    - id: dsh-visualizer
+      name: 'dsh-visualizer'

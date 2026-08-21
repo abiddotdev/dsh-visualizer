@@ -1,0 +1,106 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  display: block;
+}
+
+.row {
+  min-height: 32px;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.summary {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+}
+
+/* Live activity in the chat's own TurnStatus register: a pale brand band
+ * sweeps through the label text while the document streams. Same gradient
+ * stops, size, and cadence as the conversation's "Deep diving..." shimmer. */
+.summaryLive {
+  background: linear-gradient(
+    90deg,
+    var(--dsw-static-deepseek-500) 0%,
+    var(--dsw-static-deepseek-500) 40%,
+    var(--dsw-static-deepseek-200) 50%,
+    var(--dsw-static-deepseek-500) 60%,
+    var(--dsw-static-deepseek-500) 100%
+  );
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gui-shimmer 1.8s linear infinite;
+}
+
+@keyframes gui-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summaryLive {
+    background-position: 0 0;
+    background-size: 100% 100%;
+    animation: none;
+  }
+}
+
+.separator {
+  flex: none;
+  width: 8px;
+}
+
+.chevron {
+  flex: none;
+}
+
+/* Border-less content pane: the transparent canvas lets the chat background
+ * show through, so a streaming card reads as chat content. */
+.frame {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+}
+
+/* Quiet inline action, the deliverables-row pattern: tertiary label over
+ * transparent ground, interactive hover fill, inset focus ring. */
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+  cursor: pointer;
+}
+
+.download:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.download:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.download:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
