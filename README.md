@@ -49,14 +49,14 @@ overrides:
   '@deepseek-ai/dsh-paths': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
 ```
 
-Then install both halves, approving each package's build script:
+Then install both halves:
 
 ```sh
-dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-tool-visualizer 'github:abidhmuhsin/dsh-visualizer#path:packages/tool-visualizer'
-dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-client-ui-visualizer 'github:abidhmuhsin/dsh-visualizer#path:packages/client-ui-visualizer'
+dsh plugin --profile <your-profile> add 'github:abidhmuhsin/dsh-visualizer#path:packages/tool-visualizer'
+dsh plugin --profile <your-profile> add 'github:abidhmuhsin/dsh-visualizer#path:packages/client-ui-visualizer'
 ```
 
-pnpm 11's supply-chain gate answers some git-dependency resolutions with an "Add the package to allowBuilds" hint carrying an exact key; paste that block into the same `pnpm-workspace.yaml` and re-run the failed command — it converges on the first paste.
+Each first run fails with an "Add the package to allowBuilds" hint: pnpm 11's supply-chain gate blocks the packages' build scripts until allowlisted, and the hint carries the exact key (keyed on the codeload URL and the resolved commit). Paste that block under `allowBuilds:` in the same `pnpm-workspace.yaml` and re-run the failed command — it converges on the first paste. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
 
 Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml` — create the file with exactly this content if it does not exist (an empty or comments-only patch file is a load error):
 
