@@ -1,16 +1,16 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-tool-generativeui`.
- * @module @deepseek-ai/dsh-tool-generativeui/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-tool-visualizer`.
+ * @module @deepseek-ai/dsh-tool-visualizer/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-tool-generativeui'
+const PACKAGE_NAME = '@deepseek-ai/dsh-tool-visualizer'
 
 /** Cordis companion plugin name. */
-export const name = 'tool-generativeui-invariant'
+export const name = 'tool-visualizer-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 

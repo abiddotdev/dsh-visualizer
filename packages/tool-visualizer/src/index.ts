@@ -2,7 +2,7 @@
  * Model-facing Consumer of the streaming inline HTML presentation: the
  * `visualizer` tool. The model passes the complete self-contained document
  * as the `html` argument — last in the schema, so the browser card
- * (`@deepseek-ai/dsh-client-ui-generativeui`) can decode a growing prefix of
+ * (`@deepseek-ai/dsh-client-ui-visualizer`) can decode a growing prefix of
  * the streamed call arguments and paint a live preview while the model is
  * still writing. Nothing touches the workspace: the document's durable home
  * is the logged `tool/call` arguments themselves, so a replayed transcript
@@ -10,14 +10,14 @@
  * client-side download of the settled document. A document that must persist
  * as a workspace file uses `write` plus `show_html` instead.
  *
- * @module @deepseek-ai/dsh-tool-generativeui
+ * @module @deepseek-ai/dsh-tool-visualizer
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-export const name = 'tool-generativeui'
+export const name = 'tool-visualizer'
 export const inject = ['tools', 'systemPrompt']
 
 /* jscpd:ignore-start — the frame bounds and Config surface are the shared

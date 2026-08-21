@@ -16,7 +16,7 @@ import { downloadDocument } from './download.ts'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
-export type ResultRowProps = ToolCallViewProps & PropsLocale<'generativeui'>
+export type ResultRowProps = ToolCallViewProps & PropsLocale<'visualizer'>
 
 /** Frame height bounds and default mirrored from the tool's execute-time validation. */
 const MIN_FRAME_HEIGHT_PX = 50

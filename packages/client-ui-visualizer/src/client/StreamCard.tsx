@@ -1,4 +1,4 @@
-// generativeui-stream chat node: the live half of the visualizer
+// visualizer-stream chat node: the live half of the visualizer
 // presentation. Each card drives one content-sized shell frame (AutoFrame) —
 // markup arrives as coalesced postMessage replaces, the frame grows with the
 // measured content, scripts run exactly once at the phase-complete commit,
@@ -16,8 +16,8 @@ import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Chat Node slot. */
-export type StreamCardProps = PropsRuntime<'conversation.chat.node', 'generativeui-stream'>
-  & PropsLocale<'generativeui'>
+export type StreamCardProps = PropsRuntime<'conversation.chat.node', 'visualizer-stream'>
+  & PropsLocale<'visualizer'>
 
 type Translate = StreamCardProps['t']
 

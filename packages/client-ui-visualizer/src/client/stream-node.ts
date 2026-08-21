@@ -58,7 +58,7 @@ interface StreamState {
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     /** Live visualizer streaming cards of one Assistant step. */
-    'generativeui-stream': GenerativeStreamChatData
+    'visualizer-stream': GenerativeStreamChatData
   }
 }
 
@@ -137,7 +137,7 @@ function closedBoundary(location: ConversationLocation | undefined): boolean {
 
 /** The streaming live-card Conversation Node Definition. */
 export const generativeStreamDefinition: ConversationNodeDefinition<StreamState> = {
-  kind: 'generativeui-stream',
+  kind: 'visualizer-stream',
   target: 'chat',
   match: (event) => {
     if (event.type === 'step/start') return { id: `${event.data.turn}:${event.data.step}`, role: 'start' }
@@ -158,7 +158,7 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
     return null
   },
   start: (_context, match) => {
-    if (match.event.type !== 'step/start') throw new Error('generativeui-stream start requires step/start')
+    if (match.event.type !== 'step/start') throw new Error('visualizer-stream start requires step/start')
     const anchorSeq = match.event.seq
     return initialState(match.event.data.turn, match.event.data.step, anchorSeq)
   },
@@ -218,7 +218,7 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
     const anchorSeq = state.anchorSeq || context.matches[0]?.event.seq || 0
     const base = {
       key: context.key,
-      kind: 'generativeui-stream',
+      kind: 'visualizer-stream',
       id: context.id,
       target: 'chat',
       anchorSeq,

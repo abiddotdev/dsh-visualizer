@@ -64,7 +64,7 @@ function collected(value: ConversationNodeAssembler): readonly ChatConversationV
 }
 
 function node(value: ConversationNodeAssembler): ChatConversationViewNode | undefined {
-  return collected(value).find(candidate => candidate.kind === 'generativeui-stream')
+  return collected(value).find(candidate => candidate.kind === 'visualizer-stream')
 }
 
 function data(value: ConversationNodeAssembler): GenerativeStreamChatData | undefined {
@@ -86,7 +86,7 @@ function streamPrefix(seq: number): ConversationEventInput[] {
   ]
 }
 
-describe('generativeui-stream node', () => {
+describe('visualizer-stream node', () => {
   it('publishes a streaming card once the html prefix is decodable', () => {
     const value = assembler(streamPrefix(1))
     const current = node(value)

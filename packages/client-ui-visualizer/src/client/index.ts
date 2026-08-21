@@ -1,9 +1,9 @@
 /**
- * Streaming inline HTML card, browser half: the `generativeui` dictionaries,
- * the live `generativeui-stream` Chat Node fed by streamed `visualizer` call
+ * Streaming inline HTML card, browser half: the `visualizer` dictionaries,
+ * the live `visualizer-stream` Chat Node fed by streamed `visualizer` call
  * arguments, and the keyed `visualizer` Tool row that takes over once the
  * call dispatches. The rows are inert until their tool exists: sessions whose
- * presets do not mount `@deepseek-ai/dsh-tool-generativeui` never produce
+ * presets do not mount `@deepseek-ai/dsh-tool-visualizer` never produce
  * such calls, and this package composes no host behavior at all.
  */
 
@@ -25,30 +25,30 @@ export type { GenerativeUiKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The streaming inline HTML cards' copy. */
-    'generativeui': GenerativeUiKey
+    'visualizer': GenerativeUiKey
   }
 }
 
 /** Dictionary namespace owned by this plugin. */
-const NS = 'generativeui'
+const NS = 'visualizer'
 
 /** Required services: the slot registry, the card's copy, and the conversation-event engine. */
 export const inject = ['slots', 'locale', 'conversationEvents']
 
 /**
- * Client plugin body: register the `generativeui` dictionaries, the live
+ * Client plugin body: register the `visualizer` dictionaries, the live
  * streaming node, and the `visualizer` row. Both key domains are open, so
  * the contributions render only for this tool's calls and stay inert
  * everywhere else.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-generativeui: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-visualizer: dictionaries')
 
   ctx.conversationEvents.register(generativeStreamDefinition)
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-    name: 'conversation.chat.node', key: 'generativeui-stream', locale: NS,
+    name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,
   }, StreamCard))
 
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({

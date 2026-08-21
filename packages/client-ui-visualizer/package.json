@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-generativeui",
+  "name": "@deepseek-ai/dsh-client-ui-visualizer",
   "description": "Streaming inline HTML card, browser half: the live visualizer preview from streamed call arguments plus the keyed settled row",
   "version": "0.1.0-rc.7",
   "publishConfig": {
@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/extensions/ui-generativeui"
+    "directory": "packages/extensions/ui-visualizer"
   },
   "type": "module",
   "main": "lib/index.js",

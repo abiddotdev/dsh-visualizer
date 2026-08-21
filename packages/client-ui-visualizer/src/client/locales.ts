@@ -1,6 +1,6 @@
 /** Streaming inline HTML card dictionaries. */
 
-export const NS = 'generativeui'
+export const NS = 'visualizer'
 
 /** Simplified Chinese streaming-HTML card messages. */
 export const zh = {

@@ -1,8 +1,8 @@
-# @deepseek-ai/dsh-client-ui-generativeui
+# @deepseek-ai/dsh-client-ui-visualizer
 
 [English](README.md) | 中文
 
-流式内联 HTML 卡片，浏览器半边：模型书写 `visualizer` 调用时实时预览的 `generativeui-stream` 聊天节点，以及调用派发后接管呈现的按工具名键控的 `visualizer` 工具行。
+流式内联 HTML 卡片，浏览器半边：模型书写 `visualizer` 调用时实时预览的 `visualizer-stream` 聊天节点，以及调用派发后接管呈现的按工具名键控的 `visualizer` 工具行。
 
 **实时预览解码流式参数。** 工具调用参数增量在会话引擎中累积；节点 State 保留本步骤的 `visualizer` 块（无关工具在参数累积前即被丢弃），字符串感知的前缀扫描器（`partial-args.ts`）解码不断增长的 `html` 字符串值——反转义 JSON 转义、丢弃悬置转义、被截断的 `\u` 序列与被截断的代理对——同时读出先落定的 `title` 与 `height`。重放已记录的会话会重建完全一致的卡片序列，因为每个输入都是会话事件。
 
@@ -12,7 +12,7 @@
 
 **落定工具行经同一 shell 重放。** 执行器记录 `tool/call` 后，流式节点隐藏，键控的 `tool.call.toolview` 行把完整参数一次性 commit 进共享 shell 帧——单次 commit、脚本执行一次。其下载控件在客户端把同一份字节物化为 Blob 并以净化后的文件名保存；只在落定成功的调用上出现，因为不完整的下载按定义就是损坏的。
 
-**没有它的工具，两行都是惰性的。** 卡片注册在开放的键域下（`conversation.chat.node` 键 `generativeui-stream`、`tool.call.toolview` 键 `visualizer`）；标准 agent preset 挂载了 `@deepseek-ai/dsh-tool-generativeui`，未挂载它的预设的会话不会产生此类调用。本包自身也不组合任何 host 行为。
+**没有它的工具，两行都是惰性的。** 卡片注册在开放的键域下（`conversation.chat.node` 键 `visualizer-stream`、`tool.call.toolview` 键 `visualizer`）；标准 agent preset 挂载了 `@deepseek-ai/dsh-tool-visualizer`，未挂载它的预设的会话不会产生此类调用。本包自身也不组合任何 host 行为。
 
 `/client` 导出面是插件主体（`apply`/`inject`）与组合 props 类型。
 

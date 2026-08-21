@@ -40,7 +40,7 @@ const kit = {
 
 function nodeOf(cards: readonly GenerativeCardData[]): StreamCardProps['node'] {
   return {
-    key: 'k1', kind: 'generativeui-stream', id: '1:1', target: 'chat',
+    key: 'k1', kind: 'visualizer-stream', id: '1:1', target: 'chat',
     anchorSeq: 5, location: { kind: 'unresolved' }, visibility: 'visible', data: { cards },
   } as unknown as StreamCardProps['node']
 }
