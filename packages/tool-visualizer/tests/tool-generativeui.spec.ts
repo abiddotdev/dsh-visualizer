@@ -27,7 +27,7 @@ function call(ctx: Context, args: unknown): Promise<ExecOutcome> {
   return ctx.tools.execute({
     signal: testToolSignal,
     callId: CallId(`render-${++callCounter}`),
-    name: 'render_html',
+    name: 'visualizer',
     arguments: args,
   })
 }
@@ -38,14 +38,14 @@ function firstText(outcome: ExecOutcome): string {
   return block === undefined ? '' : block.text ?? ''
 }
 
-describe('render_html tool', () => {
+describe('visualizer tool', () => {
   it('registers a model-facing tool schema whose html parameter is last', async () => {
     const { ctx } = await setup()
-    const schema = ctx.tools.schemas().find(tool => tool.name === 'render_html')
-    if (schema === undefined) throw new Error('render_html was not registered')
+    const schema = ctx.tools.schemas().find(tool => tool.name === 'visualizer')
+    if (schema === undefined) throw new Error('visualizer was not registered')
 
     expect(schema).toMatchObject({
-      name: 'render_html',
+      name: 'visualizer',
       parameters: {
         type: 'object',
         properties: {

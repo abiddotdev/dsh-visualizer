@@ -1,4 +1,4 @@
-// generativeui-stream chat node: the live half of the render_html
+// generativeui-stream chat node: the live half of the visualizer
 // presentation. Each card drives one content-sized shell frame (AutoFrame) —
 // markup arrives as coalesced postMessage replaces, the frame grows with the
 // measured content, scripts run exactly once at the phase-complete commit,
@@ -35,7 +35,7 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
   const live = card.phase === 'streaming'
 
   return (
-    <div className={css.card} data-tool="render_html" data-phase={card.phase}>
+    <div className={css.card} data-tool="visualizer" data-phase={card.phase}>
       <DisclosureRow
         rowClassName={css.row}
         titleClassName={css.title}
@@ -89,7 +89,7 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
   )
 }
 
-/** Render this step's live render_html streaming cards. */
+/** Render this step's live visualizer streaming cards. */
 export function StreamCard({ node, t }: StreamCardProps) {
   return (
     <div className={css.stack}>

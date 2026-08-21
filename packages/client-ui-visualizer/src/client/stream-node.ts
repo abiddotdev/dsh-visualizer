@@ -1,9 +1,9 @@
 /**
- * Live-preview Conversation Node for the `render_html` tool. While the model
+ * Live-preview Conversation Node for the `visualizer` tool. While the model
  * writes the call, `assistant/chunk` `tool-call-delta` events grow the raw
  * arguments string in this Step's State; this Definition decodes each prefix
  * into card data the streaming renderer paints. When the executor logs the
- * matching `tool/call`, the keyed `tool.call.toolview` row (`render_html`)
+ * matching `tool/call`, the keyed `tool.call.toolview` row (`visualizer`)
  * takes over with the authoritative arguments and this node hides — the two
  * surfaces never double-render. Replaying the log reproduces the same
  * sequence deterministically.
@@ -15,7 +15,7 @@ import type {
 import { extractStreamArgs } from './partial-args.ts'
 
 /** Wire Tool name this package's cards key on. */
-export const TOOL_NAME = 'render_html'
+export const TOOL_NAME = 'visualizer'
 
 /** One live document card derived from a streaming or complete call block. */
 export interface GenerativeCardData {
@@ -34,7 +34,7 @@ export interface GenerativeStreamChatData {
   readonly cards: readonly GenerativeCardData[]
 }
 
-/** Accumulated tool-call block of this step, kept only for `render_html`. */
+/** Accumulated tool-call block of this step, kept only for `visualizer`. */
 interface StreamBlock {
   readonly callId: string
   /** Tool name; empty while the first delta has not named the call. */
@@ -46,7 +46,7 @@ interface StreamBlock {
 interface StreamState {
   readonly turn: number
   readonly step: number
-  /** Seq of the first accepted render_html evidence; orders the card in the step. */
+  /** Seq of the first accepted visualizer evidence; orders the card in the step. */
   readonly anchorSeq: number
   readonly blocks: ReadonlyMap<number, StreamBlock>
   /** Call ids whose `tool/call` landed; their card leaves this node. */
@@ -57,7 +57,7 @@ interface StreamState {
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
-    /** Live render_html streaming cards of one Assistant step. */
+    /** Live visualizer streaming cards of one Assistant step. */
     'generativeui-stream': GenerativeStreamChatData
   }
 }
@@ -75,7 +75,7 @@ function initialState(turn: number, step: number, anchorSeq: number): StreamStat
  * @param name - delta's optional tool name.
  * @param delta - raw arguments fragment.
  * @param seq - the delta event's log seq; anchors the card when it is the
- * step's first render_html evidence.
+ * step's first visualizer evidence.
  * @returns the next State.
  */
 function foldDelta(
@@ -106,7 +106,7 @@ function foldDelta(
  * @param index - block index (content position in a finalized message).
  * @param block - the complete tool-call content block.
  * @param seq - the event's log seq; anchors the card when it is the step's
- * first render_html evidence.
+ * first visualizer evidence.
  * @returns the next State.
  */
 function foldFinalBlock(

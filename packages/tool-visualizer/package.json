@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tool-generativeui",
-  "description": "Model-facing render_html tool that streams a self-contained HTML document inline through its own call arguments",
+  "description": "Model-facing visualizer tool that streams a self-contained HTML document inline through its own call arguments",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"

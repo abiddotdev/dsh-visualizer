@@ -1,4 +1,4 @@
-// Content-sized shell frame: the shared rendering surface of both render_html
+// Content-sized shell frame: the shared rendering surface of both visualizer
 // cards. One shell `srcDoc` loads per mount; the StreamFrameController feeds
 // it the document (live prefixes while streaming, one terminal commit when
 // complete), and the bridge inside reports measured content height back, so

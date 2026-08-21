@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Model-facing `render_html` tool: the argument-streaming half of the inline HTML presentation. The model passes the complete self-contained document as the `html` argument — last in the schema — and the browser card (`@deepseek-ai/dsh-client-ui-generativeui`) decodes a growing prefix of the streamed call arguments into a live preview while the model is still writing. Nothing touches the workspace: the document's durable home is the logged `tool/call` arguments themselves.
+Model-facing `visualizer` tool: the argument-streaming half of the inline HTML presentation. The model passes the complete self-contained document as the `html` argument — last in the schema — and the browser card (`@deepseek-ai/dsh-client-ui-generativeui`) decodes a growing prefix of the streamed call arguments into a live preview while the model is still writing. Nothing touches the workspace: the document's durable home is the logged `tool/call` arguments themselves.
 
 **The document is the call.** `execute` validates only what the arguments carry — a non-empty document, the configurable `maxHtmlBytes` cap (default 256 KiB, counted as UTF-8 bytes), an integer opening height clamped to 50–2000 px (the frame then grows with its content), and a non-blank explicit title — and returns a one-line canonical result (`Rendered <title> (<bytes> bytes, <height>px frame)`). No filesystem service is injected, no presentation meta is projected: the settled card re-reads the same logged arguments.
 
@@ -12,7 +12,7 @@ Model-facing `render_html` tool: the argument-streaming half of the inline HTML 
 
 ## Model Experience
 
-### System-prompt guidance (`tool:render_html`)
+### System-prompt guidance (`tool:visualizer`)
 
 #### What the model sees
 
@@ -21,7 +21,7 @@ One prompt section teaching the call-direct workflow, ordered with the per-tool 
 ##### Verbatim text
 
 ```markdown
-To present an HTML page in the chat, call render_html with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.
+To present an HTML page in the chat, call visualizer with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.
 ```
 
 #### Token effect
@@ -32,7 +32,7 @@ Fixed: one short section, always present when the tool is composed.
 
 Stable repeated prefix; the section text is static, so it never invalidates an existing prefix.
 
-### `render_html` tool schema
+### `visualizer` tool schema
 
 #### What the model sees
 

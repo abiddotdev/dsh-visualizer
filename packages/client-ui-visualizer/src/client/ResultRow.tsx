@@ -1,4 +1,4 @@
-// render_html toolview row: the settled half of the presentation. The call's
+// visualizer toolview row: the settled half of the presentation. The call's
 // complete arguments — logged by tool/call and backfilled onto the result —
 // are the document's authoritative home, so this row JSON-parses argsRaw and
 // renders the document directly in a null-origin srcDoc frame (no bridge, no
@@ -23,7 +23,7 @@ const MIN_FRAME_HEIGHT_PX = 50
 const MAX_FRAME_HEIGHT_PX = 2_000
 const DEFAULT_FRAME_HEIGHT_PX = 480
 
-/** Decoded view of one complete render_html call's arguments. */
+/** Decoded view of one complete visualizer call's arguments. */
 interface ArgsView {
   title: string | null
   height: number | null
@@ -31,7 +31,7 @@ interface ArgsView {
 }
 
 /**
- * Decode the complete arguments of one render_html call.
+ * Decode the complete arguments of one visualizer call.
  * @param argsRaw - the frozen raw arguments string of the call.
  * @returns the view when the JSON parses and carries a non-empty document,
  * else null.
@@ -60,7 +60,7 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
   return 'kind' in block ? (block.call?.argsRaw ?? '') : block.argsRaw
 }
 
-/** Render one settled or running `render_html` call. */
+/** Render one settled or running `visualizer` call. */
 export function ResultRow({ block, t }: ResultRowProps) {
   const settled = 'kind' in block
   const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
@@ -109,7 +109,7 @@ export function ResultRow({ block, t }: ResultRowProps) {
     return (
       <div
         className={css.card}
-        data-tool="render_html"
+        data-tool="visualizer"
         data-state={settled ? (block.isError ? 'error' : 'ok') : 'running'}
       >
         <DisclosureRow

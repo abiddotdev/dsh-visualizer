@@ -52,7 +52,7 @@ function renderCard(cards: readonly GenerativeCardData[]): void {
 describe('StreamCard', () => {
   it('renders a live streaming card with a null-origin shell frame', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>rev' }])
-    const card = document.querySelector('[data-tool="render_html"][data-phase="streaming"]')
+    const card = document.querySelector('[data-tool="visualizer"][data-phase="streaming"]')
     expect(card).not.toBeNull()
     const frame = document.querySelector('iframe')
     expect(frame?.getAttribute('srcdoc')).toContain('dsh-gui-viewport')
@@ -134,6 +134,6 @@ describe('StreamCard', () => {
       { phase: 'streaming', title: 'Two', height: null, html: '<p>2' },
     ])
     expect(document.querySelectorAll('iframe')).toHaveLength(2)
-    expect(document.querySelectorAll('[data-tool="render_html"]')).toHaveLength(2)
+    expect(document.querySelectorAll('[data-tool="visualizer"]')).toHaveLength(2)
   })
 })

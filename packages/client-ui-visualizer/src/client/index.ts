@@ -1,7 +1,7 @@
 /**
  * Streaming inline HTML card, browser half: the `generativeui` dictionaries,
- * the live `generativeui-stream` Chat Node fed by streamed `render_html` call
- * arguments, and the keyed `render_html` Tool row that takes over once the
+ * the live `generativeui-stream` Chat Node fed by streamed `visualizer` call
+ * arguments, and the keyed `visualizer` Tool row that takes over once the
  * call dispatches. The rows are inert until their tool exists: sessions whose
  * presets do not mount `@deepseek-ai/dsh-tool-generativeui` never produce
  * such calls, and this package composes no host behavior at all.
@@ -37,7 +37,7 @@ export const inject = ['slots', 'locale', 'conversationEvents']
 
 /**
  * Client plugin body: register the `generativeui` dictionaries, the live
- * streaming node, and the `render_html` row. Both key domains are open, so
+ * streaming node, and the `visualizer` row. Both key domains are open, so
  * the contributions render only for this tool's calls and stay inert
  * everywhere else.
  * @param ctx - client root context.
@@ -52,6 +52,6 @@ export function apply(ctx: ClientContext): void {
   }, StreamCard))
 
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
-    name: 'tool.call.toolview', key: 'render_html', locale: NS,
+    name: 'tool.call.toolview', key: 'visualizer', locale: NS,
   }, ResultRow))
 }

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-模型可见的 `render_html` 工具：内联 HTML 呈现的参数流式半边。模型把完整自包含文档作为 `html` 参数直接传入（schema 中排在最后），浏览器卡片（`@deepseek-ai/dsh-client-ui-generativeui`）在模型还在书写时就对不断增长的调用参数前缀做解码，绘出实时预览。全程不触碰工作区：文档的持久载体就是记录在案的 `tool/call` 参数本身。
+模型可见的 `visualizer` 工具：内联 HTML 呈现的参数流式半边。模型把完整自包含文档作为 `html` 参数直接传入（schema 中排在最后），浏览器卡片（`@deepseek-ai/dsh-client-ui-generativeui`）在模型还在书写时就对不断增长的调用参数前缀做解码，绘出实时预览。全程不触碰工作区：文档的持久载体就是记录在案的 `tool/call` 参数本身。
 
 **文档即调用。** `execute` 只校验参数携带的内容——非空文档、可配置的 `maxHtmlBytes` 上限（默认 256 KiB，按 UTF-8 字节计）、50–2000 px 的整数开画高度（帧随后随内容增长）、非空白的显式标题——并返回一行规范结果（`Rendered <title> (<bytes> bytes, <height>px frame)`）。不注入文件系统服务，不投影呈现元数据：落定后的卡片读取的是同一份已记录参数。
 
@@ -12,7 +12,7 @@
 
 ## Model Experience
 
-### 系统提示词指引（`tool:render_html`）
+### 系统提示词指引（`tool:visualizer`）
 
 #### 模型看到什么
 
@@ -21,7 +21,7 @@
 ##### 逐字文本
 
 ```markdown
-To present an HTML page in the chat, call render_html with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.
+To present an HTML page in the chat, call visualizer with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.
 ```
 
 #### Token 影响
@@ -32,7 +32,7 @@ To present an HTML page in the chat, call render_html with the complete self-con
 
 稳定重复前缀；小节文本静态，不会使既有前缀失效。
 
-### `render_html` 工具 schema
+### `visualizer` 工具 schema
 
 #### 模型看到什么
 

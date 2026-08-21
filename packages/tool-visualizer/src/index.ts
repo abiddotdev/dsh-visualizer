@@ -1,6 +1,6 @@
 /**
  * Model-facing Consumer of the streaming inline HTML presentation: the
- * `render_html` tool. The model passes the complete self-contained document
+ * `visualizer` tool. The model passes the complete self-contained document
  * as the `html` argument — last in the schema, so the browser card
  * (`@deepseek-ai/dsh-client-ui-generativeui`) can decode a growing prefix of
  * the streamed call arguments and paint a live preview while the model is
@@ -66,19 +66,19 @@ function deriveTitle(explicitTitle: string | undefined): string {
 }
 
 /**
- * Register the `render_html` tool and its prompt guidance.
+ * Register the `visualizer` tool and its prompt guidance.
  * @param ctx - Cordis context carrying the tools registry.
  * @param config - resolved plugin configuration.
  */
 export function apply(ctx: Context, config: ResolvedConfig): void {
   ctx.systemPrompt.section({
-    name: 'tool:render_html',
+    name: 'tool:visualizer',
     order: 100,
-    text: 'To present an HTML page in the chat, call render_html with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.',
+    text: 'To present an HTML page in the chat, call visualizer with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.',
   })
 
   ctx.tools.register(defineTool({
-    name: 'render_html',
+    name: 'visualizer',
     description: 'Render one self-contained HTML document inline in the chat window, streamed live as you write. '
       + 'Pass the complete document — styles and scripts inline or from public CDNs — as the html argument, with html as the LAST parameter so the preview can stream while you write; do not write the document to a file first. '
       + 'It is displayed in a sandboxed frame on the tool card. '

@@ -36,7 +36,7 @@ const kit = {
 function props(block: ToolCallBlock): ResultRowProps {
   return {
     callId: 'c1',
-    toolName: 'render_html',
+    toolName: 'visualizer',
     block,
     openFile: () => { throw new Error('unused') },
     ...kit,
@@ -46,14 +46,14 @@ function props(block: ToolCallBlock): ResultRowProps {
 
 function runningBlock(argsRaw: string): ToolCallBlock {
   return {
-    callId: 'c1', name: 'render_html', argsRaw, turn: 1, step: 1, time: 0, callView: null, subCalls: [],
+    callId: 'c1', name: 'visualizer', argsRaw, turn: 1, step: 1, time: 0, callView: null, subCalls: [],
   }
 }
 
 function settledBlock(argsRaw: string | null, isError = false): ToolCallBlock {
   return {
     kind: 'tool-result', seq: 2, time: 0, callId: 'c1',
-    call: argsRaw === null ? null : { name: 'render_html', argsRaw },
+    call: argsRaw === null ? null : { name: 'visualizer', argsRaw },
     callTime: 0, content: [], isError,
     ...isError ? { error: { name: 'Error', code: 'E_TOOL' } } : {},
     callView: null, resultView: null, subCalls: [],

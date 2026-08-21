@@ -1,5 +1,5 @@
 /**
- * Streaming-prefix decode of one `render_html` call's raw arguments JSON.
+ * Streaming-prefix decode of one `visualizer` call's raw arguments JSON.
  * The tool's schema places `html` last, so while the model is still writing,
  * `argsRaw` holds a growing prefix of
  * `{"title":"…","height":480,"html":"<!DOCTYPE …` — this module walks that
@@ -141,7 +141,7 @@ function skipValue(src: string, pos: number): number {
 }
 
 /**
- * Decode the streaming view of one `render_html` call's arguments.
+ * Decode the streaming view of one `visualizer` call's arguments.
  * @param argsRaw - the raw arguments string as accumulated so far.
  * @returns the latest view once the `html` key and its opening quote have
  * arrived, else null.

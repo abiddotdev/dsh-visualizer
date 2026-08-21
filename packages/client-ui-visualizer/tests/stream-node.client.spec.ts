@@ -73,7 +73,7 @@ function data(value: ConversationNodeAssembler): GenerativeStreamChatData | unde
 
 const CALL_ARGS = { title: 'Dash', height: 320, html: '<!DOCTYPE html><p>revenue</p>' }
 
-/** The event prefix of one render_html turn, up to but excluding the closer under test. */
+/** The event prefix of one visualizer turn, up to but excluding the closer under test. */
 function streamPrefix(seq: number): ConversationEventInput[] {
   return [
     at(seq, 'turn/start', { turn: 1 }),
@@ -81,7 +81,7 @@ function streamPrefix(seq: number): ConversationEventInput[] {
     at(seq + 2, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'tool-call' } }),
     at(seq + 3, 'assistant/chunk', {
       turn: 1, step: 1,
-      chunk: { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'render_html', argumentsDelta: '{"title":"Dash","height":320,"html":"<p>rev' },
+      chunk: { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'visualizer', argumentsDelta: '{"title":"Dash","height":320,"html":"<p>rev' },
     }),
   ]
 }
@@ -112,7 +112,7 @@ describe('generativeui-stream node', () => {
       ...streamPrefix(1),
       at(5, 'assistant/chunk', {
         turn: 1, step: 1,
-        chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'render_html', arguments: argsJson } },
+        chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'visualizer', arguments: argsJson } },
       }),
     ])
     const streaming = node(value)
@@ -125,9 +125,9 @@ describe('generativeui-stream node', () => {
       ...streamPrefix(1),
       at(5, 'assistant/message', {
         turn: 1, step: 1,
-        message: { id: 'm1', role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'render_html', arguments: JSON.stringify(CALL_ARGS) }] },
+        message: { id: 'm1', role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'visualizer', arguments: JSON.stringify(CALL_ARGS) }] },
       }),
-      at(6, 'tool/call', { callId: 'call-1', name: 'render_html', turn: 1, step: 1, arguments: CALL_ARGS }),
+      at(6, 'tool/call', { callId: 'call-1', name: 'visualizer', turn: 1, step: 1, arguments: CALL_ARGS }),
     ])
     expect(node(value)?.visibility).toBe('hidden')
     expect(data(value)?.cards).toEqual([])
@@ -154,7 +154,7 @@ describe('generativeui-stream node', () => {
       at(5, 'llm/retry', { turn: 1, step: 1 }),
       at(6, 'assistant/chunk', {
         turn: 1, step: 1,
-        chunk: { type: 'tool-call-delta', index: 0, id: 'call-2', name: 'render_html', argumentsDelta: '{"html":"<p>two"}' },
+        chunk: { type: 'tool-call-delta', index: 0, id: 'call-2', name: 'visualizer', argumentsDelta: '{"html":"<p>two"}' },
       }),
     ])
     const current = node(second)
@@ -168,7 +168,7 @@ describe('generativeui-stream node', () => {
       ...streamPrefix(1),
       at(5, 'assistant/message', {
         turn: 1, step: 1,
-        message: { id: 'm1', role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'render_html', arguments: JSON.stringify(CALL_ARGS) }] },
+        message: { id: 'm1', role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'visualizer', arguments: JSON.stringify(CALL_ARGS) }] },
       }),
     ]
     const replayed = data(assembler(events))
