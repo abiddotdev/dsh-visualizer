@@ -1,0 +1,58 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  display: block;
+}
+
+.row {
+  min-height: 32px;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.summary {
+  color: var(--dsw-text-secondary, inherit);
+  font-size: 12px;
+}
+
+.separator {
+  flex: none;
+  width: 8px;
+}
+
+.chevron {
+  flex: none;
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--dsw-border, currentColor);
+  border-radius: 6px;
+  background: var(--dsw-surface, #fff);
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  height: 22px;
+  border: 1px solid var(--dsw-border, currentColor);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-text-secondary, inherit);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.download:hover {
+  color: var(--dsw-text-primary, inherit);
+  border-color: var(--dsw-text-secondary, currentColor);
+}
