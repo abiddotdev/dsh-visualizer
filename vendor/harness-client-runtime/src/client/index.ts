@@ -40,14 +40,3 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-api-remotes/client' {
-  /**
-   * Structural stand-in for the upstream ToolEventView union, which
-   * api-remotes added after the rc.1 release this repo resolves. The plugin
-   * only ever constructs `view: undefined`; the assembler treats the field as
-   * opaque pass-through.
-   */
-  export type ToolEventView =
-    | { readonly for: 'call'; readonly view: unknown }
-    | { readonly for: 'result'; readonly view: unknown }
-}

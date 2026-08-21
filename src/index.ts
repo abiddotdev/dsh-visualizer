@@ -20,7 +20,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // injected service member type-checks without the harness-wide program.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
-export const name = 'tool-visualizer'
+export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
 
 /* jscpd:ignore-start — the frame bounds and Config surface are the shared

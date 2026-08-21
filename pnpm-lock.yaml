@@ -72,7 +72,17 @@ importers:
         specifier: ^4.1.8
         version: 4.1.11(@types/node@22.20.1)(jsdom@29.1.1)(vite@8.2.2(@types/node@22.20.1))
 
-  vendor/harness-client-runtime: {}
+  vendor/harness-client-runtime:
+    devDependencies:
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(0037c360ed8ef45e74e856e82932995e)
+      '@deepseek-ai/dsh-llm-retry':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(a0b14eb40667f7e2f3e22b89a59650a0)
+      '@deepseek-ai/dsh-session':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
 
 packages:
 
