@@ -56,6 +56,13 @@ dsh plugin --profile <your-profile> add 'github:abidhmuhsin/dsh-visualizer#path:
 dsh plugin --profile <your-profile> add 'github:abidhmuhsin/dsh-visualizer#path:packages/client-ui-visualizer'
 ```
 
+Both forms install the same packages; the explicit HTTPS form works on machines without GitHub credentials (pnpm fetches a public codeload tarball either way, so no `git` login is involved):
+
+```sh
+dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-visualizer.git#path:packages/tool-visualizer'
+dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-visualizer.git#path:packages/client-ui-visualizer'
+```
+
 Each first run fails with an "Add the package to allowBuilds" hint: pnpm 11's supply-chain gate blocks the packages' build scripts until allowlisted, and the hint carries the exact key (keyed on the codeload URL and the resolved commit). Paste that block under `allowBuilds:` in the same `pnpm-workspace.yaml` and re-run the failed command — it converges on the first paste. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
 
 Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml` — create the file with exactly this content if it does not exist (an empty or comments-only patch file is a load error):
