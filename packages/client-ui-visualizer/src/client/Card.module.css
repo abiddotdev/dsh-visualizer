@@ -65,8 +65,8 @@
   flex: none;
 }
 
-/* Border-less content pane: the white document ground against the chat
- * background is the only edge, so a streaming card reads as chat content. */
+/* Border-less content pane: the transparent canvas lets the chat background
+ * show through, so a streaming card reads as chat content. */
 .frame {
   display: block;
   width: 100%;
