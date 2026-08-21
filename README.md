@@ -18,7 +18,7 @@ The host tool declares `html` as its last schema parameter, so the logged tool-c
 Requires Node ^22.19 or >=24 and a dsh checkout or installed `dsh` CLI.
 
 ```sh
-git clone <this-repo> dsh-visualizer
+git clone https://github.com/abidhmuhsin/dsh-visualizer.git dsh-visualizer
 cd dsh-visualizer
 pnpm install
 pnpm build                 # compiles both packages' lib/ artifacts
@@ -52,8 +52,8 @@ overrides:
 Then install both halves, approving each package's build script:
 
 ```sh
-dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-tool-visualizer 'github:<owner>/dsh-visualizer#path:packages/tool-visualizer'
-dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-client-ui-visualizer 'github:<owner>/dsh-visualizer#path:packages/client-ui-visualizer'
+dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-tool-visualizer 'github:abidhmuhsin/dsh-visualizer#path:packages/tool-visualizer'
+dsh plugin --profile <your-profile> add --allow-build=@deepseek-ai/dsh-client-ui-visualizer 'github:abidhmuhsin/dsh-visualizer#path:packages/client-ui-visualizer'
 ```
 
 pnpm 11's supply-chain gate answers some git-dependency resolutions with an "Add the package to allowBuilds" hint carrying an exact key; paste that block into the same `pnpm-workspace.yaml` and re-run the failed command — it converges on the first paste.
@@ -69,7 +69,7 @@ Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.pa
       name: '@deepseek-ai/dsh-client-ui-visualizer'
 ```
 
-Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:<owner>/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block, and drop the added `allowBuilds` entries.
+Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:abidhmuhsin/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block, and drop the added `allowBuilds` entries.
 
 ## How mounting works
 
