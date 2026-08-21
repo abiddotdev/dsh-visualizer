@@ -30,12 +30,14 @@
   flex: none;
 }
 
+/* Border-less content pane: the white document ground against the chat
+ * background is the only edge, so a streaming card reads as chat content. */
 .frame {
   display: block;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: none;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
+  background: transparent;
 }
 
 /* Quiet inline action, the deliverables-row pattern: tertiary label over

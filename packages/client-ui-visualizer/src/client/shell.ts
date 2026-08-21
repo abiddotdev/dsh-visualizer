@@ -38,6 +38,8 @@ const CSP_DIRECTIVES = [
  * strips animations for the whole streaming phase — every replace destroys
  * element identity, which would restart keyframes per tick and bake scrollbar
  * height into reported layout — and keeps overflow hidden while partial.
+ * Every content change reports the measured content height back to the host,
+ * which sizes the frame to its content instead of a fixed viewport.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -45,6 +47,10 @@ const BRIDGE_SCRIPT = `
   var VIEWPORT_ID = 'dsh-gui-viewport';
   var frozen = true;
   function viewport() { return document.getElementById(VIEWPORT_ID); }
+  function report() {
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    try { parent.postMessage({ __dshGui: true, type: 'size', height: h }, '*'); } catch (err) {}
+  }
   function toFragment(html) {
     var full = /<html[\\s>]/i.test(html) || /<head[\\s>]/i.test(html) || /<body[\\s>]/i.test(html) || /^\\s*<!doctype/i.test(html);
     if (!full) {
@@ -62,6 +68,7 @@ const BRIDGE_SCRIPT = `
     var vp = viewport();
     if (!vp) return;
     vp.replaceChildren(toFragment(html));
+    report();
   }
   function unfreeze() {
     var vp = viewport();
@@ -88,8 +95,12 @@ const BRIDGE_SCRIPT = `
       unfreeze();
       setBody(d.html || '');
       runScripts();
+      report();
     }
   });
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () { report(); }).observe(document.documentElement);
+  }
 })();
 </script>
 `
@@ -102,8 +113,11 @@ export const STREAM_SHELL = `<!DOCTYPE html>
 <meta http-equiv="Content-Security-Policy" content="${CSP_DIRECTIVES}">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: #fff; }
-  body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; padding: 12px; }
+  /* White page canvas by default: only the html element carries it, so a
+   * document that paints its own body/html background layers over the white
+   * instead of fighting the shell for the same element. */
+  html { background: #fff; }
+  body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
   body.frozen { overflow: hidden !important; }
   .frozen, .frozen *, .frozen *::before, .frozen *::after {
     animation: none !important;

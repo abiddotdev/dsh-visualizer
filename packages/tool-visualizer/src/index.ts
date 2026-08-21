@@ -87,12 +87,13 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       title: { type: 'string', description: 'Panel title shown on the card.' },
       height: {
         type: 'number',
-        description: `Viewport height of the frame in pixels (${MIN_FRAME_HEIGHT_PX}–${MAX_FRAME_HEIGHT_PX}). Defaults to ${DEFAULT_FRAME_HEIGHT_PX}.`,
+        description: `Opening frame height in pixels (${MIN_FRAME_HEIGHT_PX}–${MAX_FRAME_HEIGHT_PX}); the frame then grows with its content. Defaults to ${DEFAULT_FRAME_HEIGHT_PX}.`,
       },
       html: {
         type: 'string',
         required: true,
-        description: 'The complete HTML document, placed last in the call so it streams into the preview while you write.',
+        description: 'The complete HTML document, placed last in the call so it streams into the preview while you write. '
+          + 'The frame renders on a plain white page canvas: set an explicit background or theme colors only when the user asks for them.',
       },
     },
     output: {

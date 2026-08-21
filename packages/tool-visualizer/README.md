@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Model-facing `render_html` tool: the argument-streaming half of the inline HTML presentation. The model passes the complete self-contained document as the `html` argument — last in the schema — and the browser card (`@deepseek-ai/dsh-client-ui-generativeui`) decodes a growing prefix of the streamed call arguments into a live preview while the model is still writing. Nothing touches the workspace: the document's durable home is the logged `tool/call` arguments themselves.
 
-**The document is the call.** `execute` validates only what the arguments carry — a non-empty document, the configurable `maxHtmlBytes` cap (default 256 KiB, counted as UTF-8 bytes), an integer frame height clamped to 50–2000 px, and a non-blank explicit title — and returns a one-line canonical result (`Rendered <title> (<bytes> bytes, <height>px frame)`). No filesystem service is injected, no presentation meta is projected: the settled card re-reads the same logged arguments.
+**The document is the call.** `execute` validates only what the arguments carry — a non-empty document, the configurable `maxHtmlBytes` cap (default 256 KiB, counted as UTF-8 bytes), an integer opening height clamped to 50–2000 px (the frame then grows with its content), and a non-blank explicit title — and returns a one-line canonical result (`Rendered <title> (<bytes> bytes, <height>px frame)`). No filesystem service is injected, no presentation meta is projected: the settled card re-reads the same logged arguments.
 
 **Schema order is the streaming contract.** `title` and `height` precede `html` so both are decodable before the document opens; `html` last means every streamed prefix of the arguments JSON ends inside the document string, which is what makes a prefix preview possible. The tool description states this ordering so the model keeps it.
 
@@ -50,4 +50,4 @@ Append-only: each call's arguments append after the existing prefix; nothing rep
 
 - **The document consumes context** — the bytes live in the model-visible call arguments and replay every later turn until compaction; oversized or durable artifacts belong to the `write` + `show_html` flow.
 - **A reordered schema defeats the preview** — if the model places `html` first, the prefix decoder sees no settled `title`/`height` and the card falls back to defaults until the call completes; the description and prompt guidance pin the order but cannot enforce it.
-- **No automatic height fit** — the frame height is the model's static suggestion; the live card paints the streaming prefix at that height, and a document-resize bridge is deferred exactly as it is for `show_html`.
+- **The height argument is an opening hint only** — the frame auto-grows with its content and clamps at 4000 px, so a `height` value never bounds what the card shows; the model should not rely on it for exact framing.

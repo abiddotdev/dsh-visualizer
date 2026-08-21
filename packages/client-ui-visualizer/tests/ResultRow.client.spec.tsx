@@ -8,6 +8,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
+import { STREAM_SHELL } from '../src/client/shell.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -65,8 +66,10 @@ describe('ResultRow', () => {
   it('renders the settled document from the logged call arguments in a null-origin frame', () => {
     render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', height: 360, html: DOC })))} />)
 
+    // The settled row drives the shared shell: the document arrives through
+    // the bridge, and the frame sizes itself from content measurements.
     const frame = document.querySelector('iframe')
-    expect(frame?.getAttribute('srcDoc')).toBe(DOC)
+    expect(frame?.getAttribute('srcDoc')).toBe(STREAM_SHELL)
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
     expect(frame?.style.height).toBe('360px')
     expect(screen.getByText('55 chars')).toBeTruthy()
@@ -77,7 +80,7 @@ describe('ResultRow', () => {
     render(<ResultRow {...props(runningBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
 
     const frame = document.querySelector('iframe')
-    expect(frame?.getAttribute('srcDoc')).toBe(DOC)
+    expect(frame?.getAttribute('srcDoc')).toBe(STREAM_SHELL)
     expect(frame?.style.height).toBe('480px')
     expect(screen.getByText('Rendering…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()

@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { downloadDocument } from './download.ts'
@@ -125,12 +126,12 @@ export function ResultRow({ block, t }: ResultRowProps) {
           collapsedContent={rowChrome()}
         >
           {view !== null && (
-            <iframe
-              className={css.frame}
-              srcDoc={view.html}
+            <AutoFrame
               title={title}
-              sandbox="allow-scripts"
-              style={{ height: `${height}px` }}
+              html={view.html}
+              phase="complete"
+              initialHeight={height}
+              className={css.frame}
             />
           )}
         </DisclosureRow>

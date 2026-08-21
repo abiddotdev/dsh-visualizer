@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls this package's LocaleNamespaceMap merge into the program so the
@@ -58,16 +58,43 @@ describe('StreamCard', () => {
     expect(frame?.getAttribute('srcdoc')).toContain('dsh-gui-viewport')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
     expect(frame?.getAttribute('title')).toBe('Dash')
-    expect(frame?.style.height).toBe('320px')
+    // The card opens at chat-line height; a height argument never pre-sizes
+    // the streaming frame — measurements own the height.
+    expect(frame?.style.height).toBe('32px')
     expect(screen.getByText('Streaming…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
-  it('falls back to the generic title and default height when args carried neither', () => {
+  it('falls back to the generic title when args carried none', () => {
     renderCard([{ phase: 'streaming', title: null, height: null, html: '<p>x' }])
     const frame = document.querySelector('iframe')
     expect(frame?.getAttribute('title')).toBe('HTML preview')
-    expect(frame?.style.height).toBe('480px')
+    expect(frame?.style.height).toBe('32px')
+  })
+
+  it('grows and shrinks the frame to the content size the bridge reports', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>growing' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const report = (height: number): void => {
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { __dshGui: true, type: 'size', height },
+          source: frame.contentWindow,
+        }))
+      })
+    }
+
+    // A size report from this frame's window drives the height, clamped to
+    // the frame bounds; reports from other windows never match the source.
+    report(212.4)
+    expect(frame.style.height).toBe('213px')
+    report(99_999)
+    expect(frame.style.height).toBe('4000px')
+    report(1)
+    expect(frame.style.height).toBe('24px')
+    window.dispatchEvent(new MessageEvent('message', { data: { __dshGui: true, type: 'size', height: 666 } }))
+    expect(frame.style.height).toBe('24px')
   })
 
   it('offers a download on the complete card and materializes the bytes client-side', () => {
