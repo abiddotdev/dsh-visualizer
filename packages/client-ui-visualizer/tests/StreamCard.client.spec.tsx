@@ -61,8 +61,17 @@ describe('StreamCard', () => {
     // The card opens at chat-line height; a height argument never pre-sizes
     // the streaming frame — measurements own the height.
     expect(frame?.style.height).toBe('32px')
-    expect(screen.getByText('Streaming…')).toBeTruthy()
+    expect(screen.getByText('Streaming')).toBeTruthy()
+    // The label itself shimmers while the document streams, and drops the
+    // shimmer class on settle.
+    expect(document.querySelector('[class*="summaryLive"]')).not.toBeNull()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
+  })
+
+  it('shimmers the composing label before the document opens', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
+    expect(screen.getByText('Composing the document')).toBeTruthy()
+    expect(document.querySelector('[class*="summaryLive"]')).not.toBeNull()
   })
 
   it('falls back to the generic title when args carried none', () => {

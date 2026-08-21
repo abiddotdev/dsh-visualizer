@@ -33,8 +33,13 @@ const CSP_DIRECTIVES = [
 
 /**
  * Bridge injected into the shell. `render` replaces the viewport with the
- * latest document prefix parsed as inert markup; `commit` applies the final
- * document, lifts the streaming freeze, and runs scripts once. The freeze
+ * latest document prefix parsed as inert markup; `commit` reconciles the
+ * final document onto the streamed DOM — nodes that are already equal keep
+ * their identity, so images, canvases, and scroll positions survive the
+ * settle instead of flashing — lifts the streaming freeze, and runs the
+ * document's scripts once in document order, awaiting each external script
+ * (`src`) load before the next script executes, which is what makes CDN
+ * libraries (e.g. Chart.js followed by an inline consumer) work. The freeze
  * strips animations for the whole streaming phase — every replace destroys
  * element identity, which would restart keyframes per tick and bake scrollbar
  * height into reported layout — and keeps overflow hidden while partial.
@@ -70,20 +75,42 @@ const BRIDGE_SCRIPT = `
     vp.replaceChildren(toFragment(html));
     report();
   }
+  // Keep identical streamed nodes; replace or append only what changed.
+  function reconcile(target, frag) {
+    var oldNodes = Array.prototype.slice.call(target.childNodes);
+    var newNodes = Array.prototype.slice.call(frag.childNodes);
+    for (var i = 0; i < newNodes.length; i++) {
+      var existing = oldNodes[i];
+      if (existing && existing.nodeType === newNodes[i].nodeType && existing.isEqualNode(newNodes[i])) continue;
+      if (existing) target.replaceChild(newNodes[i], existing);
+      else target.appendChild(newNodes[i]);
+    }
+    for (var j = oldNodes.length - 1; j >= newNodes.length; j--) target.removeChild(oldNodes[j]);
+  }
   function unfreeze() {
     var vp = viewport();
     if (vp) vp.classList.remove('frozen');
     document.body.classList.remove('frozen');
     frozen = false;
   }
+  // Execute in document order; an external script's load (or failure) gates
+  // every later script, so a CDN library initializes before its consumer.
   function runScripts() {
     var vp = viewport();
     if (!vp) return;
-    vp.querySelectorAll('script').forEach(function (old) {
-      var s = document.createElement('script');
-      for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
-      s.textContent = old.textContent;
-      old.parentNode.replaceChild(s, old);
+    var olds = Array.prototype.slice.call(vp.querySelectorAll('script'));
+    var chain = Promise.resolve();
+    olds.forEach(function (old) {
+      chain = chain.then(function () {
+        return new Promise(function (res) {
+          var s = document.createElement('script');
+          for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+          s.textContent = old.textContent;
+          if (s.getAttribute('src')) { s.onload = res; s.onerror = res; }
+          if (old.parentNode) old.parentNode.replaceChild(s, old);
+          if (!s.getAttribute('src')) res();
+        });
+      });
     });
   }
   window.addEventListener('message', function (e) {
@@ -93,7 +120,8 @@ const BRIDGE_SCRIPT = `
       if (frozen) setBody(d.html || '');
     } else if (d.type === 'commit') {
       unfreeze();
-      setBody(d.html || '');
+      var vp = viewport();
+      if (vp) { reconcile(vp, toFragment(d.html || '')); }
       runScripts();
       report();
     }
@@ -113,10 +141,10 @@ export const STREAM_SHELL = `<!DOCTYPE html>
 <meta http-equiv="Content-Security-Policy" content="${CSP_DIRECTIVES}">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  /* White page canvas by default: only the html element carries it, so a
-   * document that paints its own body/html background layers over the white
-   * instead of fighting the shell for the same element. */
-  html { background: #fff; }
+  /* Transparent canvas: the chat background shows through the frame, so an
+   * unstyled document reads as inline chat content. A document that paints
+   * its own body/html background layers over the transparency by design. */
+  html, body { background: transparent; }
   body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
   body.frozen { overflow: hidden !important; }
   .frozen, .frozen *, .frozen *::before, .frozen *::after {

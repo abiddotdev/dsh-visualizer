@@ -93,7 +93,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         type: 'string',
         required: true,
         description: 'The complete HTML document, placed last in the call so it streams into the preview while you write. '
-          + 'The frame renders on a plain white page canvas: set an explicit background or theme colors only when the user asks for them.',
+          + 'The frame renders on a transparent canvas over the chat background, so the page feels inline in the conversation: do not set page or body backgrounds unless the user asks for a specific background or theme.',
       },
     },
     output: {

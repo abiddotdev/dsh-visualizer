@@ -26,10 +26,13 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
   const [expanded, setExpanded] = useState(true)
   const title = card.title ?? t('card.title')
   const summary = card.phase === 'streaming'
-    ? t('card.streaming')
+    ? card.html.length === 0 ? t('card.thinking') : t('card.streaming')
     : card.phase === 'interrupted'
       ? t('card.interrupted')
       : t('card.chars', { chars: card.html.length })
+  // The typing wave runs for the whole streaming phase — composing and
+  // writing alike — and stops the moment the document settles.
+  const live = card.phase === 'streaming'
 
   return (
     <div className={css.card} data-tool="render_html" data-phase={card.phase}>
@@ -47,7 +50,11 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={css.summary}>{summary}</span>
+            {/* The shimmer class carries the live phase; the plain summary
+             * color serves the settled and interrupted labels. */}
+            <span className={live ? `${css.summary} ${css.summaryLive}` : css.summary}>
+              {summary}
+            </span>
             {card.phase === 'complete' && (
               <button
                 type="button"

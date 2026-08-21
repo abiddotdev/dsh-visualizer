@@ -21,6 +21,41 @@
   font: var(--dsw-font-xs-13);
 }
 
+/* Live activity in the chat's own TurnStatus register: a pale brand band
+ * sweeps through the label text while the document streams. Same gradient
+ * stops, size, and cadence as the conversation's "Deep diving..." shimmer. */
+.summaryLive {
+  background: linear-gradient(
+    90deg,
+    var(--dsw-static-deepseek-500) 0%,
+    var(--dsw-static-deepseek-500) 40%,
+    var(--dsw-static-deepseek-200) 50%,
+    var(--dsw-static-deepseek-500) 60%,
+    var(--dsw-static-deepseek-500) 100%
+  );
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gui-shimmer 1.8s linear infinite;
+}
+
+@keyframes gui-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summaryLive {
+    background-position: 0 0;
+    background-size: 100% 100%;
+    animation: none;
+  }
+}
+
 .separator {
   flex: none;
   width: 8px;
