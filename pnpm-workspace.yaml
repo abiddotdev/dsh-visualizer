@@ -1,0 +1,14 @@
+packages:
+  - packages/*
+  - vendor/harness-client-runtime
+linkWorkspacePackages: true
+# The published harness manifests reference a few packages that were never
+# pushed to the npm registry. Nothing consumed here imports them, so each name
+# aliases to a tiny published package purely to satisfy resolution; some trees
+# also carry the same aliases as direct devDependencies.
+overrides:
+  '@deepseek-ai/dsh-compact': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-type-meta': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-user-interaction': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-client-ui-slash': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'
+  '@deepseek-ai/dsh-paths': 'npm:@deepseek-ai/dsh-brand@0.0.1-rc.1'

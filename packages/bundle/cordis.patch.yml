@@ -1,0 +1,17 @@
+# The visualizer bundle patch: one insert adding the streaming HTML card to a
+# profile. The tool row teaches the model the `visualizer` call; the client row
+# mounts the inline preview card in the Web GUI. Both rows reference the
+# packages by name so Node resolution finds the installed code. Row ids carry
+# the dsh-visualizer prefix so the bundle never collides with a harness
+# checkout that already ships the visualizer in-box (on those, prefer the
+# built-in and do not install this bundle).
+#
+# Install this bundle into a profile with:
+#   dsh plugin --profile <name> add ./packages/bundle
+
+- insert:
+    - id: dsh-visualizer-tool
+      name: '@deepseek-ai/dsh-tool-visualizer'
+
+    - id: dsh-visualizer-ui
+      name: '@deepseek-ai/dsh-client-ui-visualizer'

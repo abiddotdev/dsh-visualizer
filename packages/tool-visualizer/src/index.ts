@@ -16,6 +16,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+// Type-side-effect import: pulls the systemPrompt Context augmentation so the
+// injected service member type-checks without the harness-wide program.
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export const name = 'tool-visualizer'
 export const inject = ['tools', 'systemPrompt']

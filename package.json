@@ -1,0 +1,23 @@
+{
+  "name": "dsh-visualizer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Visualizer plugin repo for DeepSeek Harness: the `visualizer` tool streams a self-contained HTML document into the chat as it is written, live-previewed by a sandboxed inline frame",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' run build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "jsdom": "29.1.1",
+    "lightningcss": "^1.32.0",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
