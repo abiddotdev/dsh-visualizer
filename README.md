@@ -67,9 +67,14 @@ Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.pa
 
     - id: dsh-visualizer-ui
       name: 'dsh-client-ui-visualizer'
+
+- id: ui-visualizer
+  disabled: true
 ```
 
-Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:abidhmuhsin/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block, and drop the added `allowBuilds` entries.
+The last two lines matter: every web-profile stack already carries the harness built-in `ui-visualizer` card, and both cards register the same locale namespace (`visualizer`), so leaving both mounted fails loud with `locale namespace "visualizer" already has locale …`. The disable hands the feature to the standalone pair.
+
+Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:abidhmuhsin/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block and the disable entry, and drop the added `allowBuilds` entries.
 
 ## How mounting works
 
