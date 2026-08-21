@@ -31,14 +31,14 @@ overrides:
 
 ### Alongside the built-in visualizer
 
-A harness checkout ships its own in-box visualizer card row (`ui-visualizer`). Both cards register the locale namespace `visualizer`, so mounting both fails loud with `locale namespace "visualizer" already has locale …`. When installing this plugin on a profile whose stack carries the built-in card, disable it in the profile patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml`:
+Harness releases up to 0.1.1-rc.1 shipped their own in-box visualizer card row (`ui-visualizer`). Both cards register the locale namespace `visualizer`, so mounting both fails loud with `locale namespace "visualizer" already has locale …`. On such a checkout, disable the built-in row in the profile patch layer at `~/.dsh/profiles/<your-profile>/cordis.patch.yml`:
 
 ```yaml
 - id: ui-visualizer
   disabled: true
 ```
 
-On profiles without an active built-in card, nothing else is needed.
+From 0.1.1-rc.2 the built-in row no longer ships, nothing collides, and no patch entry is needed. If you see `patch: entry "ui-visualizer" not found`, your profile carries a stale disable line — remove it.
 
 Then `pnpm dsh --profile <your-profile>` (or your usual launcher), ask the model to "visualize …", and the streamed document appears inline while it is being written. Pin a release by adding a ref fragment: `'git+https://github.com/abidhmuhsin/dsh-visualizer.git#v0.2.0'`. To remove:
 
