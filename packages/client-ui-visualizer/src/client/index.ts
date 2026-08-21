@@ -3,7 +3,7 @@
  * the live `visualizer-stream` Chat Node fed by streamed `visualizer` call
  * arguments, and the keyed `visualizer` Tool row that takes over once the
  * call dispatches. The rows are inert until their tool exists: sessions whose
- * presets do not mount `@deepseek-ai/dsh-tool-visualizer` never produce
+ * presets do not mount `dsh-tool-visualizer` never produce
  * such calls, and this package composes no host behavior at all.
  */
 

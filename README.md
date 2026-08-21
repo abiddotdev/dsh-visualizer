@@ -6,8 +6,8 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin rep
 
 ```
 packages/
-  tool-visualizer/          host half: the model-facing `visualizer` tool (@deepseek-ai/dsh-tool-visualizer)
-  client-ui-visualizer/     browser half: streaming card + settled row (@deepseek-ai/dsh-client-ui-visualizer)
+  tool-visualizer/          host half: the model-facing `visualizer` tool (dsh-tool-visualizer)
+  client-ui-visualizer/     browser half: streaming card + settled row (dsh-client-ui-visualizer)
   bundle/                   installable profile bundle wiring both rows (dsh-visualizer-bundle)
 ```
 
@@ -63,10 +63,10 @@ Append to the profile's patch layer at `~/.dsh/profiles/<your-profile>/cordis.pa
 ```yaml
 - insert:
     - id: dsh-visualizer-tool
-      name: '@deepseek-ai/dsh-tool-visualizer'
+      name: 'dsh-tool-visualizer'
 
     - id: dsh-visualizer-ui
-      name: '@deepseek-ai/dsh-client-ui-visualizer'
+      name: 'dsh-client-ui-visualizer'
 ```
 
 Then `dsh --profile <your-profile> web` and verify both rows with `dsh --profile <your-profile> --dump-config`. Pin a release by prefixing the fragment with a tag or commit: `'github:abidhmuhsin/dsh-visualizer#v0.1.0&path:packages/tool-visualizer'`. To remove, uninstall both packages, delete the `insert` block, and drop the added `allowBuilds` entries.

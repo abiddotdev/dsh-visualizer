@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-visualizer
+# dsh-client-ui-visualizer
 
 [English](README.md) | 中文
 
@@ -12,7 +12,7 @@
 
 **落定工具行经同一 shell 重放。** 执行器记录 `tool/call` 后，流式节点隐藏，键控的 `tool.call.toolview` 行把完整参数一次性 commit 进共享 shell 帧——单次 commit、脚本执行一次。其下载控件在客户端把同一份字节物化为 Blob 并以净化后的文件名保存；只在落定成功的调用上出现，因为不完整的下载按定义就是损坏的。
 
-**没有它的工具，两行都是惰性的。** 卡片注册在开放的键域下（`conversation.chat.node` 键 `visualizer-stream`、`tool.call.toolview` 键 `visualizer`）；标准 agent preset 挂载了 `@deepseek-ai/dsh-tool-visualizer`，未挂载它的预设的会话不会产生此类调用。本包自身也不组合任何 host 行为。
+**没有它的工具，两行都是惰性的。** 卡片注册在开放的键域下（`conversation.chat.node` 键 `visualizer-stream`、`tool.call.toolview` 键 `visualizer`）；标准 agent preset 挂载了 `dsh-tool-visualizer`，未挂载它的预设的会话不会产生此类调用。本包自身也不组合任何 host 行为。
 
 `/client` 导出面是插件主体（`apply`/`inject`）与组合 props 类型。
 

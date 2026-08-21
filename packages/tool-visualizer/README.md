@@ -1,8 +1,8 @@
-# @deepseek-ai/dsh-tool-visualizer
+# dsh-tool-visualizer
 
 English | [中文](README.zh.md)
 
-Model-facing `visualizer` tool: the argument-streaming half of the inline HTML presentation. The model passes the complete self-contained document as the `html` argument — last in the schema — and the browser card (`@deepseek-ai/dsh-client-ui-visualizer`) decodes a growing prefix of the streamed call arguments into a live preview while the model is still writing. Nothing touches the workspace: the document's durable home is the logged `tool/call` arguments themselves.
+Model-facing `visualizer` tool: the argument-streaming half of the inline HTML presentation. The model passes the complete self-contained document as the `html` argument — last in the schema — and the browser card (`dsh-client-ui-visualizer`) decodes a growing prefix of the streamed call arguments into a live preview while the model is still writing. Nothing touches the workspace: the document's durable home is the logged `tool/call` arguments themselves.
 
 **The document is the call.** `execute` validates only what the arguments carry — a non-empty document, the configurable `maxHtmlBytes` cap (default 256 KiB, counted as UTF-8 bytes), an integer opening height clamped to 50–2000 px (the frame then grows with its content), and a non-blank explicit title — and returns a one-line canonical result (`Rendered <title> (<bytes> bytes, <height>px frame)`). No filesystem service is injected, no presentation meta is projected: the settled card re-reads the same logged arguments.
 

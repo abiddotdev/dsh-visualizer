@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as toolGenerativeUi from '@deepseek-ai/dsh-tool-visualizer'
+import * as toolGenerativeUi from 'dsh-tool-visualizer'
 
 const testToolSignal = new AbortController().signal
 

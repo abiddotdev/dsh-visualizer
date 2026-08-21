@@ -16,7 +16,7 @@ import { defineConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 /** Package name stamped into the __ModuleLoader__.load handoff and style tags. */
-const PLUGIN_ID = '@deepseek-ai/dsh-client-ui-visualizer'
+const PLUGIN_ID = 'dsh-client-ui-visualizer'
 
 /** Module specifiers the web shell seeds into the frozen module table. */
 const PLATFORM_MODULES = [

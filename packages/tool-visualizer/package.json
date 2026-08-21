@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-visualizer",
+  "name": "dsh-tool-visualizer",
   "description": "Model-facing visualizer tool that streams a self-contained HTML document inline through its own call arguments",
   "version": "0.1.0",
   "publishConfig": {

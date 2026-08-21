@@ -13,8 +13,8 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-visualizer": "file:../client-ui-visualizer",
-    "@deepseek-ai/dsh-tool-visualizer": "file:../tool-visualizer"
+    "dsh-client-ui-visualizer": "file:../client-ui-visualizer",
+    "dsh-tool-visualizer": "file:../tool-visualizer"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-compact": "npm:@deepseek-ai/dsh-brand@0.0.1-rc.1",

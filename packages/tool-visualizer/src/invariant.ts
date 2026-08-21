@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-tool-visualizer`.
- * @module @deepseek-ai/dsh-tool-visualizer/invariant
+ * Package-owned invariant companion for `dsh-tool-visualizer`.
+ * @module dsh-tool-visualizer/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-tool-visualizer'
+const PACKAGE_NAME = 'dsh-tool-visualizer'
 
 /** Cordis companion plugin name. */
 export const name = 'tool-visualizer-invariant'

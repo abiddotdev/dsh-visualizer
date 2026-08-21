@@ -45,10 +45,10 @@ importers:
 
   packages/bundle:
     dependencies:
-      '@deepseek-ai/dsh-client-ui-visualizer':
+      dsh-client-ui-visualizer:
         specifier: file:../client-ui-visualizer
         version: link:../client-ui-visualizer
-      '@deepseek-ai/dsh-tool-visualizer':
+      dsh-tool-visualizer:
         specifier: file:../tool-visualizer
         version: link:../tool-visualizer
     devDependencies:

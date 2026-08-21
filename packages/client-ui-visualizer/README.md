@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-visualizer
+# dsh-client-ui-visualizer
 
 English | [中文](README.zh.md)
 
@@ -12,7 +12,7 @@ Streaming inline HTML card, browser half: the live `visualizer-stream` chat node
 
 **The settled row replays through the same shell.** When the executor logs `tool/call`, the streaming node hides and the keyed `tool.call.toolview` row commits the complete arguments into the shared shell frame — one commit, scripts run once. Its download control materializes the same bytes client-side as a Blob under a sanitized file name; it appears only on a settled successful call, because a partial download is corrupt by definition.
 
-**Both rows are inert until their tool exists.** The cards register under open key domains (`conversation.chat.node` key `visualizer-stream`, `tool.call.toolview` key `visualizer`); the standard agent preset mounts `@deepseek-ai/dsh-tool-visualizer`, and sessions on presets without it never produce such calls. This package composes no host behavior at all.
+**Both rows are inert until their tool exists.** The cards register under open key domains (`conversation.chat.node` key `visualizer-stream`, `tool.call.toolview` key `visualizer`); the standard agent preset mounts `dsh-tool-visualizer`, and sessions on presets without it never produce such calls. This package composes no host behavior at all.
 
 The `/client` export surface is the plugin body (`apply`/`inject`) plus the composed props types.
 

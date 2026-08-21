@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-visualizer",
+  "name": "dsh-client-ui-visualizer",
   "description": "Streaming inline HTML card, browser half: the live visualizer preview from streamed call arguments plus the keyed settled row",
   "version": "0.1.0",
   "publishConfig": {
