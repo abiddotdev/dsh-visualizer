@@ -16,4 +16,5 @@ export const CONTRACT: readonly string[] = [
   'Animate only transform, opacity, and stroke-dashoffset, wrapped in @media (prefers-reduced-motion: no-preference); animating layout properties repaints the whole frame on every tick.',
   'The host injects its --dsw-* design tokens onto the document root at load and again on theme changes — color with them (e.g. color: var(--dsw-alias-label-primary)) so the artifact follows the app theme instead of hardcoding its own palette.',
   'The frame sizes itself to the content: avoid position:fixed, which reports no height, and never hide streamed content with display:none.',
+  'Nearly every broken visual traces to one of three causes: a position defined in two places, layout math skipped, or the DOM mutated directly instead of re-rendered — derive each position once, compute before drawing, and render from a single state object.',
 ]

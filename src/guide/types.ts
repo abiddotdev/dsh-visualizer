@@ -16,6 +16,13 @@ export interface ModuleGuide {
   readonly module: GuideModule
   /** One-line authoring guidance shown in the roster. */
   readonly summary: string
-  /** Detailed recipe the `visualizer_guide` tool returns for this type. */
+  /**
+   * Detailed recipe the `visualizer_guide` tool returns for this type.
+   * Follows the shared skeleton, in order: `### Mental model` (thinking
+   * order before code), domain sections, `### Failure modes` (symptom
+   * first, then cause and fix), `### Quick reference` (one-line
+   * checklist). State measurements exactly and rules as never-conditions;
+   * the recipe is pulled just-in-time, so depth costs nothing standing.
+   */
   readonly detail: readonly string[]
 }

@@ -21,6 +21,21 @@ describe('visualizer guide', () => {
     expect(seen.size).toBe(MODULE_GUIDES.length)
   })
 
+  it('gives every module the shared recipe skeleton', () => {
+    for (const guide of MODULE_GUIDES) {
+      const sections = guide.detail
+        .filter(line => line.startsWith('### '))
+        .map(line => line.slice(4))
+      // Fixed bookends: thinking order leads, failures read symptom-first,
+      // the checklist closes.
+      expect(sections, `${guide.module} sections`).toContain('Mental model')
+      expect(sections, `${guide.module} sections`).toContain('Failure modes')
+      expect(sections, `${guide.module} sections`).toContain('Quick reference')
+      expect(sections[0]).toBe('Mental model')
+      expect(sections[sections.length - 1]).toBe('Quick reference')
+    }
+  })
+
   it('carries the prose gate and the CDN hosts the shell CSP enforces', () => {
     const text = composeGuideText()
     expect(text).toContain('Never write HTML or SVG as prose')

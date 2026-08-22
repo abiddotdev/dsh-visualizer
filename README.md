@@ -37,7 +37,9 @@ The tool declares `html` as its last schema parameter, so the logged tool-call a
 
 The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation, and `write` + `show_html` when a file is wanted), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, theme tokens, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/` — one file per type, so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
 
-The roster stays one line per type to keep the system prompt small; the deeper per-type recipe (data-embedding, layout, interaction, and animation specifics) lives in each module's `detail`. The `visualizer_guide` tool returns it on demand: the model calls `visualizer_guide(modules: [...])` once it has chosen an artifact type, and gets that type's recipe as the tool result — a just-in-time spec injection that grows the guide without growing the standing prompt.
+The roster stays one line per type to keep the system prompt small; the deeper per-type recipe lives in each module's `detail`. The `visualizer_guide` tool returns it on demand: the model calls `visualizer_guide(modules: [...])` once it has chosen an artifact type, and gets that type's recipe as the tool result — a just-in-time spec injection that grows the guide without growing the standing prompt.
+
+Every `detail` follows one skeleton: **Mental model** (the thinking order before code — encoding table, renderer choice, layout strategy), domain sections (measurements, composition, controls, color), **Failure modes** (symptom first, then cause and fix), and a closing **Quick reference** checklist. Rules are never-conditions with exact measurements, not approximations, because the recipe is read at the moment of authoring. The guide spec pins the skeleton; each module's content stays in its own file.
 
 ## The widget bridge
 
