@@ -71,6 +71,13 @@
   width: 8px;
 }
 
+/* Load-failure notice beside the summary: the warn register over the same
+ * quiet inline treatment as the summary label. */
+.scriptError {
+  color: var(--dsw-alias-state-warn-label);
+  font: var(--dsw-font-xs-13);
+}
+
 .chevron {
   flex: none;
 }

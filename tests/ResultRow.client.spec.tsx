@@ -115,6 +115,28 @@ describe('ResultRow', () => {
     expect(screen.getByText('E_TOOL')).toBeTruthy()
   })
 
+  it('shows the load-failure notice once a frame script fails', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: 'https://unpkg.com/chart.js' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText('A library failed to load; interactivity may be unavailable')).toBeTruthy()
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: '' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getAllByText('A library failed to load; interactivity may be unavailable')).toHaveLength(1)
+  })
+
   it('falls back to the missing-summary when the arguments carry no document', () => {
     render(<ResultRow {...props(settledBlock('{"title":"x"}'))} />)
 

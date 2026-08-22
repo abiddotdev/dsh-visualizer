@@ -30,6 +30,8 @@ export const WIDGET_PROMPT_MIN_INTERVAL_MS = 3_000
 export const WIDGET_PROMPT_MAX_CHARS = 4_000
 /** Longest link URL accepted from a widget. */
 export const WIDGET_URL_MAX_CHARS = 2_048
+/** Longest script source URL accepted from a load-failure report. */
+export const SCRIPT_ERROR_SRC_MAX_CHARS = 512
 
 /** Props of the content-sized shell frame. */
 export interface AutoFrameProps {
@@ -47,23 +49,27 @@ export interface AutoFrameProps {
   readonly onPrompt?: ((text: string) => void) | undefined
   /** Widget-initiated link target, already validated. */
   readonly onOpenLink?: ((url: string) => void) | undefined
+  /** First external script whose load failed inside the frame. */
+  readonly onScriptError?: ((src: string) => void) | undefined
 }
 
 /**
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
   // Latest-callback refs keep one stable message listener across renders.
   const onPromptRef = useRef(onPrompt)
   const onOpenLinkRef = useRef(onOpenLink)
+  const onScriptErrorRef = useRef(onScriptError)
   const lastPromptAtRef = useRef(0)
 
   useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
+  useEffect(() => { onScriptErrorRef.current = onScriptError }, [onScriptError])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
     controller.current?.destroy()
@@ -83,7 +89,9 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameEl.current?.contentWindow) return
-      const data = event.data as { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown; url?: unknown } | null
+      const data = event.data as
+        | { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown; url?: unknown; src?: unknown }
+        | null
       if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
       if (data.type === 'size') {
         if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return
@@ -103,6 +111,11 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       if (data.type === 'openLink') {
         if (typeof data.url !== 'string' || data.url.length === 0 || data.url.length > WIDGET_URL_MAX_CHARS) return
         onOpenLinkRef.current?.(data.url)
+        return
+      }
+      if (data.type === 'scriptError') {
+        if (typeof data.src !== 'string' || data.src.length === 0 || data.src.length > SCRIPT_ERROR_SRC_MAX_CHARS) return
+        onScriptErrorRef.current?.(data.src)
       }
     }
     window.addEventListener('message', onMessage)

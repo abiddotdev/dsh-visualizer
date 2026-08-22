@@ -81,6 +81,9 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
       : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
+  // First failed external script wins: one notice per row, later failures
+  // add nothing.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const settledOk = settled && !block.isError && view !== null
 
   /** Collapsed-row trailing content: char count, then the download control on a settled success. */
@@ -88,6 +91,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
     <>
       <span className={css.separator} aria-hidden />
       <span className={css.summary}>{summary}</span>
+      {failedSrc !== null && <span className={css.scriptError}>{t('row.scriptError')}</span>}
       {settledOk && (
         <>
           <button
@@ -158,6 +162,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               className={css.frame}
               onPrompt={onPrompt}
               onOpenLink={openWidgetLink}
+              onScriptError={setFailedSrc}
             />
           )}
         </DisclosureRow>

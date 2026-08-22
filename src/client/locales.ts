@@ -11,6 +11,7 @@ export const zh = {
   'card.interrupted': '已中断，内容不完整',
   'card.copy': '复制 HTML',
   'card.copied': '已复制',
+  'card.scriptError': '库加载失败，交互可能不可用',
   'row.title': 'HTML 预览',
   'row.running': '正在渲染…',
   'row.chars': '{chars} 字符',
@@ -18,6 +19,7 @@ export const zh = {
   'row.download': '下载 HTML',
   'row.copy': '复制 HTML',
   'row.copied': '已复制',
+  'row.scriptError': '库加载失败，交互可能不可用',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -29,6 +31,7 @@ export const en = {
   'card.interrupted': 'Interrupted; document incomplete',
   'card.copy': 'Copy HTML',
   'card.copied': 'Copied',
+  'card.scriptError': 'A library failed to load; interactivity may be unavailable',
   'row.title': 'HTML preview',
   'row.running': 'Rendering…',
   'row.chars': '{chars} chars',
@@ -36,6 +39,7 @@ export const en = {
   'row.download': 'Download HTML',
   'row.copy': 'Copy HTML',
   'row.copied': 'Copied',
+  'row.scriptError': 'A library failed to load; interactivity may be unavailable',
 } as const
 
 /** Dictionary keys of this namespace. */

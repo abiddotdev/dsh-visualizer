@@ -167,6 +167,30 @@ describe('StreamCard', () => {
     expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
   })
 
+  it('shows one load-failure notice when a CDN script fails inside the frame', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const fail = (src: unknown, fromFrame = true): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src },
+        source: fromFrame ? frame.contentWindow : window,
+      }))
+    }
+
+    expect(screen.queryByText('A library failed to load; interactivity may be unavailable')).toBeNull()
+    act(() => { fail('https://cdn.jsdelivr.net/npm/chart.js') })
+    expect(screen.getByText('A library failed to load; interactivity may be unavailable')).toBeTruthy()
+
+    // Later failures and foreign-source payloads add nothing and open none.
+    act(() => {
+      fail('https://esm.sh/three')
+      fail('https://esm.sh/three', false)
+      fail(42)
+    })
+    expect(screen.getAllByText('A library failed to load; interactivity may be unavailable')).toHaveLength(1)
+  })
+
   it('marks an interrupted card and never offers its partial bytes', () => {
     renderCard([{ phase: 'interrupted', title: null, height: null, html: '<p>par' }])
     expect(screen.getByText('Interrupted; document incomplete')).toBeTruthy()

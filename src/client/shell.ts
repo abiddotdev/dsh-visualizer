@@ -58,6 +58,8 @@ const CSP_DIRECTIVES = [
  * scripts: one postMessage to the host, which submits it as a tagged user
  * turn after validation and rate limiting. `openLink(url)` asks the host to
  * open an external link; the host enforces the http(s)-only scheme check.
+ * A failed external script load is reported to the host as `scriptError`,
+ * which the card surfaces as a load-failure notice.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -108,6 +110,8 @@ const BRIDGE_SCRIPT = `
   }
   // Execute in document order; an external script's load (or failure) gates
   // every later script, so a CDN library initializes before its consumer.
+  // A failed external load is reported to the host: the card shows which
+  // library never arrived instead of rendering a silently dead document.
   function runScripts() {
     var vp = viewport();
     if (!vp) return;
@@ -119,7 +123,13 @@ const BRIDGE_SCRIPT = `
           var s = document.createElement('script');
           for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
           s.textContent = old.textContent;
-          if (s.getAttribute('src')) { s.onload = res; s.onerror = res; }
+          if (s.getAttribute('src')) {
+            s.onload = res;
+            s.onerror = function () {
+              try { parent.postMessage({ __dshGui: true, type: 'scriptError', src: s.getAttribute('src') }, '*'); } catch (err) {}
+              res();
+            };
+          }
           if (old.parentNode) old.parentNode.replaceChild(s, old);
           if (!s.getAttribute('src')) res();
         });

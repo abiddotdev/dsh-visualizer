@@ -26,6 +26,9 @@ type Translate = StreamCardProps['t']
 function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
+  // First failed external script wins: one notice per card, later failures
+  // add nothing.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const title = card.title ?? t('card.title')
   const summary = card.phase === 'streaming'
     ? card.html.length === 0 ? t('card.thinking') : t('card.streaming')
@@ -57,6 +60,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             <span className={live ? `${css.summary} ${css.summaryLive}` : css.summary}>
               {summary}
             </span>
+            {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
             {card.phase === 'complete' && (
               <>
                 <button
@@ -103,6 +107,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             className={css.frame}
             onPrompt={onPrompt}
             onOpenLink={openWidgetLink}
+            onScriptError={setFailedSrc}
           />
         )}
       </DisclosureRow>
