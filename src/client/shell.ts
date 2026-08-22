@@ -11,7 +11,13 @@
  * exactly once by cloning each `<script>` node.
  */
 
-/** CDN allowlist mirrored from the tool's public-CDN allowance. */
+/**
+ * Network-egress allowlist the shell CSP enforces on every rendered
+ * document. The node half validates sizes, not origins, so this list is the
+ * only origin policy a document meets: the tool's public-CDN promise is
+ * kept here and nowhere else. Widening it widens what a rendered document
+ * may fetch and execute inside the frame.
+ */
 const CDN_LIST = [
   'https://esm.sh',
   'https://cdnjs.cloudflare.com',

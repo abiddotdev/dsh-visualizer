@@ -8,11 +8,13 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.ts'
 import { StreamCard, type StreamCardProps } from '../src/client/StreamCard.tsx'
 import type { GenerativeCardData } from '../src/client/stream-node.ts'
+import { REVOKE_DELAY_MS } from '../src/client/download.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 const SID = 's1' as SessionId
@@ -114,9 +116,14 @@ describe('StreamCard', () => {
 
     expect(screen.getByText('11 chars')).toBeTruthy()
     const button = screen.getByRole('button', { name: 'Download HTML' })
+    vi.useFakeTimers()
     button.click()
 
     expect(created).toHaveBeenCalledTimes(1)
+    // The URL must outlive the click task: the browser reads the blob for
+    // the download only after click() returns.
+    expect(revoked).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-1')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.download).toBe('Rev _Q3__dash.html')

@@ -27,7 +27,11 @@ export const inject = ['tools', 'systemPrompt']
    show_html presentation constants; the tools differ in carriage, not limits. */
 /** Byte length of one rendered document; bounds session-log growth per call. */
 const DEFAULT_MAX_HTML_BYTES = 262_144
-/** Frame viewport bounds and default, in pixels; presentation invariants, not deployment choices. */
+/**
+ * Frame viewport bounds and default, in pixels; presentation invariants, not
+ * deployment choices. Mirrored by src/client/ResultRow.tsx — the client
+ * bundle cannot import this half, so a change here must land there too.
+ */
 const MIN_FRAME_HEIGHT_PX = 50
 const MAX_FRAME_HEIGHT_PX = 2_000
 const DEFAULT_FRAME_HEIGHT_PX = 480

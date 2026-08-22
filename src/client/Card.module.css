@@ -56,6 +56,16 @@
   }
 }
 
+/* Without text clipping the gradient paints the whole box and the label
+ * reads as transparent text; keep the plain tertiary label instead. */
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .summaryLive {
+    background: none;
+    color: var(--dsw-alias-label-tertiary);
+    -webkit-text-fill-color: currentcolor;
+  }
+}
+
 .separator {
   flex: none;
   width: 8px;

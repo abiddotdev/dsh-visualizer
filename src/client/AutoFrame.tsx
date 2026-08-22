@@ -13,7 +13,12 @@ import { STREAM_SHELL } from './shell.ts'
 /** Live phase of the document this frame renders. */
 export type AutoFramePhase = 'streaming' | 'complete'
 
-/** Height bounds of the auto-sized frame; the cap mirrors the tool's maximum. */
+/**
+ * Height bounds of the measured frame. Deliberately wider than the tool's
+ * 50–2000 argument validation: measurements own the height after the first
+ * report, and settled content may legitimately outgrow the opening viewport
+ * the call requested, so this cap bounds page layout, not the argument.
+ */
 export const MIN_FRAME_HEIGHT_PX = 24
 export const MAX_FRAME_HEIGHT_PX = 4_000
 /** Height while the document is still empty — the card starts as a chat line and grows. */

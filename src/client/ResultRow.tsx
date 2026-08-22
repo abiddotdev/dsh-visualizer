@@ -18,7 +18,11 @@ import css from './Card.module.css'
 /** Full card props composed by the keyed Tool slot. */
 export type ResultRowProps = ToolCallViewProps & PropsLocale<'visualizer'>
 
-/** Frame height bounds and default mirrored from the tool's execute-time validation. */
+/**
+ * Frame height bounds and default mirrored from the tool's execute-time
+ * validation in src/index.ts — the client bundle cannot import the node
+ * half, so the copy is the price of the two-plane split; change both.
+ */
 const MIN_FRAME_HEIGHT_PX = 50
 const MAX_FRAME_HEIGHT_PX = 2_000
 const DEFAULT_FRAME_HEIGHT_PX = 480

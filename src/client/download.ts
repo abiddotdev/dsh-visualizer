@@ -5,6 +5,13 @@
  */
 
 /**
+ * Delay before the object URL is released. The browser starts the download
+ * only after `click()` returns, so revoking in the same task can yield an
+ * empty file; the URL needs to outlive the handoff, not the whole fetch.
+ */
+export const REVOKE_DELAY_MS = 4_000
+
+/**
  * Save one document as a standalone HTML file.
  * @param title - card title; sanitized into the download file name.
  * @param html - the complete document.
@@ -19,5 +26,5 @@ export function downloadDocument(title: string, html: string): void {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  setTimeout(() => { URL.revokeObjectURL(url) }, REVOKE_DELAY_MS)
 }

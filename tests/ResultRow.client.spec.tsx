@@ -9,11 +9,13 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
 import { STREAM_SHELL } from '../src/client/shell.ts'
+import { REVOKE_DELAY_MS } from '../src/client/download.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 const SID = 's1' as SessionId
@@ -92,8 +94,13 @@ describe('ResultRow', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Q3: "final"', html: DOC })))} />)
 
+    vi.useFakeTimers()
     screen.getByRole('button', { name: 'Download HTML' }).click()
     expect(created).toHaveBeenCalledTimes(1)
+    // The URL must outlive the click task: the browser reads the blob for
+    // the download only after click() returns.
+    expect(revoked).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-2')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.download).toBe('Q3_ _final_.html')

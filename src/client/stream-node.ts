@@ -23,7 +23,11 @@ export interface GenerativeCardData {
   readonly phase: 'streaming' | 'complete' | 'interrupted'
   /** Explicit `title` argument once decodable, else null (card shows its fallback). */
   readonly title: string | null
-  /** Explicit `height` argument once decodable, else null (card uses its default). */
+  /**
+   * Explicit `height` argument once decodable, else null. The live card
+   * ignores it — measurements own the streaming height — and the settled
+   * row reads the same argument from the logged call as its opening height.
+   */
   readonly height: number | null
   /** Latest decoded document prefix, or the complete document. */
   readonly html: string
