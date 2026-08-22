@@ -7,12 +7,13 @@
 // on a settled successful call, because a partial download is corrupt by
 // definition.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { downloadDocument } from './download.ts'
+import { submitWidgetPrompt } from './bridge-actions.ts'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
@@ -65,8 +66,9 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
 }
 
 /** Render one settled or running `visualizer` call. */
-export function ResultRow({ block, t }: ResultRowProps) {
+export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const settled = 'kind' in block
+  const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
@@ -136,6 +138,7 @@ export function ResultRow({ block, t }: ResultRowProps) {
               phase="complete"
               initialHeight={height}
               className={css.frame}
+              onPrompt={onPrompt}
             />
           )}
         </DisclosureRow>

@@ -24,6 +24,11 @@ export const MAX_FRAME_HEIGHT_PX = 4_000
 /** Height while the document is still empty — the card starts as a chat line and grows. */
 export const START_FRAME_HEIGHT_PX = 32
 
+/** Minimum gap between accepted widget prompts; bounds agent self-looping. */
+export const WIDGET_PROMPT_MIN_INTERVAL_MS = 3_000
+/** Longest prompt text accepted from a widget. */
+export const WIDGET_PROMPT_MAX_CHARS = 4_000
+
 /** Props of the content-sized shell frame. */
 export interface AutoFrameProps {
   /** Accessible frame title. */
@@ -36,16 +41,23 @@ export interface AutoFrameProps {
   readonly initialHeight: number
   /** Class name of the frame element; always provided by both cards. */
   readonly className: string | undefined
+  /** Widget-initiated prompt, already validated and rate-limited. */
+  readonly onPrompt?: ((text: string) => void) | undefined
 }
 
 /**
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
+  // Latest-callback refs keep one stable message listener across renders.
+  const onPromptRef = useRef(onPrompt)
+  const lastPromptAtRef = useRef(0)
+
+  useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
     controller.current?.destroy()
@@ -65,10 +77,22 @@ export function AutoFrame({ title, html, phase, initialHeight, className }: Auto
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameEl.current?.contentWindow) return
-      const data = event.data as { __dshGui?: boolean; type?: string; height?: unknown } | null
-      if (data === null || typeof data !== 'object' || data.__dshGui !== true || data.type !== 'size') return
-      if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return
-      setHeightPx(Math.max(MIN_FRAME_HEIGHT_PX, Math.min(MAX_FRAME_HEIGHT_PX, Math.ceil(data.height))))
+      const data = event.data as { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown } | null
+      if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
+      if (data.type === 'size') {
+        if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return
+        setHeightPx(Math.max(MIN_FRAME_HEIGHT_PX, Math.min(MAX_FRAME_HEIGHT_PX, Math.ceil(data.height))))
+        return
+      }
+      if (data.type === 'sendPrompt') {
+        if (typeof data.text !== 'string') return
+        const text = data.text.trim()
+        if (text.length === 0 || text.length > WIDGET_PROMPT_MAX_CHARS) return
+        const now = Date.now()
+        if (now - lastPromptAtRef.current < WIDGET_PROMPT_MIN_INTERVAL_MS) return
+        lastPromptAtRef.current = now
+        onPromptRef.current?.(text)
+      }
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }

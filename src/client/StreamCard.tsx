@@ -7,11 +7,12 @@
 // tool.call.toolview row takes over, so this component only ever renders
 // live evidence.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { downloadDocument } from './download.ts'
+import { submitWidgetPrompt } from './bridge-actions.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
 import css from './Card.module.css'
 
@@ -22,7 +23,7 @@ export type StreamCardProps = PropsRuntime<'conversation.chat.node', 'visualizer
 type Translate = StreamCardProps['t']
 
 /** One live document card and its shell frame. */
-function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
+function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
   const title = card.title ?? t('card.title')
   const summary = card.phase === 'streaming'
@@ -82,6 +83,7 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
             phase={card.phase === 'complete' ? 'complete' : 'streaming'}
             initialHeight={START_FRAME_HEIGHT_PX}
             className={css.frame}
+            onPrompt={onPrompt}
           />
         )}
       </DisclosureRow>
@@ -90,10 +92,11 @@ function LiveDoc({ card, t }: { card: GenerativeCardData; t: Translate }) {
 }
 
 /** Render this step's live visualizer streaming cards. */
-export function StreamCard({ node, t }: StreamCardProps) {
+export function StreamCard({ node, t, inputActions }: StreamCardProps) {
+  const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   return (
     <div className={css.stack}>
-      {node.data.cards.map((card, index) => <LiveDoc key={index} card={card} t={t} />)}
+      {node.data.cards.map((card, index) => <LiveDoc key={index} card={card} t={t} onPrompt={onPrompt} />)}
     </div>
   )
 }

@@ -37,6 +37,10 @@ The tool declares `html` as its last schema parameter, so the logged tool-call a
 
 The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation, and `write` + `show_html` when a file is wanted), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/` — one file per type, so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
 
+## The widget bridge
+
+A rendered document's scripts may call `sendPrompt(text)` — the shell bridge posts it to the host, which submits it as a `[widget]`-prefixed user turn so a dashboard can ask the agent a follow-up about what it shows. The host validates the payload (string, non-blank, ≤ 4000 chars) and rate-limits to one accepted prompt per 3 seconds per widget, so a misbehaving script cannot loop the agent. Scripts only run after a document completes, so the bridge can never fire mid-stream.
+
 ## Development
 
 ```sh

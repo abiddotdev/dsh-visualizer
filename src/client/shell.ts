@@ -53,6 +53,10 @@ const CSP_DIRECTIVES = [
  * height into reported layout — and keeps overflow hidden while partial.
  * Every content change reports the measured content height back to the host,
  * which sizes the frame to its content instead of a fixed viewport.
+ *
+ * The bridge also exposes `sendPrompt(text)` to the rendered document's
+ * scripts: one postMessage to the host, which submits it as a tagged user
+ * turn after validation and rate limiting.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -134,6 +138,13 @@ const BRIDGE_SCRIPT = `
       report();
     }
   });
+  // Widget-facing conversation channel: a rendered document's scripts may
+  // ask the agent a follow-up about what they show. Scripts only run after
+  // the document completes, so this cannot fire mid-stream; the host
+  // validates, rate-limits, and tags what arrives here.
+  window.sendPrompt = function (text) {
+    try { parent.postMessage({ __dshGui: true, type: 'sendPrompt', text: String(text) }, '*'); } catch (err) {}
+  };
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(function () { report(); }).observe(document.documentElement);
   }

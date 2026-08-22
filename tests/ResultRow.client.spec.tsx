@@ -10,6 +10,7 @@ import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
 import { STREAM_SHELL } from '../src/client/shell.ts'
 import { REVOKE_DELAY_MS } from '../src/client/download.ts'
+import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -123,5 +124,35 @@ describe('ResultRow', () => {
   it('uses the dictionary title when the arguments supply none', () => {
     render(<ResultRow {...props(settledBlock(JSON.stringify({ html: '<p>x</p>' })))} />)
     expect(screen.getByText('HTML preview')).toBeTruthy()
+  })
+
+  it('forwards a settled widget prompt as one tagged turn per interval', () => {
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    render(<ResultRow {...{ ...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC }))), inputActions: { setDraft, submit } }} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'break down Q3 by region' },
+      source: frame.contentWindow,
+    }))
+    expect(setDraft).toHaveBeenCalledWith('[widget] break down Q3 by region')
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'too soon' },
+      source: frame.contentWindow,
+    }))
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(WIDGET_PROMPT_MIN_INTERVAL_MS + 1)
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'and by product' },
+      source: frame.contentWindow,
+    }))
+    expect(submit).toHaveBeenCalledTimes(2)
   })
 })

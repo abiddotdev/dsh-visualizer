@@ -9,6 +9,7 @@ import type {} from '../src/client/index.ts'
 import { StreamCard, type StreamCardProps } from '../src/client/StreamCard.tsx'
 import type { GenerativeCardData } from '../src/client/stream-node.ts'
 import { REVOKE_DELAY_MS } from '../src/client/download.ts'
+import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -133,6 +134,46 @@ describe('StreamCard', () => {
     renderCard([{ phase: 'interrupted', title: null, height: null, html: '<p>par' }])
     expect(screen.getByText('Interrupted; document incomplete')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
+  })
+
+  it('submits a widget prompt as a tagged turn, dropping bursts and bad payloads', () => {
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    render(<StreamCard
+      node={nodeOf([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])}
+      t={t}
+      {...{ ...kit, inputActions: { setDraft, submit } }}
+    />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const send = (text: unknown, fromFrame = true): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'sendPrompt', text },
+        source: fromFrame ? frame.contentWindow : window,
+      }))
+    }
+
+    send('explain the spike at 14:00')
+    expect(setDraft).toHaveBeenCalledWith('[widget] explain the spike at 14:00')
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    // Inside the interval, later prompts from the same widget are dropped.
+    send('again')
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    // Non-string, blank, and foreign-source payloads never reach the turn.
+    vi.advanceTimersByTime(WIDGET_PROMPT_MIN_INTERVAL_MS + 1)
+    send(42)
+    send('   ')
+    send('from elsewhere', false)
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(WIDGET_PROMPT_MIN_INTERVAL_MS + 1)
+    send('what drove the dip at 09:00')
+    expect(submit).toHaveBeenCalledTimes(2)
+    expect(setDraft).toHaveBeenLastCalledWith('[widget] what drove the dip at 09:00')
   })
 
   it('renders one card per streamed call of the step in block order', () => {
