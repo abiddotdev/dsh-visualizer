@@ -20,7 +20,7 @@ export const chart: ModuleGuide = {
     'SVG labels must fit their box: truncate with an ellipsis when the label exceeds its cell width (about 7px per character at 13px font) instead of overlapping the neighbor.',
     'Chart.js needs responsive:true plus maintainAspectRatio:false with a fixed-height wrapper div; height set on the canvas itself collapses or squashes the chart.',
     'Tooltips follow the pointer with position:fixed and pointer-events:none, flipping to the left of the cursor near the right edge.',
-    'Redraw on resize: listen for window resize, re-read the container width, and re-render — the frame width follows the chat column. Animate series in with stroke-dashoffset or opacity under prefers-reduced-motion guards.',
+    'Redraw on resize: the frame fires its own resize event when the chat column changes — re-read window.innerWidth and re-render. Animate series in with stroke-dashoffset or opacity under prefers-reduced-motion guards.',
     '### Failure modes',
     'Blank or black chart: canvas colors given as var(...) — use literal hex; or the height landed on the canvas instead of the wrapper div.',
     'Labels collide or overflow: layout math skipped — measure the widest label and pad the scale domain before drawing.',
