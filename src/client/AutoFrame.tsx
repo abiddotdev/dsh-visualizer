@@ -28,6 +28,8 @@ export const START_FRAME_HEIGHT_PX = 32
 export const WIDGET_PROMPT_MIN_INTERVAL_MS = 3_000
 /** Longest prompt text accepted from a widget. */
 export const WIDGET_PROMPT_MAX_CHARS = 4_000
+/** Longest link URL accepted from a widget. */
+export const WIDGET_URL_MAX_CHARS = 2_048
 
 /** Props of the content-sized shell frame. */
 export interface AutoFrameProps {
@@ -43,21 +45,25 @@ export interface AutoFrameProps {
   readonly className: string | undefined
   /** Widget-initiated prompt, already validated and rate-limited. */
   readonly onPrompt?: ((text: string) => void) | undefined
+  /** Widget-initiated link target, already validated. */
+  readonly onOpenLink?: ((url: string) => void) | undefined
 }
 
 /**
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
   // Latest-callback refs keep one stable message listener across renders.
   const onPromptRef = useRef(onPrompt)
+  const onOpenLinkRef = useRef(onOpenLink)
   const lastPromptAtRef = useRef(0)
 
   useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
+  useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
     controller.current?.destroy()
@@ -77,7 +83,7 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameEl.current?.contentWindow) return
-      const data = event.data as { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown } | null
+      const data = event.data as { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown; url?: unknown } | null
       if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
       if (data.type === 'size') {
         if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return
@@ -92,6 +98,11 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
         if (now - lastPromptAtRef.current < WIDGET_PROMPT_MIN_INTERVAL_MS) return
         lastPromptAtRef.current = now
         onPromptRef.current?.(text)
+        return
+      }
+      if (data.type === 'openLink') {
+        if (typeof data.url !== 'string' || data.url.length === 0 || data.url.length > WIDGET_URL_MAX_CHARS) return
+        onOpenLinkRef.current?.(data.url)
       }
     }
     window.addEventListener('message', onMessage)

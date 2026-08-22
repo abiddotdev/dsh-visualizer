@@ -12,7 +12,7 @@ import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16 } from '@deepse
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { downloadDocument } from './download.ts'
-import { submitWidgetPrompt } from './bridge-actions.ts'
+import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
 import css from './Card.module.css'
 
@@ -84,6 +84,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             initialHeight={START_FRAME_HEIGHT_PX}
             className={css.frame}
             onPrompt={onPrompt}
+            onOpenLink={openWidgetLink}
           />
         )}
       </DisclosureRow>

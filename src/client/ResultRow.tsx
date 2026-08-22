@@ -13,7 +13,7 @@ import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { downloadDocument } from './download.ts'
-import { submitWidgetPrompt } from './bridge-actions.ts'
+import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
@@ -139,6 +139,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               initialHeight={height}
               className={css.frame}
               onPrompt={onPrompt}
+              onOpenLink={openWidgetLink}
             />
           )}
         </DisclosureRow>

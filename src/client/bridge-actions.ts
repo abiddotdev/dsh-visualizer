@@ -28,3 +28,17 @@ export function submitWidgetPrompt(actions: WidgetInputActions, text: string): v
   actions.setDraft(WIDGET_PROMPT_PREFIX + text)
   actions.submit()
 }
+
+/** URL schemes a widget link may carry; every other scheme is dropped. */
+const OPEN_LINK_SCHEME = /^https?:\/\//i
+
+/**
+ * Open one widget-initiated link in a new tab. Widget code is model output,
+ * so the host — not the frame — decides what may open: http(s) only, with
+ * no opener handle leaked back.
+ * @param url - validated link target from the widget.
+ */
+export function openWidgetLink(url: string): void {
+  if (!OPEN_LINK_SCHEME.test(url)) return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}

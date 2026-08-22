@@ -56,7 +56,8 @@ const CSP_DIRECTIVES = [
  *
  * The bridge also exposes `sendPrompt(text)` to the rendered document's
  * scripts: one postMessage to the host, which submits it as a tagged user
- * turn after validation and rate limiting.
+ * turn after validation and rate limiting. `openLink(url)` asks the host to
+ * open an external link; the host enforces the http(s)-only scheme check.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -144,6 +145,11 @@ const BRIDGE_SCRIPT = `
   // validates, rate-limits, and tags what arrives here.
   window.sendPrompt = function (text) {
     try { parent.postMessage({ __dshGui: true, type: 'sendPrompt', text: String(text) }, '*'); } catch (err) {}
+  };
+  // Widget-facing link channel: the host opens the URL itself, after an
+  // http(s)-only scheme check the frame cannot influence.
+  window.openLink = function (url) {
+    try { parent.postMessage({ __dshGui: true, type: 'openLink', url: String(url) }, '*'); } catch (err) {}
   };
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(function () { report(); }).observe(document.documentElement);

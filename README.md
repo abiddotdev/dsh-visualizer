@@ -41,6 +41,8 @@ The model-facing authoring guide lives in `src/guide/`: gate rules (when a visua
 
 A rendered document's scripts may call `sendPrompt(text)` — the shell bridge posts it to the host, which submits it as a `[widget]`-prefixed user turn so a dashboard can ask the agent a follow-up about what it shows. The host validates the payload (string, non-blank, ≤ 4000 chars) and rate-limits to one accepted prompt per 3 seconds per widget, so a misbehaving script cannot loop the agent. Scripts only run after a document completes, so the bridge can never fire mid-stream.
 
+Scripts may also call `openLink(url)`: the host performs the scheme check itself — http(s) only, opened with `noopener,noreferrer` — so widget code cannot reach `javascript:`, `data:`, or `file:` targets.
+
 ## Development
 
 ```sh

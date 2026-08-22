@@ -176,6 +176,25 @@ describe('StreamCard', () => {
     expect(setDraft).toHaveBeenLastCalledWith('[widget] what drove the dip at 09:00')
   })
 
+  it('opens a widget link through the host after the frame posts it', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const link = (url: unknown): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'openLink', url },
+        source: frame.contentWindow,
+      }))
+    }
+
+    link('https://example.com/source')
+    expect(open).toHaveBeenCalledWith('https://example.com/source', '_blank', 'noopener,noreferrer')
+    // The scheme gate lives in the host action; a hostile URL never opens.
+    link('javascript:alert(1)')
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
   it('renders one card per streamed call of the step in block order', () => {
     renderCard([
       { phase: 'streaming', title: 'One', height: null, html: '<p>1' },
