@@ -1,7 +1,8 @@
 /**
- * Client-side document download: the complete bytes the call carried are
+ * Client-side document export: the complete bytes the call carried are
  * already in memory, so saving needs only a Blob and an object URL — no
  * filesystem round-trip, and it works identically on replay.
+ * @module dsh-visualizer/download
  */
 
 /**
@@ -11,18 +12,34 @@
  */
 export const REVOKE_DELAY_MS = 4_000
 
+/** Prefix length examined to tell a bare SVG document from an HTML one. */
+const MODE_SNIFF_CHARS = 80
+
 /**
- * Save one document as a standalone HTML file.
+ * Whether the document is a bare SVG rather than HTML: it opens with `<svg`
+ * before any HTML framing appears. The guide teaches raw SVG as the
+ * diagram/mockup carriage, so both kinds reach the download control.
+ * @param html - the complete document.
+ * @returns true when the bytes should be saved as `.svg`.
+ */
+function isSvgDocument(html: string): boolean {
+  return html.trimStart().slice(0, MODE_SNIFF_CHARS).toLowerCase().startsWith('<svg')
+}
+
+/**
+ * Save one document as a standalone file: `.svg` for a bare SVG document,
+ * `.html` otherwise.
  * @param title - card title; sanitized into the download file name.
  * @param html - the complete document.
  */
 export function downloadDocument(title: string, html: string): void {
+  const svg = isSvgDocument(html)
   const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'render'
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const blob = new Blob([html], { type: svg ? 'image/svg+xml' : 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${safe}.html`
+  anchor.download = `${safe}.${svg ? 'svg' : 'html'}`
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
