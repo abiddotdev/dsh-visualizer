@@ -118,9 +118,16 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
     if (phase === 'complete') bridge.commit(html)
     else bridge.update(html)
   }, [html, phase])
-  // A late-decoded explicit height argument supersedes the default until the
-  // first measurement arrives; measurements then own the height.
-  useEffect(() => { setHeightPx(initialHeight) }, [initialHeight])
+  // A late-decoded explicit height argument supersedes the default only
+  // until the first measurement arrives: the schema serializes height
+  // before html, so the argument pops from undefined to a number hundreds
+  // of milliseconds into the stream, and applying it then would yank the
+  // growing frame back mid-stream. Measurements own the height after the
+  // first report.
+  const measuredRef = useRef(false)
+  useEffect(() => {
+    if (!measuredRef.current) setHeightPx(initialHeight)
+  }, [initialHeight])
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameEl.current?.contentWindow) return
@@ -143,6 +150,7 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
       if (data.type === 'size') {
         if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return
+        measuredRef.current = true
         setHeightPx(Math.max(MIN_FRAME_HEIGHT_PX, Math.min(MAX_FRAME_HEIGHT_PX, Math.ceil(data.height))))
         return
       }

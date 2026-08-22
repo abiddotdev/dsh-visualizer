@@ -65,9 +65,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            {/* The shimmer class carries the live phase; the plain summary
-             * color serves the settled and interrupted labels. */}
-            <span className={live ? `${css.summary} ${css.summaryLive}` : css.summary}>
+            <span className={css.summary}>
               {summary}
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}

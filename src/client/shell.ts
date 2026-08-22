@@ -269,6 +269,18 @@ const BRIDGE_SCRIPT = `
     set: function (key, value) { return storageOp('set', key, value); },
     delete: function (key) { return storageOp('delete', key); }
   };
+  // Streaming height heartbeat: while frozen, re-report the measured height
+  // on a slow interval so a dropped per-render report cannot leave the
+  // frame clipped until commit. It stops itself on the first tick after
+  // unfreeze; an interrupted card keeps its frame mounted, where the
+  // repeated identical post is a no-op for the host.
+  var heartbeat = setInterval(function () {
+    if (!frozen) {
+      clearInterval(heartbeat);
+      return;
+    }
+    report();
+  }, 500);
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(function () { report(); }).observe(document.documentElement);
   }

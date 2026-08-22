@@ -28,7 +28,7 @@ export const zh = {
 export const en = {
   'card.title': 'HTML preview',
   'card.thinking': 'Composing the document',
-  'card.streaming': 'Streaming',
+  'card.streaming': 'Streaming...',
   'card.chars': '{chars} chars',
   'card.interrupted': 'Interrupted; document incomplete',
   'card.copy': 'Copy HTML',
