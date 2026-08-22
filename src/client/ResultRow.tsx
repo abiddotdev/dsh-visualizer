@@ -170,18 +170,23 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
           collapsedContent={rowChrome()}
         >
           {view !== null && (
-            <AutoFrame
-              title={title}
-              html={view.html}
-              phase="complete"
-              initialHeight={height}
-              className={css.frame}
-              onPrompt={onPrompt}
-              onOpenLink={openWidgetLink}
-              onScriptError={setFailedSrc}
-              onRuntimeError={onRuntimeError}
-              storage={storage}
-            />
+            <div className={css.frameWrap}>
+              <AutoFrame
+                title={title}
+                html={view.html}
+                phase="complete"
+                initialHeight={height}
+                className={css.frame}
+                onPrompt={onPrompt}
+                onOpenLink={openWidgetLink}
+                onScriptError={setFailedSrc}
+                onRuntimeError={onRuntimeError}
+                storage={storage}
+              />
+              {/* Same live-phase sheen as the streaming card, over the
+               * running row's already-visible document. */}
+              {!settled && <div className={css.streamSweep} aria-hidden />}
+            </div>
           )}
         </DisclosureRow>
       </div>

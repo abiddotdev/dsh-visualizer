@@ -92,6 +92,50 @@
   background: transparent;
 }
 
+/* Anchors the sweep overlay over the frame without affecting its layout. */
+.frameWrap {
+  position: relative;
+}
+
+/* Diagonal sheen crossing the whole frame while the document streams: the
+ * summary shimmer's palette and cadence, traveling top-left to bottom-right
+ * as one transform-animated band over the transparent canvas. Pointer
+ * events pass through; absolute positioning keeps measurements untouched. */
+.streamSweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.streamSweep::before {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  background: linear-gradient(
+    135deg,
+    transparent 40%,
+    var(--dsw-static-deepseek-200) 50%,
+    transparent 60%
+  );
+  transform: translate3d(-45%, -45%, 0);
+  animation: gui-sweep 1.8s linear infinite;
+}
+
+@keyframes gui-sweep {
+  to {
+    transform: translate3d(45%, 45%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streamSweep::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* Quiet inline action, the deliverables-row pattern: tertiary label over
  * transparent ground, interactive hover fill, inset focus ring. */
 .download {

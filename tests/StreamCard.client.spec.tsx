@@ -261,6 +261,15 @@ describe('StreamCard', () => {
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
+  it('sweeps the frame diagonally only while the document streams', () => {
+    const live = render(<StreamCard node={nodeOf([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])} t={t} {...kit} />)
+    expect(live.container.querySelector('[class*="streamSweep"]')).toBeTruthy()
+    live.unmount()
+
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    expect(document.querySelector('[class*="streamSweep"]')).toBeNull()
+  })
+
   it('labels runtime errors from the frame: first message wins, bursts cap, junk drops', () => {
     renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const frame = document.querySelector('iframe')

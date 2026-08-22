@@ -115,18 +115,23 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
          * argument — measurements own the height, and a short open feels
          * native. */}
         {card.phase !== 'interrupted' && (
-          <AutoFrame
-            title={title}
-            html={card.html}
-            phase={card.phase === 'complete' ? 'complete' : 'streaming'}
-            initialHeight={START_FRAME_HEIGHT_PX}
-            className={css.frame}
-            onPrompt={onPrompt}
-            onOpenLink={openWidgetLink}
-            onScriptError={setFailedSrc}
-            onRuntimeError={onRuntimeError}
-            storage={storage}
-          />
+          <div className={css.frameWrap}>
+            <AutoFrame
+              title={title}
+              html={card.html}
+              phase={card.phase === 'complete' ? 'complete' : 'streaming'}
+              initialHeight={START_FRAME_HEIGHT_PX}
+              className={css.frame}
+              onPrompt={onPrompt}
+              onOpenLink={openWidgetLink}
+              onScriptError={setFailedSrc}
+              onRuntimeError={onRuntimeError}
+              storage={storage}
+            />
+            {/* The sheen rides only the live phase; a settled or interrupted
+             * frame renders plain. */}
+            {live && <div className={css.streamSweep} aria-hidden />}
+          </div>
         )}
       </DisclosureRow>
     </div>

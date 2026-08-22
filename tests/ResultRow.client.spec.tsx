@@ -90,6 +90,15 @@ describe('ResultRow', () => {
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
+  it('sweeps the running frame and leaves the settled one plain', () => {
+    const running = render(<ResultRow {...props(runningBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(running.container.querySelector('[class*="streamSweep"]')).toBeTruthy()
+    running.unmount()
+
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(document.querySelector('[class*="streamSweep"]')).toBeNull()
+  })
+
   it('downloads the settled bytes client-side under a sanitized file name', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:doc-2')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue()
