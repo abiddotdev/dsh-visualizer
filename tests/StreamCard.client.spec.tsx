@@ -191,6 +191,34 @@ describe('StreamCard', () => {
     expect(screen.getAllByText('A library failed to load; interactivity may be unavailable')).toHaveLength(1)
   })
 
+  it('answers window.storage requests from the session store', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const respond = vi.spyOn(frame.contentWindow!, 'postMessage')
+    const ask = (payload: Record<string, unknown>): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'storage-request', ...payload },
+        source: frame.contentWindow,
+      }))
+    }
+
+    ask({ op: 'set', id: 'op1', key: 'routing:marker', value: 'live' })
+    ask({ op: 'get', id: 'op2', key: 'routing:marker' })
+    ask({ op: 'get', id: 'op3', key: 'routing:absent' })
+    ask({ op: 'set', id: 'op4', key: 'routing:bad key', value: 'x' })
+    ask({ id: 'op5', key: 'routing:marker' })
+    ask({ op: 'rename', id: 'op6', key: 'routing:marker' })
+
+    const replies = respond.mock.calls.map(([message]) => message as { id: string; ok: boolean; value?: string; error?: string })
+    expect(replies.find(r => r.id === 'op1')).toMatchObject({ ok: true })
+    expect(replies.find(r => r.id === 'op2')).toMatchObject({ ok: true, value: 'live' })
+    expect(replies.find(r => r.id === 'op3')).toMatchObject({ ok: false, error: 'no stored value for key "routing:absent"' })
+    expect(replies.find(r => r.id === 'op4')).toMatchObject({ ok: false, error: expect.stringContaining('whitespace') })
+    expect(replies.find(r => r.id === 'op5')).toMatchObject({ ok: false, error: 'malformed storage request' })
+    expect(replies.find(r => r.id === 'op6')).toMatchObject({ ok: false, error: 'malformed storage request' })
+  })
+
   it('marks an interrupted card and never offers its partial bytes', () => {
     renderCard([{ phase: 'interrupted', title: null, height: null, html: '<p>par' }])
     expect(screen.getByText('Interrupted; document incomplete')).toBeTruthy()

@@ -7,13 +7,14 @@
 // on a settled successful call, because a partial download is corrupt by
 // definition.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
+import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
@@ -84,6 +85,9 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   // First failed external script wins: one notice per row, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  // State follows the document's title: the same title regenerates into the
+  // same scope, and the streaming card derives the identical one.
+  const storage = useMemo(() => createWidgetStorage(widgetStorageScope(view?.title ?? null)), [view?.title])
   const settledOk = settled && !block.isError && view !== null
 
   /** Collapsed-row trailing content: char count, then the download control on a settled success. */
@@ -163,6 +167,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               onPrompt={onPrompt}
               onOpenLink={openWidgetLink}
               onScriptError={setFailedSrc}
+              storage={storage}
             />
           )}
         </DisclosureRow>

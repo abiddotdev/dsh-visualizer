@@ -43,6 +43,8 @@ A rendered document's scripts may call `sendPrompt(text)` — the shell bridge p
 
 Scripts may also call `openLink(url)`: the host performs the scheme check itself — http(s) only, opened with `noopener,noreferrer` — so widget code cannot reach `javascript:`, `data:`, or `file:` targets.
 
+Widgets keep state across renders through `await window.storage.get/set/delete(key)`. Requests travel over postMessage with a per-call id and a 10s timeout; the host answers from a store namespaced by the document's `title` argument, so a regenerated document under the same title — streaming card or settled row — finds the values it wrote. Keys are ≤200 units without whitespace, values ≤64k units, one scope holds ≤256k units together; `get` rejects on a missing key rather than returning null. The store is durable through localStorage when reachable and per-mount memory otherwise (private modes).
+
 The frame's permission policy delegates exactly one capability: `fullscreen *`, so a chart or dashboard document may expand (Escape reverses it). Clipboard, popups, camera, and payment stay undelegated.
 
 ## Card controls and failure notices

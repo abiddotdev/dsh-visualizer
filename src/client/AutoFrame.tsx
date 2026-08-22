@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StreamFrameController } from './stream-bridge.ts'
 import { STREAM_SHELL } from './shell.ts'
+import type { WidgetStorage } from './widget-storage.ts'
 
 /** Live phase of the document this frame renders. */
 export type AutoFramePhase = 'streaming' | 'complete'
@@ -51,13 +52,15 @@ export interface AutoFrameProps {
   readonly onOpenLink?: ((url: string) => void) | undefined
   /** First external script whose load failed inside the frame. */
   readonly onScriptError?: ((src: string) => void) | undefined
+  /** Session-scoped store answering `window.storage`; absent disables it. */
+  readonly storage?: WidgetStorage | undefined
 }
 
 /**
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, storage }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
@@ -65,11 +68,13 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   const onPromptRef = useRef(onPrompt)
   const onOpenLinkRef = useRef(onOpenLink)
   const onScriptErrorRef = useRef(onScriptError)
+  const storageRef = useRef(storage)
   const lastPromptAtRef = useRef(0)
 
   useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
   useEffect(() => { onScriptErrorRef.current = onScriptError }, [onScriptError])
+  useEffect(() => { storageRef.current = storage }, [storage])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
     controller.current?.destroy()
@@ -90,7 +95,18 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameEl.current?.contentWindow) return
       const data = event.data as
-        | { __dshGui?: boolean; type?: string; height?: unknown; text?: unknown; url?: unknown; src?: unknown }
+        | {
+          __dshGui?: boolean
+          type?: string
+          height?: unknown
+          text?: unknown
+          url?: unknown
+          src?: unknown
+          op?: unknown
+          id?: unknown
+          key?: unknown
+          value?: unknown
+        }
         | null
       if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
       if (data.type === 'size') {
@@ -116,6 +132,37 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       if (data.type === 'scriptError') {
         if (typeof data.src !== 'string' || data.src.length === 0 || data.src.length > SCRIPT_ERROR_SRC_MAX_CHARS) return
         onScriptErrorRef.current?.(data.src)
+        return
+      }
+      if (data.type === 'storage-request') {
+        // The request came from the frame's script, so the frame is loaded
+        // and a direct post back cannot race the shell's load queue.
+        const respond = (ok: boolean, payload: { value?: string; error?: string }): void => {
+          frameEl.current?.contentWindow?.postMessage(
+            { __dshGui: true, type: 'storage-response', id: data.id, ok, ...payload },
+            '*',
+          )
+        }
+        const op = data.op
+        if (typeof data.id !== 'string' || data.id.length === 0
+          || typeof data.key !== 'string'
+          || (op !== 'get' && op !== 'set' && op !== 'delete')
+          || (op === 'set' && typeof data.value !== 'string')) {
+          respond(false, { error: 'malformed storage request' })
+          return
+        }
+        const store = storageRef.current
+        if (store === undefined) {
+          respond(false, { error: 'storage is unavailable on this card' })
+          return
+        }
+        try {
+          if (op === 'get') respond(true, { value: store.get(data.key) })
+          else if (op === 'set') { store.set(data.key, data.value as string); respond(true, {}) }
+          else { store.delete(data.key); respond(true, {}) }
+        } catch (err) {
+          respond(false, { error: err instanceof Error ? err.message : 'storage operation failed' })
+        }
       }
     }
     window.addEventListener('message', onMessage)

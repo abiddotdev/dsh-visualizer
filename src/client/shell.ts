@@ -58,8 +58,10 @@ const CSP_DIRECTIVES = [
  * scripts: one postMessage to the host, which submits it as a tagged user
  * turn after validation and rate limiting. `openLink(url)` asks the host to
  * open an external link; the host enforces the http(s)-only scheme check.
- * A failed external script load is reported to the host as `scriptError`,
- * which the card surfaces as a load-failure notice.
+ * `window.storage` is an async get/set/delete key-value store scoped to the
+ * conversation, request/response with a per-call timeout. A failed external
+ * script load is reported to the host as `scriptError`, which the card
+ * surfaces as a load-failure notice.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -147,6 +149,13 @@ const BRIDGE_SCRIPT = `
       if (vp) { reconcile(vp, toFragment(d.html || '')); }
       runScripts();
       report();
+    } else if (d.type === 'storage-response') {
+      var entry = pendingOps[d.id];
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      delete pendingOps[d.id];
+      if (d.ok) entry.resolve(d.value);
+      else entry.reject(new Error(d.error || 'storage operation failed'));
     }
   });
   // Widget-facing conversation channel: a rendered document's scripts may
@@ -160,6 +169,33 @@ const BRIDGE_SCRIPT = `
   // http(s)-only scheme check the frame cannot influence.
   window.openLink = function (url) {
     try { parent.postMessage({ __dshGui: true, type: 'openLink', url: String(url) }, '*'); } catch (err) {}
+  };
+  // Widget-facing key-value store: request/response over postMessage, one
+  // pending entry per call with its own timeout. get() rejects on a missing
+  // key — absence is an error the widget catches, never a silent null.
+  var pendingOps = {};
+  var opSeq = 0;
+  function storageOp(op, key, value) {
+    return new Promise(function (resolve, reject) {
+      var id = 'op' + (++opSeq);
+      var timer = setTimeout(function () {
+        delete pendingOps[id];
+        reject(new Error('storage ' + op + ' timed out'));
+      }, 10000);
+      pendingOps[id] = { resolve: resolve, reject: reject, timer: timer };
+      try {
+        parent.postMessage({ __dshGui: true, type: 'storage-request', op: op, id: id, key: key, value: value }, '*');
+      } catch (err) {
+        clearTimeout(timer);
+        delete pendingOps[id];
+        reject(err);
+      }
+    });
+  }
+  window.storage = {
+    get: function (key) { return storageOp('get', key); },
+    set: function (key, value) { return storageOp('set', key, value); },
+    delete: function (key) { return storageOp('delete', key); }
   };
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(function () { report(); }).observe(document.documentElement);

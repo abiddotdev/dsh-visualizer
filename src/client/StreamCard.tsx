@@ -7,12 +7,13 @@
 // tool.call.toolview row takes over, so this component only ever renders
 // live evidence.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
+import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
 import css from './Card.module.css'
 
@@ -30,6 +31,9 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const title = card.title ?? t('card.title')
+  // State follows the document's title: the same title regenerates into the
+  // same scope, and the settled row derives the identical one.
+  const storage = useMemo(() => createWidgetStorage(widgetStorageScope(card.title)), [card.title])
   const summary = card.phase === 'streaming'
     ? card.html.length === 0 ? t('card.thinking') : t('card.streaming')
     : card.phase === 'interrupted'
@@ -108,6 +112,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             onPrompt={onPrompt}
             onOpenLink={openWidgetLink}
             onScriptError={setFailedSrc}
+            storage={storage}
           />
         )}
       </DisclosureRow>
