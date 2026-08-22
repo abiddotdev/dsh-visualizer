@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -9,7 +9,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
 import { STREAM_SHELL } from '../src/client/shell.ts'
-import { REVOKE_DELAY_MS } from '../src/client/download.ts'
+import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -120,6 +120,19 @@ describe('ResultRow', () => {
 
     expect(document.querySelector('iframe')).toBeNull()
     expect(screen.getByText('Call arguments carry no renderable HTML')).toBeTruthy()
+  })
+
+  it('copies the settled bytes and confirms briefly on the row', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.useFakeTimers()
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
+    expect(writeText).toHaveBeenCalledWith(DOC)
+    expect(screen.getByText('Copied')).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(COPY_FEEDBACK_MS) })
+    expect(screen.getByText('Copy HTML')).toBeTruthy()
   })
 
   it('uses the dictionary title when the arguments supply none', () => {

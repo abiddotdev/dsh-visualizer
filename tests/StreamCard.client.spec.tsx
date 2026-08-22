@@ -8,7 +8,7 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.ts'
 import { StreamCard, type StreamCardProps } from '../src/client/StreamCard.tsx'
 import type { GenerativeCardData } from '../src/client/stream-node.ts'
-import { REVOKE_DELAY_MS } from '../src/client/download.ts'
+import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -50,6 +50,16 @@ function nodeOf(cards: readonly GenerativeCardData[]): StreamCardProps['node'] {
 
 function renderCard(cards: readonly GenerativeCardData[]): void {
   render(<StreamCard node={nodeOf(cards)} t={t} {...kit} />)
+}
+
+/** Click and flush the copy promise chain plus its React update. */
+async function flushClick(click: () => void): Promise<void> {
+  await act(async () => { click() })
+}
+
+/** Advance fake time inside act so the reverted label re-renders. */
+function elapse(ms: number): void {
+  act(() => { vi.advanceTimersByTime(ms) })
 }
 
 describe('StreamCard', () => {
@@ -131,6 +141,30 @@ describe('StreamCard', () => {
     expect(revoked).toHaveBeenCalledWith('blob:doc-1')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
     expect(anchor.download).toBe('Rev _Q3__dash.html')
+  })
+
+  it('copies the settled bytes and confirms briefly, reverting on denial', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.useFakeTimers()
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+
+    await flushClick(() => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
+    expect(writeText).toHaveBeenCalledWith('<p>done</p>')
+    expect(screen.getByText('Copied')).toBeTruthy()
+
+    elapse(COPY_FEEDBACK_MS)
+    expect(screen.getByText('Copy HTML')).toBeTruthy()
+
+    writeText.mockRejectedValueOnce(new Error('denied'))
+    await flushClick(() => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
+    expect(screen.getByText('Copy HTML')).toBeTruthy()
+    expect(screen.queryByText('Copied')).toBeNull()
+  })
+
+  it('offers no copy control while the document is still streaming', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
+    expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
   })
 
   it('marks an interrupted card and never offers its partial bytes', () => {

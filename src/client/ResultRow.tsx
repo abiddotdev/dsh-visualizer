@@ -8,11 +8,11 @@
 // definition.
 
 import { useCallback, useState } from 'react'
-import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { downloadDocument } from './download.ts'
+import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import css from './Card.module.css'
 
@@ -80,6 +80,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
       ? block.error.code
       : t('row.missing')
   const [expanded, setExpanded] = useState(true)
+  const [copied, setCopied] = useState(false)
   const settledOk = settled && !block.isError && view !== null
 
   /** Collapsed-row trailing content: char count, then the download control on a settled success. */
@@ -88,17 +89,34 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
       <span className={css.separator} aria-hidden />
       <span className={css.summary}>{summary}</span>
       {settledOk && (
-        <button
-          type="button"
-          className={css.download}
-          onClick={(event) => {
-            event.stopPropagation()
-            downloadDocument(title, view.html)
-          }}
-        >
-          <IconDownloadOutline16 size={14} />
-          {t('row.download')}
-        </button>
+        <>
+          <button
+            type="button"
+            className={css.download}
+            onClick={(event) => {
+              event.stopPropagation()
+              void copyDocument(view.html).then((ok) => {
+                if (!ok) return
+                setCopied(true)
+                window.setTimeout(() => { setCopied(false) }, COPY_FEEDBACK_MS)
+              })
+            }}
+          >
+            <IconCopyOutline16 size={14} />
+            {copied ? t('row.copied') : t('row.copy')}
+          </button>
+          <button
+            type="button"
+            className={css.download}
+            onClick={(event) => {
+              event.stopPropagation()
+              downloadDocument(title, view.html)
+            }}
+          >
+            <IconDownloadOutline16 size={14} />
+            {t('row.download')}
+          </button>
+        </>
       )}
     </>
   )

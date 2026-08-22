@@ -8,10 +8,10 @@
 // live evidence.
 
 import { useCallback, useState } from 'react'
-import { DisclosureRow, IconCodeOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
-import { downloadDocument } from './download.ts'
+import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
 import css from './Card.module.css'
@@ -25,6 +25,7 @@ type Translate = StreamCardProps['t']
 /** One live document card and its shell frame. */
 function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
+  const [copied, setCopied] = useState(false)
   const title = card.title ?? t('card.title')
   const summary = card.phase === 'streaming'
     ? card.html.length === 0 ? t('card.thinking') : t('card.streaming')
@@ -57,17 +58,34 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
               {summary}
             </span>
             {card.phase === 'complete' && (
-              <button
-                type="button"
-                className={css.download}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  downloadDocument(title, card.html)
-                }}
-              >
-                <IconDownloadOutline16 size={14} />
-                {t('row.download')}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={css.download}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void copyDocument(card.html).then((ok) => {
+                      if (!ok) return
+                      setCopied(true)
+                      window.setTimeout(() => { setCopied(false) }, COPY_FEEDBACK_MS)
+                    })
+                  }}
+                >
+                  <IconCopyOutline16 size={14} />
+                  {copied ? t('card.copied') : t('card.copy')}
+                </button>
+                <button
+                  type="button"
+                  className={css.download}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    downloadDocument(title, card.html)
+                  }}
+                >
+                  <IconDownloadOutline16 size={14} />
+                  {t('row.download')}
+                </button>
+              </>
             )}
           </>
         )}
