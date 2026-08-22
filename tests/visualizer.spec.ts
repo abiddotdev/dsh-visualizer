@@ -71,7 +71,7 @@ describe('visualizer tool', () => {
     expect(result.isError).toBe(false)
     expect(result.content).toEqual([{
       type: 'text',
-      text: `Rendered Revenue dashboard (${html.length} bytes, 480px frame)`,
+      text: `Rendered Revenue dashboard (${html.length} bytes, 480px frame); document check passed.`,
     }])
     expect(result.meta).toBeUndefined()
   })
@@ -81,7 +81,22 @@ describe('visualizer tool', () => {
     // 2 CJK characters = 6 UTF-8 bytes, 2 UTF-16 code units.
     const result = await call(ctx, { html: '中文' })
 
-    expect(result.content).toEqual([{ type: 'text', text: 'Rendered HTML (6 bytes, 480px frame)' }])
+    expect(result.content).toEqual([{ type: 'text', text: 'Rendered HTML (6 bytes, 480px frame); document check passed.' }])
+  })
+
+  it('lists document issues in the result so the model re-renders in the same turn', async () => {
+    const { ctx } = await setup()
+    const html = '<svg>\n<circle cx="1" cx="2" r="2" fill="url(#grad)"/>\n<script>function broken(</script>\n</svg>'
+
+    const result = await call(ctx, { title: 'Broken', html })
+
+    expect(result.isError).toBe(false)
+    const text = firstText(result)
+    expect(text).toContain('3 document issue(s)')
+    expect(text).toContain('fix and re-render the corrected document in this turn')
+    expect(text).toContain('line 2: duplicate attribute "cx" on <circle>')
+    expect(text).toContain('line 2: references id "grad" but no element defines it')
+    expect(text).toContain('line 3: script does not parse:')
   })
 
   it('rejects an empty document, an oversized one, and a fractional height', async () => {

@@ -20,6 +20,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // injected service member type-checks without the harness-wide program.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
+import { inspectDocument } from './inspect.ts'
 
 export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
@@ -58,6 +59,8 @@ interface RenderHtmlResult {
   title: string
   bytes: number
   height: number
+  /** Settle-time document check findings, one string per defect; empty when clean. */
+  issues: string[]
 }
 
 /** Result of one guide lookup; `text` is the model-visible recipe. */
@@ -65,6 +68,9 @@ interface GuideResult {
   modules: string[]
   text: string
 }
+
+/** Most inspection findings listed in one result; the rest collapse to a count. */
+const MAX_REPORTED_ISSUES = 6
 
 /**
  * Panel title for a document: the explicit `title` argument, else a fixed
@@ -77,6 +83,25 @@ function deriveTitle(explicitTitle: string | undefined): string {
   const trimmed = explicitTitle.trim()
   if (trimmed.length === 0) throw new Error('title must be a non-empty string')
   return trimmed
+}
+
+/**
+ * Project one render result into its model-visible text: the base line
+ * every result carries, then the document check verdict. A clean document
+ * says so; a defective one lists its findings with the re-render
+ * instruction, so the correction happens in the same turn.
+ * @param value - the canonical result of the call.
+ * @returns the rendered text block content.
+ */
+function renderResultText(value: RenderHtmlResult): string {
+  const base = `Rendered ${value.title} (${value.bytes} bytes, ${value.height}px frame)`
+  const issues = value.issues ?? []
+  if (issues.length === 0) return `${base}; document check passed.`
+  const shown = issues.slice(0, MAX_REPORTED_ISSUES)
+  const hidden = issues.length - shown.length
+  const list = shown.map(issue => `- ${issue}`).join('\n')
+  const tail = hidden > 0 ? `\n- …and ${hidden} more` : ''
+  return `${base}; ${issues.length} document issue(s) — fix and re-render the corrected document in this turn:\n${list}${tail}`
 }
 
 /**
@@ -97,7 +122,8 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
     description: 'Render one self-contained HTML document inline in the chat window, streamed live as you write. '
       + 'Pass the complete document — styles and scripts inline or from public CDNs — as the html argument, with html as the LAST parameter so the preview can stream while you write; do not write the document to a file first. '
       + 'It is displayed in a sandboxed frame on the tool card. '
-      + 'Use this to present a UI mockup, chart, or interactive artifact.',
+      + 'Use this to present a UI mockup, chart, or interactive artifact. '
+      + 'The result carries a static document check; when it lists issues, fix them and re-render the corrected document before finishing your turn.',
     parameters: {
       title: { type: 'string', description: 'Panel title shown on the card.' },
       height: {
@@ -119,11 +145,12 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
           title: { type: 'string', required: true },
           bytes: { type: 'number', required: true },
           height: { type: 'number', required: true },
+          issues: { type: 'array', items: { type: 'string' } },
         },
       },
       render: (_args, value) => [{
         type: 'text',
-        text: `Rendered ${value.title} (${value.bytes} bytes, ${value.height}px frame)`,
+        text: renderResultText(value as RenderHtmlResult),
       }],
     },
     execute(args): Promise<RenderHtmlResult> {
@@ -139,7 +166,9 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       if (bytes > config.maxHtmlBytes) {
         throw new Error(`the document is ${bytes} bytes, over the ${config.maxHtmlBytes}-byte render limit`)
       }
-      return Promise.resolve({ title, bytes, height })
+      const issues = inspectDocument(args.html).issues
+        .map(issue => `line ${issue.line}: ${issue.message}`)
+      return Promise.resolve({ title, bytes, height, issues })
     },
   }))
 

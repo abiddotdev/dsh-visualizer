@@ -59,6 +59,10 @@ At boot the shell asks the host for its design tokens; AutoFrame collects every 
 
 A settled card offers two client-side actions over the same bytes: **Download** (a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`) and **Copy HTML** (`navigator.clipboard.writeText` with a brief confirmation; a denied clipboard shows none). When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but silently does nothing.
 
+## Settle-time document check
+
+When a call settles, `execute()` statically inspects the finished document (`src/inspect.ts`): script bodies are compiled — never executed — so syntax errors surface without side effects; attributes are scanned per tag for duplicates, ids for double definitions, and `url(#…)`/`href="#…"` references for dangling targets; inline event handlers get the same compile check. The verdict rides the tool result, which is the model's own channel: a clean render says `document check passed`, a defective one lists its findings (line-numbered, capped at six) with the instruction to fix and re-render in the same turn. Because tool results are logged, a replayed session reproduces the verdict exactly. The check is deliberately heuristic and conservative — it declines to judge a module script whose import statements cannot be lifted cleanly rather than risk a false verdict, and it cannot gate what already streamed: its guarantee is that authored defects are named and repaired in-turn, not that no intermediate frame was ever painted.
+
 ## Development
 
 ```sh
