@@ -206,6 +206,30 @@ const BRIDGE_SCRIPT = `
       else entry.reject(new Error(d.error || 'storage operation failed'));
     }
   });
+  // Navigation guard: the frame is a null-origin srcdoc whose base URL is
+  // inherited from the host, so even a fragment anchor click would navigate
+  // the whole host app inside this card. Anchor clicks never navigate:
+  // fragment links scroll in place, absolute http(s) links go through the
+  // host's openLink gate, everything else is dropped.
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var link = t && t.closest ? t.closest('a[href]') : null;
+    if (!link) return;
+    e.preventDefault();
+    var href = link.getAttribute('href');
+    if (!href) return;
+    if (href.charAt(0) === '#') {
+      var id = href.slice(1);
+      if (!id) return;
+      try { id = decodeURIComponent(id); } catch (err) {}
+      var target = document.getElementById(id);
+      if (!target || !target.scrollIntoView) return;
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      return;
+    }
+    if (/^https?:\\/\\//i.test(href)) window.openLink(href);
+  }, true);
   // Widget-facing conversation channel: a rendered document's scripts may
   // ask the agent a follow-up about what they show. Scripts only run after
   // the document completes, so this cannot fire mid-stream; the host

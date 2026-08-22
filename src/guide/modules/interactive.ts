@@ -20,6 +20,7 @@ export const interactive: ModuleGuide = {
     'Size canvas to devicePixelRatio with the context scaled to match, and SVG via viewBox, so controls stay crisp on scaled displays.',
     '### Failure modes',
     'Widget vanishes on submit: a <form> tag — plain buttons with handlers.',
+    'The whole app loads inside the card after a click: an href anchor navigated the null-origin frame — plain buttons with scrollIntoView; fragment links are converted automatically.',
     'Display desyncs after updates: direct DOM mutation — route every change through state and render().',
     'State resets after regeneration: localStorage silently failed — window.storage is the supported store.',
     'Canvas colors draw black or transparent: var(...) passed as a fill — use literal hex on canvas, tokens in CSS.',

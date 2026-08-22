@@ -19,4 +19,5 @@ export const CONTRACT: readonly string[] = [
   'The frame spans the chat column and the document fills it: give SVG width="100%" with a viewBox, read window.innerWidth for script-driven layouts, and never hardcode a design width like 800px — a fixed-width element overflows the column or wastes it. The frame fires its own resize event when the column changes.',
   'Nearly every broken visual traces to one of three causes: a position defined in two places, layout math skipped, or the DOM mutated directly instead of re-rendered — derive each position once, compute before drawing, and render from a single state object.',
   'A render result carries a static document check (script syntax, duplicate attributes, dangling id references); when it lists issues, fix them and re-render the corrected document before finishing your turn.',
+  'Never navigate from inside the document: no href anchors, no location writes, no forms — the frame is a null-origin srcdoc and any navigation reloads the host app inside the card. For in-document jumps use <button> with element.scrollIntoView(); fragment links are converted to that scroll automatically.',
 ]

@@ -49,6 +49,8 @@ Scripts may also call `openLink(url)`: the host performs the scheme check itself
 
 Widgets keep state across renders through `await window.storage.get/set/delete(key)`. Requests travel over postMessage with a per-call id and a 10s timeout; the host answers from a store namespaced by the document's `title` argument, so a regenerated document under the same title — streaming card or settled row — finds the values it wrote. Keys are ≤200 units without whitespace, values ≤64k units, one scope holds ≤256k units together; `get` rejects on a missing key rather than returning null. The store is durable through localStorage when reachable and per-mount memory otherwise (private modes).
 
+Anchor clicks inside the document never navigate: the frame is a null-origin `srcdoc` whose base URL is inherited from the host, so even a `#fragment` link would reload the whole app inside the card. A capture-phase guard in the shell prevents every anchor's default action and converts it instead — fragment links scroll to their target in place (`scrollIntoView`, instant under reduced motion), absolute `http(s)` links go through the same validated `openLink` gate as explicit calls, and anything else is dropped.
+
 The frame's permission policy delegates exactly one capability: `fullscreen *`, so a chart or dashboard document may expand (Escape reverses it). Clipboard, popups, camera, and payment stay undelegated.
 
 ## Theme tokens
