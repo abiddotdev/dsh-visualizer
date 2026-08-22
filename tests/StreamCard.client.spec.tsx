@@ -219,6 +219,42 @@ describe('StreamCard', () => {
     expect(replies.find(r => r.id === 'op6')).toMatchObject({ ok: false, error: 'malformed storage request' })
   })
 
+  it('answers the shell theme pull and pushes tokens on theme changes', async () => {
+    const computedSpy = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      length: 3,
+      0: '--dsw-alias-label-primary',
+      1: '--other-token',
+      2: '--dsw-empty',
+      getPropertyValue: (name: string) => (name === '--dsw-alias-label-primary' ? ' #e8e8e8 ' : ''),
+    } as unknown as CSSStyleDeclaration)
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const respond = vi.spyOn(frame.contentWindow!, 'postMessage')
+
+    const ask = (): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'theme-request' },
+        source: frame.contentWindow,
+      }))
+    }
+    const themePosts = (): number => respond.mock.calls
+      .filter(([message]) => (message as { type?: string }).type === 'theme').length
+    ask()
+    expect(respond).toHaveBeenLastCalledWith(
+      { __dshGui: true, type: 'theme', vars: { '--dsw-alias-label-primary': '#e8e8e8' } },
+      '*',
+    )
+    expect(themePosts()).toBe(1)
+
+    // Observer callbacks run as microtasks; act flushes them.
+    await act(async () => { document.body.setAttribute('data-theme', 'dark') })
+    expect(themePosts()).toBe(2)
+    await act(async () => { document.body.setAttribute('data-unrelated', 'x') })
+    expect(themePosts()).toBe(2)
+    computedSpy.mockRestore()
+  })
+
   it('marks an interrupted card and never offers its partial bytes', () => {
     renderCard([{ phase: 'interrupted', title: null, height: null, html: '<p>par' }])
     expect(screen.getByText('Interrupted; document incomplete')).toBeTruthy()

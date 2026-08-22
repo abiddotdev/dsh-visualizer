@@ -14,5 +14,6 @@ export const CONTRACT: readonly string[] = [
   'The preview renders on a transparent canvas over the chat background; do not set page or body backgrounds unless the user asks for a specific background or theme.',
   'While the document streams, markup is replaced as it grows: place style rules before the markup they style, and avoid gradients and shadows on streamed content.',
   'Animate only transform, opacity, and stroke-dashoffset, wrapped in @media (prefers-reduced-motion: no-preference); animating layout properties repaints the whole frame on every tick.',
+  'The host injects its --dsw-* design tokens onto the document root at load and again on theme changes — color with them (e.g. color: var(--dsw-alias-label-primary)) so the artifact follows the app theme instead of hardcoding its own palette.',
   'The frame sizes itself to the content: avoid position:fixed, which reports no height, and never hide streamed content with display:none.',
 ]

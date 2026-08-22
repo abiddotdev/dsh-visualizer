@@ -47,6 +47,10 @@ Widgets keep state across renders through `await window.storage.get/set/delete(k
 
 The frame's permission policy delegates exactly one capability: `fullscreen *`, so a chart or dashboard document may expand (Escape reverses it). Clipboard, popups, camera, and payment stay undelegated.
 
+## Theme tokens
+
+At boot the shell asks the host for its design tokens; AutoFrame collects every `--dsw-*` custom property from the document root's computed style and posts them in, and the shell applies them to its own root element. A `MutationObserver` on the host's `class`/`style`/`data-theme` attributes re-pushes the set when the theme flips, and the shell drops variables the new theme no longer defines — so `color: var(--dsw-alias-label-primary)` inside a document tracks the app theme with no hardcoded palette.
+
 ## Card controls and failure notices
 
 A settled card offers two client-side actions over the same bytes: **Download** (a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`) and **Copy HTML** (`navigator.clipboard.writeText` with a brief confirmation; a denied clipboard shows none). When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but silently does nothing.

@@ -34,6 +34,27 @@ export const WIDGET_URL_MAX_CHARS = 2_048
 /** Longest script source URL accepted from a load-failure report. */
 export const SCRIPT_ERROR_SRC_MAX_CHARS = 512
 
+/** Prefix of the host design tokens forwarded into the frame. */
+const THEME_TOKEN_PREFIX = '--dsw-'
+
+/**
+ * Collect the host's current design tokens from the document root's
+ * computed style; the indexed walk yields custom properties in every
+ * engine that supports them and an empty set where none exist.
+ * @returns token name to current value.
+ */
+function collectThemeTokens(): Record<string, string> {
+  const vars: Record<string, string> = {}
+  const computed = window.getComputedStyle(document.documentElement)
+  for (let index = 0; index < computed.length; index++) {
+    const name = computed[index]
+    if (!name.startsWith(THEME_TOKEN_PREFIX)) continue
+    const value = computed.getPropertyValue(name).trim()
+    if (value.length > 0) vars[name] = value
+  }
+  return vars
+}
+
 /** Props of the content-sized shell frame. */
 export interface AutoFrameProps {
   /** Accessible frame title. */
@@ -114,6 +135,14 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
         setHeightPx(Math.max(MIN_FRAME_HEIGHT_PX, Math.min(MAX_FRAME_HEIGHT_PX, Math.ceil(data.height))))
         return
       }
+      if (data.type === 'theme-request') {
+        // The shell asks at boot because a push could race its load queue.
+        frameEl.current?.contentWindow?.postMessage(
+          { __dshGui: true, type: 'theme', vars: collectThemeTokens() },
+          '*',
+        )
+        return
+      }
       if (data.type === 'sendPrompt') {
         if (typeof data.text !== 'string') return
         const text = data.text.trim()
@@ -166,7 +195,22 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       }
     }
     window.addEventListener('message', onMessage)
-    return () => { window.removeEventListener('message', onMessage) }
+    // Themes usually flip a class or data attribute on the root elements;
+    // attribute-only observation re-pushes the tokens when that happens.
+    const pushTheme = (): void => {
+      frameEl.current?.contentWindow?.postMessage(
+        { __dshGui: true, type: 'theme', vars: collectThemeTokens() },
+        '*',
+      )
+    }
+    const themeObserver = new MutationObserver(pushTheme)
+    for (const target of [document.documentElement, document.body]) {
+      themeObserver.observe(target, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
+    }
+    return () => {
+      window.removeEventListener('message', onMessage)
+      themeObserver.disconnect()
+    }
   }, [])
 
   return (

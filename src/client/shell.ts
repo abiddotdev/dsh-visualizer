@@ -59,9 +59,12 @@ const CSP_DIRECTIVES = [
  * turn after validation and rate limiting. `openLink(url)` asks the host to
  * open an external link; the host enforces the http(s)-only scheme check.
  * `window.storage` is an async get/set/delete key-value store scoped to the
- * conversation, request/response with a per-call timeout. A failed external
- * script load is reported to the host as `scriptError`, which the card
- * surfaces as a load-failure notice.
+ * conversation, request/response with a per-call timeout. At boot the shell
+ * requests the host's theme tokens and applies every `--dsw-*` variable to
+ * its root element, so documents can theme with the host's own tokens; the
+ * host re-pushes them when the theme changes. A failed external script load
+ * is reported to the host as `scriptError`, which the card surfaces as a
+ * load-failure notice.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -138,6 +141,22 @@ const BRIDGE_SCRIPT = `
       });
     });
   }
+  // Host-theme channel: the shell asks once at boot and re-applies whatever
+  // the host pushes on later theme changes. Applied to the root element so
+  // the document's CSS can use var(--dsw-*) tokens and follow the host theme.
+  var appliedTheme = {};
+  function applyTheme(vars) {
+    var root = document.documentElement;
+    for (var name in appliedTheme) {
+      if (!(name in vars)) root.style.removeProperty(name);
+    }
+    appliedTheme = vars || {};
+    for (var key in appliedTheme) {
+      root.style.setProperty(key, appliedTheme[key]);
+    }
+  }
+  try { parent.postMessage({ __dshGui: true, type: 'theme-request' }, '*'); } catch (err) {}
+
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || d.__dshGui !== true) return;
@@ -149,6 +168,8 @@ const BRIDGE_SCRIPT = `
       if (vp) { reconcile(vp, toFragment(d.html || '')); }
       runScripts();
       report();
+    } else if (d.type === 'theme') {
+      applyTheme(d.vars && typeof d.vars === 'object' ? d.vars : {});
     } else if (d.type === 'storage-response') {
       var entry = pendingOps[d.id];
       if (!entry) return;
