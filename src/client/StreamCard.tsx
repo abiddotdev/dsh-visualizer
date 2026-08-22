@@ -8,7 +8,7 @@
 // live evidence.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
@@ -80,6 +80,8 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                 <button
                   type="button"
                   className={css.download}
+                  aria-label={copied ? t('card.copied') : t('card.copy')}
+                  title={copied ? t('card.copied') : t('card.copy')}
                   onClick={(event) => {
                     event.stopPropagation()
                     void copyDocument(card.html).then((ok) => {
@@ -89,19 +91,21 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                     })
                   }}
                 >
-                  <IconCopyOutline16 size={14} />
-                  {copied ? t('card.copied') : t('card.copy')}
+                  {/* The check mark is the copied confirmation; the accessible
+                   * name carries the state change. */}
+                  {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
                 </button>
                 <button
                   type="button"
                   className={css.download}
+                  aria-label={t('row.download')}
+                  title={t('row.download')}
                   onClick={(event) => {
                     event.stopPropagation()
                     downloadDocument(title, card.html)
                   }}
                 >
                   <IconDownloadOutline16 size={14} />
-                  {t('row.download')}
                 </button>
               </>
             )}

@@ -8,7 +8,7 @@
 // definition.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -73,12 +73,15 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
+  // The failure rides the alert icon in the row chrome; its native tooltip
+  // carries the full error the result logged.
+  const errorInfo = settled && block.isError && block.error !== undefined ? block.error : null
   const summary = view !== null
     ? settled && !block.isError
       ? t('row.chars', { chars: view.html.length })
       : t('row.running')
-    : settled && block.isError && block.error !== undefined
-      ? block.error.code
+    : errorInfo !== null
+      ? ''
       : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -108,11 +111,22 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
           {runtimeError}
         </span>
       )}
+      {errorInfo !== null && (
+        <span
+          className={css.alertIcon}
+          title={`${errorInfo.name}: ${errorInfo.code}`}
+          aria-label={`${errorInfo.name}: ${errorInfo.code}`}
+        >
+          <IconWarningOutline16 size={14} />
+        </span>
+      )}
       {settledOk && (
         <>
           <button
             type="button"
             className={css.download}
+            aria-label={copied ? t('row.copied') : t('row.copy')}
+            title={copied ? t('row.copied') : t('row.copy')}
             onClick={(event) => {
               event.stopPropagation()
               void copyDocument(view.html).then((ok) => {
@@ -122,19 +136,21 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               })
             }}
           >
-            <IconCopyOutline16 size={14} />
-            {copied ? t('row.copied') : t('row.copy')}
+            {/* The check mark is the copied confirmation; the accessible name
+             * carries the state change. */}
+            {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
           </button>
           <button
             type="button"
             className={css.download}
+            aria-label={t('row.download')}
+            title={t('row.download')}
             onClick={(event) => {
               event.stopPropagation()
               downloadDocument(title, view.html)
             }}
           >
             <IconDownloadOutline16 size={14} />
-            {t('row.download')}
           </button>
         </>
       )}

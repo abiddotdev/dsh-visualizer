@@ -12,6 +12,17 @@
   min-height: 32px;
 }
 
+/* The heading chrome stays one inline cluster after the title: nothing in
+ * the row may stretch, or the trailing actions detach toward the right edge
+ * (the fill-summary pattern other tool rows use). */
+.row .summary,
+.row .separator,
+.row .scriptError,
+.row .alertIcon,
+.row .download {
+  flex: none;
+}
+
 .title {
   font-weight: 500;
 }
@@ -31,6 +42,13 @@
 .scriptError {
   color: var(--dsw-alias-state-warn-label);
   font: var(--dsw-font-xs-13);
+}
+
+/* Error marker in the row chrome: the warn-register alert icon; hovering it
+ * reveals the logged error through the native tooltip. */
+.alertIcon {
+  display: inline-flex;
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .chevron {

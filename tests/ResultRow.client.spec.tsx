@@ -121,7 +121,11 @@ describe('ResultRow', () => {
     render(<ResultRow {...props(settledBlock(JSON.stringify({ html: DOC }), true))} />)
 
     expect(document.querySelector('iframe')).toBeNull()
-    expect(screen.getByText('E_TOOL')).toBeTruthy()
+    // The alert icon carries the failure; its native tooltip holds the
+    // logged error.
+    const alert = document.querySelector<HTMLElement>('[title="Error: E_TOOL"]')
+    expect(alert).not.toBeNull()
+    expect(alert?.getAttribute('aria-label')).toBe('Error: E_TOOL')
   })
 
   it('shows the load-failure notice once a frame script fails', () => {
@@ -185,9 +189,10 @@ describe('ResultRow', () => {
 
     await act(async () => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
     expect(writeText).toHaveBeenCalledWith(DOC)
-    expect(screen.getByText('Copied')).toBeTruthy()
+    // The confirmation is the icon swap plus the accessible name change.
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy()
     act(() => { vi.advanceTimersByTime(COPY_FEEDBACK_MS) })
-    expect(screen.getByText('Copy HTML')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
   })
 
   it('uses the dictionary title when the arguments supply none', () => {

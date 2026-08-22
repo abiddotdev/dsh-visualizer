@@ -149,15 +149,16 @@ describe('StreamCard', () => {
 
     await flushClick(() => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
     expect(writeText).toHaveBeenCalledWith('<p>done</p>')
-    expect(screen.getByText('Copied')).toBeTruthy()
+    // The confirmation is the icon swap plus the accessible name change.
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy()
 
     elapse(COPY_FEEDBACK_MS)
-    expect(screen.getByText('Copy HTML')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
 
     writeText.mockRejectedValueOnce(new Error('denied'))
     await flushClick(() => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
-    expect(screen.getByText('Copy HTML')).toBeTruthy()
-    expect(screen.queryByText('Copied')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull()
   })
 
   it('offers no copy control while the document is still streaming', () => {
