@@ -116,6 +116,10 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       srcDoc={STREAM_SHELL}
       title={title}
       sandbox="allow-scripts"
+      // Fullscreen is the one delegated permission: chart and dashboard
+      // documents may expand, Escape always reverses it. No other capability
+      // is granted to the frame.
+      allow="fullscreen *"
       style={{ height: `${heightPx}px` }}
     />
   )

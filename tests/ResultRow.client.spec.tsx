@@ -74,6 +74,7 @@ describe('ResultRow', () => {
     const frame = document.querySelector('iframe')
     expect(frame?.getAttribute('srcDoc')).toBe(STREAM_SHELL)
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame?.getAttribute('allow')).toBe('fullscreen *')
     expect(frame?.style.height).toBe('360px')
     expect(screen.getByText('55 chars')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()

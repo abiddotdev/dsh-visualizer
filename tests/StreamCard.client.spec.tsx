@@ -60,6 +60,9 @@ describe('StreamCard', () => {
     const frame = document.querySelector('iframe')
     expect(frame?.getAttribute('srcdoc')).toContain('dsh-gui-viewport')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+    // Fullscreen is delegated and nothing else: charts may expand, Escape
+    // reverses, no clipboard/popups/camera ride the permission policy.
+    expect(frame?.getAttribute('allow')).toBe('fullscreen *')
     expect(frame?.getAttribute('title')).toBe('Dash')
     // The card opens at chat-line height; a height argument never pre-sizes
     // the streaming frame — measurements own the height.
