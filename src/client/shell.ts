@@ -15,8 +15,10 @@
  * Network-egress allowlist the shell CSP enforces on every rendered
  * document. The node half validates sizes, not origins, so this list is the
  * only origin policy a document meets: the tool's public-CDN promise is
- * kept here and nowhere else. Widening it widens what a rendered document
- * may fetch and execute inside the frame.
+ * kept here and nowhere else. src/guide/contract.ts names the same four
+ * hosts in the prompt prose — the client bundle cannot import the node
+ * half, so a change to one list must land on the other. Widening it widens
+ * what a rendered document may fetch and execute inside the frame.
  */
 const CDN_LIST = [
   'https://esm.sh',

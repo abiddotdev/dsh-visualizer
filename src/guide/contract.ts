@@ -1,0 +1,18 @@
+/**
+ * The universal authoring contract every visualizer document follows,
+ * independent of artifact type.
+ * @module dsh-visualizer/guide/contract
+ */
+
+/* The CDN hosts name the same four origins src/client/shell.ts enforces in
+ * the frame CSP — the client bundle cannot import this half, so a change to
+ * one list must land on the other. */
+/** Contract lines of the guide; the section's second block. */
+export const CONTRACT: readonly string[] = [
+  'Order the document to stream: style rules first, visible markup next, scripts last — the preview paints while you write, and scripts run once after the document completes.',
+  'Keep the document self-contained: inline styles and scripts, or libraries loaded from https://esm.sh, https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, or https://unpkg.com; scripts from other domains fail silently.',
+  'The preview renders on a transparent canvas over the chat background; do not set page or body backgrounds unless the user asks for a specific background or theme.',
+  'While the document streams, markup is replaced as it grows: place style rules before the markup they style, and avoid gradients and shadows on streamed content.',
+  'Animate only transform, opacity, and stroke-dashoffset, wrapped in @media (prefers-reduced-motion: no-preference); animating layout properties repaints the whole frame on every tick.',
+  'The frame sizes itself to the content: avoid position:fixed, which reports no height, and never hide streamed content with display:none.',
+]

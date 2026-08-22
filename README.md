@@ -35,6 +35,8 @@ The package declares a `dsh.bundle` manifest (`dsh.bundle.patch` → `./cordis.p
 
 The tool declares `html` as its last schema parameter, so the logged tool-call arguments carry a growing document prefix while the model streams. The card decodes that prefix and paints a live preview inside a null-origin sandboxed iframe with a transparent canvas; at dispatch the final DOM is reconciled and scripts run once, in document order.
 
+The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation, and `write` + `show_html` when a file is wanted), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/` — one file per type, so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
+
 ## Development
 
 ```sh

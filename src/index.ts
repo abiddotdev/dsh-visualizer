@@ -19,6 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-side-effect import: pulls the systemPrompt Context augmentation so the
 // injected service member type-checks without the harness-wide program.
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { composeGuideText } from './guide/index.ts'
 
 export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
@@ -81,7 +82,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
-    text: 'To present an HTML page in the chat, call visualizer with the complete self-contained document as the html argument, html last; the document streams into a sandboxed frame while you write. Use write plus show_html instead when the document must persist as a workspace file.',
+    text: composeGuideText(),
   })
 
   ctx.tools.register(defineTool({
@@ -100,7 +101,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         type: 'string',
         required: true,
         description: 'The complete HTML document, placed last in the call so it streams into the preview while you write. '
-          + 'The frame renders on a transparent canvas over the chat background, so the page feels inline in the conversation: do not set page or body backgrounds unless the user asks for a specific background or theme.',
+          + 'The transparent-canvas and streaming-order rules are in the visualizer guide.',
       },
     },
     output: {
