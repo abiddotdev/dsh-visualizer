@@ -80,7 +80,8 @@ function deriveTitle(explicitTitle: string | undefined): string {
 }
 
 /**
- * Register the `visualizer` tool and its prompt guidance.
+ * Register the `visualizer` render tool, the `visualizer_guide` spec-pull
+ * tool, and the prompt guidance they share.
  * @param ctx - Cordis context carrying the tools registry.
  * @param config - resolved plugin configuration.
  */
