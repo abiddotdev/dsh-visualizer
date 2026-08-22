@@ -261,6 +261,44 @@ describe('StreamCard', () => {
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
+  it('labels runtime errors from the frame: first message wins, bursts cap, junk drops', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const raise = (payload: Record<string, unknown>, fromFrame = true): void => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', ...payload },
+        source: fromFrame ? frame.contentWindow : window,
+      }))
+    }
+
+    expect(screen.queryByText(/Script error:/)).toBeNull()
+    act(() => { raise({ message: 'ReferenceError: cloud is not defined', line: 41 }) })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+
+    // Later errors repeat the first defect; the card keeps one notice.
+    act(() => {
+      for (let index = 0; index < 5; index++) {
+        raise({ message: `TypeError: boom ${index} of a resize loop`, line: null })
+      }
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+
+    // Foreign source and malformed payloads drop without a notice.
+    raise({ message: 'forged', line: 1 }, false)
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: '' },
+        source: frame.contentWindow,
+      }))
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'x'.repeat(301) },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+  })
+
   it('submits a widget prompt as a tagged turn, dropping bursts and bad payloads', () => {
     const setDraft = vi.fn()
     const submit = vi.fn()

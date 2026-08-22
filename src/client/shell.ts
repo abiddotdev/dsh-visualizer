@@ -63,8 +63,9 @@ const CSP_DIRECTIVES = [
  * requests the host's theme tokens and applies every `--dsw-*` variable to
  * its root element, so documents can theme with the host's own tokens; the
  * host re-pushes them when the theme changes. A failed external script load
- * is reported to the host as `scriptError`, which the card surfaces as a
- * load-failure notice.
+ * is reported to the host as `scriptError`, and a throwing script, async
+ * error, or unhandled rejection as `runtimeError`; the card surfaces both
+ * as notices, so a dead document is labeled instead of silent.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -115,8 +116,26 @@ const BRIDGE_SCRIPT = `
   }
   // Execute in document order; an external script's load (or failure) gates
   // every later script, so a CDN library initializes before its consumer.
-  // A failed external load is reported to the host: the card shows which
-  // library never arrived instead of rendering a silently dead document.
+  // Failures reach the host, not a console nobody opens: a failed external
+  // load is reported as scriptError, and a throwing inline script is
+  // reported as runtimeError while the chain continues, so one bad script
+  // no longer kills every script after it.
+  function reportRuntimeError(message, line) {
+    try {
+      parent.postMessage({
+        __dshGui: true, type: 'runtimeError',
+        message: String(message).slice(0, 300),
+        line: typeof line === 'number' && isFinite(line) ? line : null
+      }, '*');
+    } catch (err) {}
+  }
+  window.addEventListener('error', function (e) {
+    if (e && e.message) reportRuntimeError(e.message, e.lineno);
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var reason = e && e.reason;
+    reportRuntimeError(reason instanceof Error ? reason.message : String(reason), null);
+  });
   function runScripts() {
     var vp = viewport();
     if (!vp) return;
@@ -134,10 +153,18 @@ const BRIDGE_SCRIPT = `
               try { parent.postMessage({ __dshGui: true, type: 'scriptError', src: s.getAttribute('src') }, '*'); } catch (err) {}
               res();
             };
+            if (old.parentNode) old.parentNode.replaceChild(s, old);
+          } else {
+            try {
+              if (old.parentNode) old.parentNode.replaceChild(s, old);
+            } catch (err) {
+              reportRuntimeError(err && err.message ? err.message : String(err), null);
+            }
+            res();
           }
-          if (old.parentNode) old.parentNode.replaceChild(s, old);
-          if (!s.getAttribute('src')) res();
         });
+      }).catch(function (err) {
+        reportRuntimeError(err && err.message ? err.message : String(err), null);
       });
     });
   }

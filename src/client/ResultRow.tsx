@@ -85,6 +85,12 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   // First failed external script wins: one notice per row, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  // First runtime error message wins; the first is the defect, the rest
+  // repeat it.
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const onRuntimeError = useCallback((message: string): void => {
+    setRuntimeError(current => current ?? message)
+  }, [])
   // State follows the document's title: the same title regenerates into the
   // same scope, and the streaming card derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(view?.title ?? null)), [view?.title])
@@ -96,6 +102,12 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
       <span className={css.separator} aria-hidden />
       <span className={css.summary}>{summary}</span>
       {failedSrc !== null && <span className={css.scriptError}>{t('row.scriptError')}</span>}
+      {runtimeError !== null && (
+        <span className={css.scriptError}>
+          {t('row.runtimeError')}
+          {runtimeError}
+        </span>
+      )}
       {settledOk && (
         <>
           <button
@@ -167,6 +179,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               onPrompt={onPrompt}
               onOpenLink={openWidgetLink}
               onScriptError={setFailedSrc}
+              onRuntimeError={onRuntimeError}
               storage={storage}
             />
           )}

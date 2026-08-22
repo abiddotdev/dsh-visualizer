@@ -137,6 +137,30 @@ describe('ResultRow', () => {
     expect(screen.getAllByText('A library failed to load; interactivity may be unavailable')).toHaveLength(1)
   })
 
+  it('labels a runtime error with its message beside the summary', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'ReferenceError: cloud is not defined', line: 41 },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+
+    // The first message stays the notice; repeats add nothing.
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'TypeError: later', line: null },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+    expect(screen.queryByText(/TypeError: later/)).toBeNull()
+  })
+
   it('falls back to the missing-summary when the arguments carry no document', () => {
     render(<ResultRow {...props(settledBlock('{"title":"x"}'))} />)
 

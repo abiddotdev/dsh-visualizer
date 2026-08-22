@@ -30,6 +30,12 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // First failed external script wins: one notice per card, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  // First runtime error message wins; the first is the defect, the rest
+  // repeat it.
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const onRuntimeError = useCallback((message: string): void => {
+    setRuntimeError(current => current ?? message)
+  }, [])
   const title = card.title ?? t('card.title')
   // State follows the document's title: the same title regenerates into the
   // same scope, and the settled row derives the identical one.
@@ -65,6 +71,12 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
               {summary}
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
+            {runtimeError !== null && (
+              <span className={css.scriptError}>
+                {t('card.runtimeError')}
+                {runtimeError}
+              </span>
+            )}
             {card.phase === 'complete' && (
               <>
                 <button
@@ -112,6 +124,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             onPrompt={onPrompt}
             onOpenLink={openWidgetLink}
             onScriptError={setFailedSrc}
+            onRuntimeError={onRuntimeError}
             storage={storage}
           />
         )}

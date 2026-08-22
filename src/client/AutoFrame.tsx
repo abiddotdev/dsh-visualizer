@@ -33,6 +33,10 @@ export const WIDGET_PROMPT_MAX_CHARS = 4_000
 export const WIDGET_URL_MAX_CHARS = 2_048
 /** Longest script source URL accepted from a load-failure report. */
 export const SCRIPT_ERROR_SRC_MAX_CHARS = 512
+/** Longest runtime-error message accepted from a report. */
+export const RUNTIME_ERROR_MAX_CHARS = 300
+/** Most runtime-error reports a card keeps; bursts beyond it add nothing. */
+export const RUNTIME_ERROR_MAX_REPORTS = 3
 
 /** Prefix of the host design tokens forwarded into the frame. */
 const THEME_TOKEN_PREFIX = '--dsw-'
@@ -73,6 +77,8 @@ export interface AutoFrameProps {
   readonly onOpenLink?: ((url: string) => void) | undefined
   /** First external script whose load failed inside the frame. */
   readonly onScriptError?: ((src: string) => void) | undefined
+  /** A runtime error raised inside the frame; message already capped. */
+  readonly onRuntimeError?: ((message: string, line: number | null) => void) | undefined
   /** Session-scoped store answering `window.storage`; absent disables it. */
   readonly storage?: WidgetStorage | undefined
 }
@@ -81,7 +87,7 @@ export interface AutoFrameProps {
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, storage }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, onRuntimeError, storage }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
@@ -89,12 +95,15 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   const onPromptRef = useRef(onPrompt)
   const onOpenLinkRef = useRef(onOpenLink)
   const onScriptErrorRef = useRef(onScriptError)
+  const onRuntimeErrorRef = useRef(onRuntimeError)
   const storageRef = useRef(storage)
   const lastPromptAtRef = useRef(0)
+  const runtimeErrorCountRef = useRef(0)
 
   useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
   useEffect(() => { onScriptErrorRef.current = onScriptError }, [onScriptError])
+  useEffect(() => { onRuntimeErrorRef.current = onRuntimeError }, [onRuntimeError])
   useEffect(() => { storageRef.current = storage }, [storage])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
@@ -123,6 +132,8 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
           text?: unknown
           url?: unknown
           src?: unknown
+          message?: unknown
+          line?: unknown
           op?: unknown
           id?: unknown
           key?: unknown
@@ -161,6 +172,17 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
       if (data.type === 'scriptError') {
         if (typeof data.src !== 'string' || data.src.length === 0 || data.src.length > SCRIPT_ERROR_SRC_MAX_CHARS) return
         onScriptErrorRef.current?.(data.src)
+        return
+      }
+      if (data.type === 'runtimeError') {
+        // A broken script can raise repeatedly (resize loops, intervals);
+        // the first reports name the defect, the rest add nothing.
+        if (typeof data.message !== 'string' || data.message.length === 0
+          || data.message.length > RUNTIME_ERROR_MAX_CHARS) return
+        runtimeErrorCountRef.current += 1
+        if (runtimeErrorCountRef.current > RUNTIME_ERROR_MAX_REPORTS) return
+        const line = typeof data.line === 'number' && Number.isFinite(data.line) && data.line > 0 ? data.line : null
+        onRuntimeErrorRef.current?.(data.message, line)
         return
       }
       if (data.type === 'storage-request') {

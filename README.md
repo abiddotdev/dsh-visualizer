@@ -57,7 +57,7 @@ At boot the shell asks the host for its design tokens; AutoFrame collects every 
 
 ## Card controls and failure notices
 
-A settled card offers two client-side actions over the same bytes: **Download** (a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`) and **Copy HTML** (`navigator.clipboard.writeText` with a brief confirmation; a denied clipboard shows none). When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but silently does nothing.
+A settled card offers two client-side actions over the same bytes: **Download** (a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`) and **Copy HTML** (`navigator.clipboard.writeText` with a brief confirmation; a denied clipboard shows none). When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but silently does nothing. Runtime failures are labeled the same way: a throwing inline script (which previously also killed every later script in the commit chain), an async `error` event, or an unhandled rejection posts a `runtimeError` report through the same bridge, and the card shows the first message beside the summary. Reports cap at three per card so a resize loop or interval cannot flood it.
 
 ## Settle-time document check
 
