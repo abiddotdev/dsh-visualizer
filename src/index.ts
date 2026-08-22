@@ -19,7 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-side-effect import: pulls the systemPrompt Context augmentation so the
 // injected service member type-checks without the harness-wide program.
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { composeGuideText } from './guide/index.ts'
+import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
 
 export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
@@ -58,6 +58,12 @@ interface RenderHtmlResult {
   title: string
   bytes: number
   height: number
+}
+
+/** Result of one guide lookup; `text` is the model-visible recipe. */
+interface GuideResult {
+  modules: string[]
+  text: string
 }
 
 /**
@@ -133,6 +139,40 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         throw new Error(`the document is ${bytes} bytes, over the ${config.maxHtmlBytes}-byte render limit`)
       }
       return Promise.resolve({ title, bytes, height })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'visualizer_guide',
+    description: 'Pull the detailed authoring recipe for one or more visualizer artifact types '
+      + `(${GUIDE_MODULE_IDS.join(', ')}) just before you render one. `
+      + 'The system prompt carries the gate rules, the universal contract, and the one-line roster; this returns the deeper per-type recipe. '
+      + 'Call it once per document, when you have chosen the type.',
+    parameters: {
+      modules: {
+        type: 'array',
+        items: { type: 'string', enum: [...GUIDE_MODULE_IDS] },
+        required: true,
+        description: 'Artifact types to pull the recipe for; at least one.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          modules: { type: 'array', items: { type: 'string' }, required: true },
+          text: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: (value as GuideResult).text }],
+    },
+    execute(args): Promise<GuideResult> {
+      const modules = args.modules
+      if (!Array.isArray(modules) || modules.length === 0 || modules.some(m => typeof m !== 'string')) {
+        throw new Error('modules must be a non-empty array of artifact types')
+      }
+      return Promise.resolve({ modules, text: composeModuleDetail(modules) })
     },
   }))
 }

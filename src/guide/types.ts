@@ -16,4 +16,6 @@ export interface ModuleGuide {
   readonly module: GuideModule
   /** One-line authoring guidance shown in the roster. */
   readonly summary: string
+  /** Detailed recipe the `visualizer_guide` tool returns for this type. */
+  readonly detail: readonly string[]
 }

@@ -108,3 +108,46 @@ describe('visualizer tool', () => {
     expect(firstText(result)).toContain('title must be a non-empty string')
   })
 })
+
+describe('visualizer_guide tool', () => {
+  /** Execute one guide call and return its rendered text. */
+  async function guide(ctx: Context, args: unknown): Promise<ExecOutcome> {
+    return ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId(`guide-${++callCounter}`),
+      name: 'visualizer_guide',
+      arguments: args,
+    })
+  }
+
+  it('registers beside the visualizer with an enum-constrained module array', async () => {
+    const { ctx } = await setup()
+    const schema = ctx.tools.schemas().find(tool => tool.name === 'visualizer_guide')
+    if (schema === undefined) throw new Error('visualizer_guide was not registered')
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
+    expect(schema.parameters).toMatchObject({
+      type: 'object',
+      properties: { modules: { type: 'array', items: { type: 'string', enum: ['chart', 'diagram', 'mockup', 'interactive', 'art'] } } },
+      required: ['modules'],
+    })
+  })
+
+  it('returns the requested recipe as the model-visible text', async () => {
+    const { ctx } = await setup()
+    const result = await guide(ctx, { modules: ['chart'] })
+    expect(result.isError).toBe(false)
+    expect(firstText(result)).toContain('## chart')
+    expect(firstText(result)).not.toContain('## diagram')
+  })
+
+  it('rejects an empty or unknown module list at the argument boundary', async () => {
+    const { ctx } = await setup()
+    const empty = await guide(ctx, { modules: [] })
+    expect(empty.isError).toBe(true)
+    // The enum rejects unknown ids before execute runs; composeModuleDetail
+    // remains the second layer for non-boundary callers.
+    const unknown = await guide(ctx, { modules: ['collage'] })
+    expect(unknown.isError).toBe(true)
+    expect(firstText(unknown)).toContain('must be one of ["chart","diagram","mockup","interactive","art"]')
+  })
+})

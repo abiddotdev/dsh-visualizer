@@ -35,7 +35,9 @@ The package declares a `dsh.bundle` manifest (`dsh.bundle.patch` → `./cordis.p
 
 The tool declares `html` as its last schema parameter, so the logged tool-call arguments carry a growing document prefix while the model streams. The card decodes that prefix and paints a live preview inside a null-origin sandboxed iframe with a transparent canvas; at dispatch the final DOM is reconciled and scripts run once, in document order.
 
-The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation, and `write` + `show_html` when a file is wanted), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/` — one file per type, so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
+The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation, and `write` + `show_html` when a file is wanted), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, theme tokens, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/` — one file per type, so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
+
+The roster stays one line per type to keep the system prompt small; the deeper per-type recipe (data-embedding, layout, interaction, and animation specifics) lives in each module's `detail`. The `visualizer_guide` tool returns it on demand: the model calls `visualizer_guide(modules: [...])` once it has chosen an artifact type, and gets that type's recipe as the tool result — a just-in-time spec injection that grows the guide without growing the standing prompt.
 
 ## The widget bridge
 
