@@ -10,18 +10,29 @@ const testToolSignal = new AbortController().signal
 /** Partial plugin config one test overrides; defaults fill the rest. */
 type SetupConfig = Partial<{ maxHtmlBytes: number; guideTool: boolean; guideModules: string[] }>
 
-async function setup(config: SetupConfig = {}) {
+/**
+ * The plugin declares no fs inject: it mounts with or without a filesystem
+ * service. Tests pass one only when file mode itself is under test, so the
+ * default setup runs with none — inline calls structurally cannot reach a
+ * filesystem because this context has no service to reach.
+ */
+async function setup(config: SetupConfig = {}, fs?: unknown) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  if (fs !== undefined) {
+    ;(ctx as unknown as { reflect: { provide(name: string, value: unknown): void } })
+      .reflect.provide('fs', fs)
+  }
   await ctx.plugin(toolGenerativeUi, { maxHtmlBytes: 262_144, ...config })
   return { ctx }
 }
 
-/** Narrowed executor outcome: every assertion reads isError, content, and meta absence. */
+/** Narrowed executor outcome: every assertion reads isError, content, and meta. */
 interface ExecOutcome {
   isError: boolean
   content: readonly { type: string; text?: string }[]
+  /** Presentation meta projected onto the settled event; null for inline mode. */
   meta?: unknown
 }
 
@@ -54,18 +65,19 @@ describe('visualizer tool', () => {
         properties: {
           title: { type: 'string' },
           height: { type: 'number' },
+          path: { type: 'string' },
           html: { type: 'string' },
         },
-        required: ['html'],
       },
     })
     // Parameter order is the streaming contract: the document must be the
-    // tail of the arguments JSON or no prefix preview is possible.
+    // tail of the arguments JSON or no prefix preview is possible. Neither
+    // parameter is schema-required — execute enforces exactly one of the two.
     const properties = (schema.parameters as { properties: Record<string, unknown> }).properties
-    expect(Object.keys(properties)).toEqual(['title', 'height', 'html'])
+    expect(Object.keys(properties)).toEqual(['title', 'height', 'path', 'html'])
   })
 
-  it('renders a document from its arguments without touching the filesystem', async () => {
+  it('renders a document from its arguments with no filesystem service mounted', async () => {
     const { ctx } = await setup()
     const html = '<!DOCTYPE html><html><body><h1>Revenue</h1></body></html>'
 
@@ -76,7 +88,7 @@ describe('visualizer tool', () => {
       type: 'text',
       text: `Rendered Revenue dashboard (${html.length} bytes, 480px frame); document check passed.`,
     }])
-    expect(result.meta).toBeUndefined()
+    expect(result.meta).toBeNull()
   })
 
   it('derives the title and counts bytes as UTF-8, not UTF-16 code units', async () => {
@@ -106,7 +118,8 @@ describe('visualizer tool', () => {
     const empty = await setup()
     const emptyResult = await call(empty.ctx, { html: '  ' })
     expect(emptyResult.isError).toBe(true)
-    expect(firstText(emptyResult)).toContain('html must be a non-empty document')
+    // An empty html is no document at all, so the call reads as source-less.
+    expect(firstText(emptyResult)).toContain('pass exactly one of html or path')
 
     const tiny = await setup({ maxHtmlBytes: 5 })
     const bigResult = await call(tiny.ctx, { html: '中文' })
@@ -201,5 +214,127 @@ describe('visualizer_guide tool', () => {
       /unknown artifact type\(s\) collage; known types: chart, diagram, mockup, interactive, art/,
     )
     await expect(setup({ guideModules: [] })).rejects.toThrow(/must list at least one artifact type/)
+  })
+})
+
+describe('visualizer file mode', () => {
+  const DOC = '<!DOCTYPE html><html><body><h1>From disk</h1></body></html>'
+  const FILE_BYTES = new TextEncoder().encode(DOC).byteLength
+
+  /**
+   * Fake filesystem service over one in-memory file map, shaped to the
+   * structural slice the tool reads through.
+   */
+  function fakeFs(files: Map<string, string>, type = 'file') {
+    return {
+      resolve: async (path: string) => ({ displayPath: path }),
+      stat: async (target: { displayPath: string }) =>
+        files.has(target.displayPath) ? { type } : undefined,
+      readText: async (target: { displayPath: string }) => files.get(target.displayPath) ?? '',
+    }
+  }
+
+  it('rejects a path call per call when no filesystem service is mounted, naming the html fallback', async () => {
+    // Deliberately no fs provided: the plugin still registered (the schema
+    // test pins that), and only this call fails.
+    const { ctx } = await setup()
+
+    const result = await call(ctx, { path: 'report.html' })
+    expect(result.isError).toBe(true)
+    expect(firstText(result)).toContain('no filesystem service is available in this deployment')
+    expect(firstText(result)).toContain('pass the document as html instead of path')
+  })
+
+  it('loads a workspace document and carries its bytes in the result meta', async () => {
+    const files = new Map([['report.html', DOC]])
+    const { ctx } = await setup({}, fakeFs(files))
+
+    const result = await call(ctx, { path: 'report.html' })
+
+    expect(result.isError).toBe(false)
+    expect(firstText(result)).toBe(
+      `Rendered report (${FILE_BYTES} bytes from report.html, 480px frame); document check passed.`,
+    )
+    expect(result.meta).toEqual({ title: 'report', html: DOC, height: 480 })
+  })
+
+  it('prefers an explicit title over the derived file name', async () => {
+    const files = new Map([['report.html', DOC]])
+    const { ctx } = await setup({}, fakeFs(files))
+
+    const result = await call(ctx, { title: 'Q3 Report', path: 'report.html' })
+    expect(result.isError).toBe(false)
+    expect(result.meta).toMatchObject({ title: 'Q3 Report' })
+  })
+
+  it('rejects a call naming both sources or neither', async () => {
+    const files = new Map([['report.html', DOC]])
+    const { ctx } = await setup({}, fakeFs(files))
+
+    const both = await call(ctx, { html: DOC, path: 'report.html' })
+    expect(both.isError).toBe(true)
+    expect(firstText(both)).toContain('pass either html or path, not both')
+
+    const neither = await call(ctx, { title: 'x' })
+    expect(neither.isError).toBe(true)
+    expect(firstText(neither)).toContain('pass exactly one of html or path')
+  })
+
+  it('fails loud on a missing, non-regular, or empty document', async () => {
+    const missingCtx = (await setup({}, fakeFs(new Map()))).ctx
+    const missing = await call(missingCtx, { path: 'gone.html' })
+    expect(missing.isError).toBe(true)
+    expect(firstText(missing)).toContain('cannot render "gone.html": not found')
+
+    const dirCtx = (await setup({}, fakeFs(new Map([['d.html', DOC]]), 'directory'))).ctx
+    const dir = await call(dirCtx, { path: 'd.html' })
+    expect(dir.isError).toBe(true)
+    expect(firstText(dir)).toContain('cannot render "d.html": not a regular file')
+
+    const emptyCtx = (await setup({}, fakeFs(new Map([['e.html', '']])))).ctx
+    const empty = await call(emptyCtx, { path: 'e.html' })
+    expect(empty.isError).toBe(true)
+    expect(firstText(empty)).toContain('cannot render "e.html": the document is empty')
+  })
+
+  it('applies the same byte budget to loaded documents', async () => {
+    const big = `${DOC}${'<p>x</p>'.repeat(50)}`
+    const files = new Map([['big.html', big]])
+    const { ctx } = await setup({ maxHtmlBytes: 100 }, fakeFs(files))
+
+    const result = await call(ctx, { path: 'big.html' })
+    expect(result.isError).toBe(true)
+    expect(firstText(result)).toContain(`"big.html" is ${new TextEncoder().encode(big).byteLength} bytes`)
+    expect(firstText(result)).toContain('over the 100-byte render limit')
+  })
+
+  it('runs the settle-time document check on loaded documents too', async () => {
+    // Duplicate id: one defect the check flags in any source mode.
+    const defective = '<!DOCTYPE html><html><body><p id="a"></p><p id="a"></p></body></html>'
+    const files = new Map([['broken.html', defective]])
+    const { ctx } = await setup({}, fakeFs(files))
+
+    const result = await call(ctx, { path: 'broken.html' })
+    expect(result.isError).toBe(false)
+    expect(firstText(result)).toContain('1 document issue(s)')
+    expect(firstText(result)).toContain('duplicate id "a"')
+    // A checked-but-defective file still renders; the meta carries the bytes.
+    expect(result.meta).toMatchObject({ title: 'broken', height: 480 })
+  })
+
+  it('resolves paths under the calling session working directory', async () => {
+    const seen: Array<{ cwd?: string }> = []
+    const fs = {
+      resolve: async (path: string, opts?: { cwd?: string }) => {
+        seen.push({ cwd: opts?.cwd })
+        return { displayPath: path }
+      },
+      stat: async () => ({ type: 'file' }),
+      readText: async () => DOC,
+    }
+    const { ctx } = await setup({}, fs)
+
+    await call(ctx, { path: 'report.html' })
+    expect(seen).toEqual([{ cwd: undefined }])
   })
 })

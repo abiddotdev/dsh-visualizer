@@ -53,12 +53,13 @@ function runningBlock(argsRaw: string): ToolCallBlock {
   }
 }
 
-function settledBlock(argsRaw: string | null, isError = false): ToolCallBlock {
+function settledBlock(argsRaw: string | null, isError = false, meta?: unknown): ToolCallBlock {
   return {
     kind: 'tool-result', seq: 2, time: 0, callId: 'c1',
     call: argsRaw === null ? null : { name: 'visualizer', argsRaw },
     callTime: 0, content: [], isError,
     ...isError ? { error: { name: 'Error', code: 'E_TOOL' } } : {},
+    ...meta !== undefined ? { meta } : {},
     callView: null, resultView: null, subCalls: [],
   }
 }
@@ -176,6 +177,34 @@ describe('ResultRow', () => {
 
   it('falls back to the missing-summary when the arguments carry no document', () => {
     render(<ResultRow {...props(settledBlock('{"title":"x"}'))} />)
+
+    expect(document.querySelector('iframe')).toBeNull()
+    expect(screen.getByText('Call arguments carry no renderable HTML')).toBeTruthy()
+  })
+
+  it('renders a file-mode document from the settled result presentation meta', () => {
+    render(<ResultRow {...props(settledBlock('{"path":"report.html"}', false, {
+      title: 'report', html: DOC, height: 600,
+    }))} />)
+
+    const frame = document.querySelector('iframe')
+    expect(frame?.getAttribute('srcDoc')).toBe(STREAM_SHELL)
+    expect(frame?.style.height).toBe('600px')
+    expect(screen.getByText('report')).toBeTruthy()
+    expect(screen.getByText('55 chars')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
+  })
+
+  it('labels a running file-mode call with its loading path, frameless', () => {
+    render(<ResultRow {...props(runningBlock(JSON.stringify({ path: 'dashboards/q3.html' })))} />)
+
+    expect(document.querySelector('iframe')).toBeNull()
+    expect(screen.getByText('Loading dashboards/q3.html')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
+  })
+
+  it('keeps the missing-summary when a file-mode result projects no usable meta', () => {
+    render(<ResultRow {...props(settledBlock('{"path":"gone.html"}'))} />)
 
     expect(document.querySelector('iframe')).toBeNull()
     expect(screen.getByText('Call arguments carry no renderable HTML')).toBeTruthy()

@@ -75,6 +75,7 @@ describe('visualizer guide', () => {
   it('carries the prose gate and the CDN hosts the shell CSP enforces', () => {
     const text = composeGuideText()
     expect(text).toContain('Never write HTML or SVG as prose')
+    expect(text).toContain('pass its path instead of html')
     for (const host of ['https://esm.sh', 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net', 'https://unpkg.com']) {
       expect(text).toContain(host)
     }

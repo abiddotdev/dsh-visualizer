@@ -1,10 +1,12 @@
-// visualizer toolview row: the settled half of the presentation. The call's
-// complete arguments — logged by tool/call and backfilled onto the result —
-// are the document's authoritative home, so this row JSON-parses argsRaw and
-// renders the document directly in a null-origin srcDoc frame (no bridge, no
-// shell: a complete document needs no streaming machinery). The download
-// control materializes the same bytes client-side as a Blob; it appears only
-// on a settled successful call, because a partial download is corrupt by
+// visualizer toolview row: the settled half of the presentation. A call's
+// document reaches this row through one of two logged sources: inline mode's
+// complete arguments (logged by tool/call and backfilled onto the result),
+// or file mode's settled result presentation meta, which carries the bytes
+// the tool loaded from the workspace file. Either way this row renders the
+// document directly in a null-origin srcDoc frame (no bridge, no shell: a
+// complete document needs no streaming machinery). The download control
+// materializes the same bytes client-side as a Blob; it appears only on a
+// settled successful call, because a partial download is corrupt by
 // definition.
 
 import { useCallback, useMemo, useState } from 'react'
@@ -29,20 +31,20 @@ const MIN_FRAME_HEIGHT_PX = 50
 const MAX_FRAME_HEIGHT_PX = 2_000
 const DEFAULT_FRAME_HEIGHT_PX = 480
 
-/** Decoded view of one complete visualizer call's arguments. */
-interface ArgsView {
+/** Decoded document view of one visualizer call, from either logged source. */
+interface DocView {
   title: string | null
   height: number | null
   html: string
 }
 
 /**
- * Decode the complete arguments of one visualizer call.
+ * Decode the complete arguments of one inline-mode visualizer call.
  * @param argsRaw - the frozen raw arguments string of the call.
  * @returns the view when the JSON parses and carries a non-empty document,
  * else null.
  */
-function argsView(argsRaw: string): ArgsView | null {
+function argsView(argsRaw: string): DocView | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(argsRaw)
@@ -52,6 +54,30 @@ function argsView(argsRaw: string): ArgsView | null {
   if (typeof parsed !== 'object' || parsed === null) return null
   const { title, height, html } = parsed as Record<string, unknown>
   if (typeof html !== 'string' || html.length === 0) return null
+  return safeView(title, height, html)
+}
+
+/**
+ * Shape-check one settled result's presentation meta — it crosses the wire —
+ * into a document view for file mode, whose arguments carry only the path.
+ * @param meta - the settled block's `meta` field.
+ * @returns the view when every field is present and well-typed, else null.
+ */
+function metaView(meta: unknown): DocView | null {
+  if (typeof meta !== 'object' || meta === null) return null
+  const { title, html, height } = meta as Record<string, unknown>
+  if (typeof html !== 'string' || html.length === 0) return null
+  return safeView(title, height, html)
+}
+
+/**
+ * Assemble a document view with the shared title and height guards.
+ * @param title - the decoded title, when present.
+ * @param height - the decoded opening height, when present.
+ * @param html - the non-empty decoded document.
+ * @returns the guarded view.
+ */
+function safeView(title: unknown, height: unknown, html: string): DocView {
   const safeHeight = typeof height === 'number' && Number.isInteger(height)
     && height >= MIN_FRAME_HEIGHT_PX && height <= MAX_FRAME_HEIGHT_PX
   return {
@@ -59,6 +85,27 @@ function argsView(argsRaw: string): ArgsView | null {
     height: safeHeight ? height : null,
     html,
   }
+}
+
+/**
+ * Detect a file-mode call from its complete arguments: a path named while no
+ * document streams. The row then shows the running state until the settled
+ * result lands its presentation meta.
+ * @param argsRaw - the raw arguments of the call head.
+ * @returns the requested path when the call is file mode, else null.
+ */
+function filePathOf(argsRaw: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(argsRaw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const { path, html } = parsed as Record<string, unknown>
+  if (typeof path !== 'string' || path.trim().length === 0) return null
+  if (typeof html === 'string' && html.length > 0) return null
+  return path
 }
 
 /** The argsRaw of either block form: direct on a running head, backfilled on a settled result. */
@@ -70,7 +117,14 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
 export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const settled = 'kind' in block
   const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
-  const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
+  // Inline mode renders from the logged arguments; file mode's arguments
+  // carry only a path, so its settled result meta is the bytes' only source.
+  const argsDoc = !settled || !block.isError ? argsView(argsRawOf(block)) : null
+  const metaDoc = settled && !block.isError ? metaView(block.meta) : null
+  const view = argsDoc ?? metaDoc
+  // Loading state belongs to the running phase only: once settled, a file
+  // call whose meta carries no document has failed to deliver one.
+  const loadingFile = !settled && view === null ? filePathOf(argsRawOf(block)) : null
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
   // The failure rides the alert icon in the row chrome; its native tooltip
@@ -80,9 +134,11 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
     ? settled && !block.isError
       ? t('row.chars', { chars: view.html.length })
       : t('row.running')
-    : errorInfo !== null
-      ? ''
-      : t('row.missing')
+    : loadingFile !== null
+      ? t('row.loading', { path: loadingFile })
+      : errorInfo !== null
+        ? ''
+        : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
   // First failed external script wins: one notice per row, later failures
@@ -158,9 +214,9 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   )
 
   // Same DisclosureRow chrome as the streaming card above it: one expandable
-  // frame per visualizer call, differing only in document phase.
+  // frame per visualizer call, differing only in document source.
   /* jscpd:ignore-start — the DisclosureRow chrome is shared with the
-     streaming card; the two rows differ in document phase, not chrome. */
+     streaming card; the two rows differ in document source, not chrome. */
   return rowJsx()
 
   /** The outer card DOM; separated so the shared chrome stays one unit. */
