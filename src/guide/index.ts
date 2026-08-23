@@ -17,12 +17,23 @@ export { MODULE_GUIDES } from './modules/index.ts'
  * ordering of a detail request's output. */
 export const GUIDE_MODULE_IDS: readonly GuideModule[] = MODULE_GUIDES.map(guide => guide.module)
 
+/** The ambient just-in-time nudge closing the roster: the pull ordering
+ * lives in the always-visible section, not only in the guide tool's own
+ * description. Rendered only when the guide tool is registered, so a
+ * guideTool:false deployment never advertises a tool it omits. */
+const JIT_NUDGE = 'Before your first render of a type in a conversation, pull its recipe with visualizer_guide.'
+
 /**
  * Compose the system-prompt section text.
  * @param modules - artifact types the roster lists; defaults to every module.
+ * @param guideTool - whether the `visualizer_guide` tool is registered; when
+ * false the closing nudge is omitted with it.
  * @returns the guide: gates, contract, and the module roster.
  */
-export function composeGuideText(modules: readonly GuideModule[] = GUIDE_MODULE_IDS): string {
+export function composeGuideText(
+  modules: readonly GuideModule[] = GUIDE_MODULE_IDS,
+  guideTool = true,
+): string {
   const enabled = new Set<GuideModule>(modules)
   return [
     '## When to render a visual',
@@ -33,6 +44,7 @@ export function composeGuideText(modules: readonly GuideModule[] = GUIDE_MODULE_
     '',
     '## Artifact types',
     ...MODULE_GUIDES.filter(guide => enabled.has(guide.module)).map(guide => `- ${guide.module}: ${guide.summary}`),
+    ...(guideTool ? [JIT_NUDGE] : []),
   ].join('\n')
 }
 

@@ -157,11 +157,10 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
     </>
   )
 
-  // DisclosureRow wiring mirrors the settled show_html row deliberately: both
-  // cards are the same expandable chrome over a sandboxed frame; only the
-  // document source (logged arguments vs result meta) differs.
-  /* jscpd:ignore-start — the DisclosureRow chrome is the shared show_html card
-     wiring; the two rows differ in document source, not in chrome. */
+  // Same DisclosureRow chrome as the streaming card above it: one expandable
+  // frame per visualizer call, differing only in document phase.
+  /* jscpd:ignore-start — the DisclosureRow chrome is shared with the
+     streaming card; the two rows differ in document phase, not chrome. */
   return rowJsx()
 
   /** The outer card DOM; separated so the shared chrome stays one unit. */

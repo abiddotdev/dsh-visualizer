@@ -7,8 +7,7 @@
  * still writing. Nothing touches the workspace: the document's durable home
  * is the logged `tool/call` arguments themselves, so a replayed transcript
  * re-renders the panel without re-running anything, and the card offers a
- * client-side download of the settled document. A document that must persist
- * as a workspace file uses `write` plus `show_html` instead.
+ * client-side download of the settled document.
  *
  * @module dsh-visualizer
  */
@@ -26,8 +25,9 @@ import { inspectDocument } from './inspect.ts'
 export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
 
-/* jscpd:ignore-start — the frame bounds and Config surface are the shared
-   show_html presentation constants; the tools differ in carriage, not limits. */
+/* jscpd:ignore-start — the frame bounds and Config surface are duplicated by
+   design across the package's two planes; see the mirrored copies in
+   src/client/ResultRow.tsx. */
 /** Byte length of one rendered document; bounds session-log growth per call. */
 const DEFAULT_MAX_HTML_BYTES = 262_144
 /**
@@ -138,7 +138,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
-    text: composeGuideText(modules),
+    text: composeGuideText(modules, config.guideTool),
   })
 
   ctx.tools.register(defineTool({

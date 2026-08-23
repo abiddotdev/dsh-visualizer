@@ -26,6 +26,25 @@ describe('visualizer guide', () => {
       .toThrow(/unknown or disabled artifact type\(s\) diagram; enabled types: chart/)
   })
 
+  it('never names a tool outside this plugin', () => {
+    // Other harness tools introduce themselves through their own prompt
+    // sections; the guide's gates route only among this plugin's surfaces.
+    expect(composeGuideText()).not.toContain('show_html')
+  })
+
+  it('closes the roster with the just-in-time nudge when the guide tool is on', () => {
+    const text = composeGuideText()
+    expect(text).toContain('pull its recipe with visualizer_guide')
+    // The nudge is the roster's last line: after the type list, before nothing.
+    expect(text.trimEnd().endsWith('pull its recipe with visualizer_guide.')).toBe(true)
+  })
+
+  it('omits the nudge when the guide tool is disabled', () => {
+    const text = composeGuideText(GUIDE_MODULE_IDS, false)
+    expect(text).toContain('- chart: ')
+    expect(text).not.toContain('visualizer_guide')
+  })
+
   it('keeps roster names unique and summaries non-empty', () => {
     const seen = new Set<string>()
     for (const guide of MODULE_GUIDES) {
@@ -56,7 +75,6 @@ describe('visualizer guide', () => {
   it('carries the prose gate and the CDN hosts the shell CSP enforces', () => {
     const text = composeGuideText()
     expect(text).toContain('Never write HTML or SVG as prose')
-    expect(text).toContain('write plus show_html')
     for (const host of ['https://esm.sh', 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net', 'https://unpkg.com']) {
       expect(text).toContain(host)
     }

@@ -3,7 +3,16 @@
 # registers the model-facing `visualizer` tool; the same package declares a
 # `dsh.client` manifest, so the Web GUI's module system serves the inline
 # preview card from exports["./client"] of that entry.
+#
+# Every option below is commented out on purpose: each already carries its
+# schema default, so uncomment a line only to change it. To override per
+# profile instead of editing this file, put the same config block in that
+# profile's cordis.patch.yml under an id-targeted row for dsh-visualizer.
 
 - insert:
     - id: dsh-visualizer
       name: 'dsh-visualizer'
+      # config:
+      #   maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
+      #   guideTool: true         # default; set false to use only the render tool
+      #   guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
