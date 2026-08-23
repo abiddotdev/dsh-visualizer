@@ -20,6 +20,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 // injected service member type-checks without the harness-wide program.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
+import type { GuideModule } from './guide/index.ts'
 import { inspectDocument } from './inspect.ts'
 
 export const name = 'visualizer'
@@ -42,10 +43,16 @@ const DEFAULT_FRAME_HEIGHT_PX = 480
 export interface Config {
   /** Largest document one call renders, in UTF-8 bytes. */
   maxHtmlBytes: number
+  /** Whether the `visualizer_guide` spec-pull tool registers at all. */
+  guideTool: boolean
+  /** Artifact types the guide teaches and the guide tool serves. */
+  guideModules: string[]
 }
 
 export const Config: z<Config> = z.object({
   maxHtmlBytes: z.number().default(DEFAULT_MAX_HTML_BYTES),
+  guideTool: z.boolean().default(true),
+  guideModules: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
 })
 
 /** The shape after schemastery applied the defaults. */
@@ -105,16 +112,33 @@ function renderResultText(value: RenderHtmlResult): string {
 }
 
 /**
+ * Validate the configured module set at load: unknown ids and an empty set
+ * are deployment mistakes, not runtime conditions.
+ * @param requested - the raw `guideModules` config value.
+ * @returns the enabled ids in roster order, duplicates collapsed.
+ */
+function validateGuideModules(requested: readonly string[]): GuideModule[] {
+  const unknown = [...new Set(requested)].filter(id => !GUIDE_MODULE_IDS.includes(id as GuideModule))
+  if (unknown.length > 0) {
+    throw new Error(`config guideModules lists unknown artifact type(s) ${unknown.join(', ')}; known types: ${GUIDE_MODULE_IDS.join(', ')}`)
+  }
+  const enabled = GUIDE_MODULE_IDS.filter(id => requested.includes(id))
+  if (enabled.length === 0) throw new Error('config guideModules must list at least one artifact type')
+  return enabled
+}
+
+/**
  * Register the `visualizer` render tool, the `visualizer_guide` spec-pull
  * tool, and the prompt guidance they share.
  * @param ctx - Cordis context carrying the tools registry.
  * @param config - resolved plugin configuration.
  */
 export function apply(ctx: Context, config: ResolvedConfig): void {
+  const modules = validateGuideModules(config.guideModules)
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
-    text: composeGuideText(),
+    text: composeGuideText(modules),
   })
 
   ctx.tools.register(defineTool({
@@ -172,16 +196,18 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
     },
   }))
 
+  if (!config.guideTool) return
+
   ctx.tools.register(defineTool({
     name: 'visualizer_guide',
     description: 'Pull the detailed authoring recipe for one or more visualizer artifact types '
-      + `(${GUIDE_MODULE_IDS.join(', ')}) just before you render one. `
+      + `(${modules.join(', ')}) just before you render one. `
       + 'The system prompt carries the gate rules, the universal contract, and the one-line roster; this returns the deeper per-type recipe. '
       + 'Call it once per document, when you have chosen the type.',
     parameters: {
       modules: {
         type: 'array',
-        items: { type: 'string', enum: [...GUIDE_MODULE_IDS] },
+        items: { type: 'string', enum: [...modules] },
         required: true,
         description: 'Artifact types to pull the recipe for; at least one.',
       },
@@ -198,11 +224,11 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       render: (_args, value) => [{ type: 'text', text: (value as GuideResult).text }],
     },
     execute(args): Promise<GuideResult> {
-      const modules = args.modules
-      if (!Array.isArray(modules) || modules.length === 0 || modules.some(m => typeof m !== 'string')) {
+      const requested = args.modules
+      if (!Array.isArray(requested) || requested.length === 0 || requested.some(m => typeof m !== 'string')) {
         throw new Error('modules must be a non-empty array of artifact types')
       }
-      return Promise.resolve({ modules, text: composeModuleDetail(modules) })
+      return Promise.resolve({ modules: requested, text: composeModuleDetail(requested, modules) })
     },
   }))
 }

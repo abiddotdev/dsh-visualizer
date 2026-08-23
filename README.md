@@ -31,6 +31,20 @@ The package declares a `dsh.bundle` manifest (`dsh.bundle.patch` → `./cordis.p
 - The host Loader imports `lib/index.js`; its `apply()` registers the model-facing `visualizer` tool.
 - The Web GUI's client module system scans Loader entries for packages declaring a `dsh.client` manifest and serves `lib/client.js`, which renders the streaming card and the settled row.
 
+## Configuration
+
+The bundle layer already inserts the loader row, so a profile overrides its config with a flat id-targeted patch entry — no `insert:` wrapper, which would append a second row instead of overriding the installed one — in that profile's patch layer (`~/.dsh/profiles/<your-profile>/cordis.patch.yml`); values validate against the schema at load, and a mistake fails the mount loudly:
+
+```yaml
+- id: dsh-visualizer
+  config:
+    maxHtmlBytes: 524288    # render limit per call, in UTF-8 bytes
+    guideTool: true         # the visualizer_guide spec-pull tool; set false to use only the render tool
+    guideModules: [chart, diagram, mockup, interactive, art]   # subset to teach and serve; needs guideTool: true
+```
+
+`guideModules` narrows both guide surfaces together: the standing system-prompt roster lists only those types' one-liners, and the JIT tool's argument enum accepts only those ids — a disabled type is rejected at the argument boundary before any code runs. `guideTool: false` skips the second tool registration; the render tool and the standing prompt section are unaffected. Unknown module ids, or an empty `guideModules`, fail the plugin load. Both fields default to on/all five types (`chart`, `diagram`, `mockup`, `interactive`, `art`).
+
 ## How it works
 
 The tool declares `html` as its last schema parameter, so the logged tool-call arguments carry a growing document prefix while the model streams. The card decodes that prefix and paints a live preview inside a null-origin sandboxed iframe with a transparent canvas; at dispatch the final DOM is reconciled and scripts run once, in document order. While the document streams, a pale brand band sweeps across the whole frame diagonally (top-left to bottom-right) on a slow 3.6s cadence — transform-animated and disabled under reduced motion — so the live phase reads at a glance and stops the moment the document settles.

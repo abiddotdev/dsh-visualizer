@@ -19,9 +19,11 @@ export const GUIDE_MODULE_IDS: readonly GuideModule[] = MODULE_GUIDES.map(guide 
 
 /**
  * Compose the system-prompt section text.
+ * @param modules - artifact types the roster lists; defaults to every module.
  * @returns the guide: gates, contract, and the module roster.
  */
-export function composeGuideText(): string {
+export function composeGuideText(modules: readonly GuideModule[] = GUIDE_MODULE_IDS): string {
+  const enabled = new Set<GuideModule>(modules)
   return [
     '## When to render a visual',
     ...GATES,
@@ -30,7 +32,7 @@ export function composeGuideText(): string {
     ...CONTRACT,
     '',
     '## Artifact types',
-    ...MODULE_GUIDES.map(guide => `- ${guide.module}: ${guide.summary}`),
+    ...MODULE_GUIDES.filter(guide => enabled.has(guide.module)).map(guide => `- ${guide.module}: ${guide.summary}`),
   ].join('\n')
 }
 
@@ -38,16 +40,21 @@ export function composeGuideText(): string {
  * Compose the detailed per-type recipe the `visualizer_guide` tool returns.
  * @param modules - requested artifact types; duplicates collapse, output
  * follows roster order.
+ * @param available - artifact types this deployment serves; defaults to
+ * every module. A requested type outside the set counts as unknown.
  * @returns the requested modules' detail blocks.
- * @throws when a requested id is not in the roster.
+ * @throws when a requested id is not in the enabled set.
  */
-export function composeModuleDetail(modules: readonly string[]): string {
+export function composeModuleDetail(
+  modules: readonly string[],
+  available: readonly GuideModule[] = GUIDE_MODULE_IDS,
+): string {
+  const enabled = new Set<GuideModule>(available)
   const requested = new Set(modules)
-  const selected = MODULE_GUIDES.filter(guide => requested.has(guide.module))
+  const selected = MODULE_GUIDES.filter(guide => requested.has(guide.module) && enabled.has(guide.module))
   if (selected.length !== requested.size) {
-    const known = GUIDE_MODULE_IDS.join(', ')
-    const unknown = [...requested].filter(id => !GUIDE_MODULE_IDS.includes(id as GuideModule))
-    throw new Error(`unknown artifact type(s) ${unknown.join(', ')}; known types: ${known}`)
+    const rejected = [...requested].filter(id => !enabled.has(id as GuideModule))
+    throw new Error(`unknown or disabled artifact type(s) ${rejected.join(', ')}; enabled types: ${available.join(', ')}`)
   }
   return selected
     .map(guide => [`## ${guide.module}`, ...guide.detail].join('\n'))

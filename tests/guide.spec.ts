@@ -9,6 +9,23 @@ describe('visualizer guide', () => {
     }
   })
 
+  it('lists only the configured modules when a subset is passed', () => {
+    const text = composeGuideText(['chart'])
+    expect(text).toContain('- chart: ')
+    expect(text).not.toContain('- diagram: ')
+    expect(text).not.toContain('- interactive: ')
+
+    // The contract and gates stay regardless of the module set.
+    expect(text).toContain('## Authoring contract')
+    expect(text).toContain('## When to render a visual')
+  })
+
+  it('treats disabled modules as unknown in detail composition', () => {
+    expect(composeModuleDetail(['chart'], ['chart'])).toContain('## chart')
+    expect(() => composeModuleDetail(['diagram'], ['chart']))
+      .toThrow(/unknown or disabled artifact type\(s\) diagram; enabled types: chart/)
+  })
+
   it('keeps roster names unique and summaries non-empty', () => {
     const seen = new Set<string>()
     for (const guide of MODULE_GUIDES) {
@@ -55,7 +72,7 @@ describe('visualizer guide', () => {
   })
 
   it('names the known types when asked for an unknown one', () => {
-    expect(() => { composeModuleDetail(['chart', 'collage']) }).toThrow('unknown artifact type(s) collage')
+    expect(() => { composeModuleDetail(['chart', 'collage']) }).toThrow('unknown or disabled artifact type(s) collage')
     expect(() => { composeModuleDetail(['chart', 'collage']) }).toThrow(GUIDE_MODULE_IDS.join(', '))
   })
 })

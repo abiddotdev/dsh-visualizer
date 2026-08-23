@@ -7,11 +7,14 @@ import * as toolGenerativeUi from '../src/index.ts'
 
 const testToolSignal = new AbortController().signal
 
-async function setup(maxHtmlBytes = 262_144) {
+/** Partial plugin config one test overrides; defaults fill the rest. */
+type SetupConfig = Partial<{ maxHtmlBytes: number; guideTool: boolean; guideModules: string[] }>
+
+async function setup(config: SetupConfig = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(toolGenerativeUi, { maxHtmlBytes })
+  await ctx.plugin(toolGenerativeUi, { maxHtmlBytes: 262_144, ...config })
   return { ctx }
 }
 
@@ -105,7 +108,7 @@ describe('visualizer tool', () => {
     expect(emptyResult.isError).toBe(true)
     expect(firstText(emptyResult)).toContain('html must be a non-empty document')
 
-    const tiny = await setup(5)
+    const tiny = await setup({ maxHtmlBytes: 5 })
     const bigResult = await call(tiny.ctx, { html: '中文' })
     expect(bigResult.isError).toBe(true)
     expect(firstText(bigResult)).toContain('over the 5-byte render limit')
@@ -164,5 +167,39 @@ describe('visualizer_guide tool', () => {
     const unknown = await guide(ctx, { modules: ['collage'] })
     expect(unknown.isError).toBe(true)
     expect(firstText(unknown)).toContain('must be one of ["chart","diagram","mockup","interactive","art"]')
+  })
+
+  it('registers the guide tool alone when the render tool stays and config disables nothing', async () => {
+    const { ctx } = await setup({ guideTool: true, guideModules: ['chart', 'art'] })
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
+  })
+
+  it('skips the guide tool entirely when the config disables it', async () => {
+    const { ctx } = await setup({ guideTool: false })
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer'])
+  })
+
+  it('narrows the guide tool enum to the configured modules', async () => {
+    const { ctx } = await setup({ guideModules: ['chart'] })
+    const schema = ctx.tools.schemas().find(tool => tool.name === 'visualizer_guide')
+    if (schema === undefined) throw new Error('visualizer_guide was not registered')
+    expect(schema.parameters).toMatchObject({
+      properties: { modules: { items: { enum: ['chart'] } } },
+    })
+
+    // The configured type serves; a disabled type dies at the boundary.
+    const chart = await guide(ctx, { modules: ['chart'] })
+    expect(chart.isError).toBe(false)
+    expect(firstText(chart)).toContain('## chart')
+    const diagram = await guide(ctx, { modules: ['diagram'] })
+    expect(diagram.isError).toBe(true)
+    expect(firstText(diagram)).toContain('must be one of ["chart"]')
+  })
+
+  it('fails loud at load on an unknown or empty module set', async () => {
+    await expect(setup({ guideModules: ['chart', 'collage'] })).rejects.toThrow(
+      /unknown artifact type\(s\) collage; known types: chart, diagram, mockup, interactive, art/,
+    )
+    await expect(setup({ guideModules: [] })).rejects.toThrow(/must list at least one artifact type/)
   })
 })
