@@ -42,19 +42,25 @@ export const RUNTIME_ERROR_MAX_REPORTS = 3
 const THEME_TOKEN_PREFIX = '--dsw-'
 
 /**
- * Collect the host's current design tokens from the document root's
- * computed style; the indexed walk yields custom properties in every
- * engine that supports them and an empty set where none exist.
+ * Collect the host's current design tokens. Hosts declare `--dsw-*`
+ * variables on either the document root or the body — the harness theme
+ * sheet, for one, scopes both the statics and the theme-flipping aliases
+ * to `body` — and custom properties only inherit downward, so a walk of
+ * the root alone misses a body-declared set. Read both and merge, body
+ * last: its declarations shadow the root's on every descendant.
  * @returns token name to current value.
  */
 function collectThemeTokens(): Record<string, string> {
   const vars: Record<string, string> = {}
-  const computed = window.getComputedStyle(document.documentElement)
-  for (let index = 0; index < computed.length; index++) {
-    const name = computed[index]
-    if (!name.startsWith(THEME_TOKEN_PREFIX)) continue
-    const value = computed.getPropertyValue(name).trim()
-    if (value.length > 0) vars[name] = value
+  for (const element of [document.documentElement, document.body]) {
+    if (element === null) continue
+    const computed = window.getComputedStyle(element)
+    for (let index = 0; index < computed.length; index++) {
+      const name = computed[index]
+      if (!name.startsWith(THEME_TOKEN_PREFIX)) continue
+      const value = computed.getPropertyValue(name).trim()
+      if (value.length > 0) vars[name] = value
+    }
   }
   return vars
 }
