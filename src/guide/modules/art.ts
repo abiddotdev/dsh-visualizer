@@ -7,7 +7,8 @@ export const art: ModuleGuide = {
   detail: [
     '### Mental model',
     'Commit to one bold direction before writing any code: a non-default font, a non-blue accent, one unexpected structural device (diagonal composition, oversized numerals, dot-grid ground). A purple-gradient grid of rounded cards reads as unedited template output.',
-    'Art versus diagram: art expresses an aesthetic idea; if every element encodes a datum, build a chart instead.',
+    'Art versus diagram: art expresses an aesthetic idea; if every element encodes a datum, build a chart instead. Decide inform-versus-evoke first — the same subject can go either way, and the answer picks the module.',
+    'Before code, fix the evocation checklist: mood, warm/cool/monochrome color, motion tempo, density, geometry (organic curves vs sharp angles), scale (few large vs many small), and era — seven decisions made up front produce intentional art; skipping them produces generic output.',
     'Seed the generator and expose the seed as a visible control; reproducibility separates art from a bug report.',
     '### Pattern systems',
     'Build from parametric systems, not placed elements: a grid with per-cell variation (size, rotation, opacity drawn from seeded random), sine-wave fields with phase offsets, or noise fields for organic forms. Compose two or three systems and let one dominate.',
@@ -26,6 +27,7 @@ export const art: ModuleGuide = {
     'Unreproducible runs: Math.random() unseeded — drive variation from a seeded PRNG and expose the seed.',
     '### Quick reference',
     '- One direction: 2-3 hue palette, non-default font, one structural device.',
+    '- Evocation checklist (mood, color, motion, density, geometry, scale, era) answered before any code.',
     '- Systems over placed elements; seeded PRNG with a visible seed control.',
     '- fill="none" on stroke-only paths; transform/opacity animation only.',
     '- Transparent frame unless the piece needs a ground.',
