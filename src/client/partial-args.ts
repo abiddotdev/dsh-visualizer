@@ -18,6 +18,36 @@ export interface StreamArgsView {
   readonly title: string | null
   /** Explicit `height` argument once a terminator-terminated integer has arrived. */
   readonly height: number | null
+  /** Fully-arrived `loadingMessages` strings, in order; grows as the array streams. */
+  readonly loadingMessages: string[]
+}
+
+/** Most loading messages the tool schema accepts. */
+const MAX_LOADING_MESSAGES = 4
+
+/**
+ * Decode a `loadingMessages`-style JSON string array starting at its opening
+ * bracket, tolerating a cut tail: only items whose closing quote has arrived
+ * are kept, so the view grows monotonically as bytes stream.
+ * @param src - raw arguments string.
+ * @param pos - index of the opening `[`.
+ * @returns the complete items so far and the next unconsumed index, or null
+ * when the input ended before anything decodable.
+ */
+function decodeStringArray(src: string, pos: number): { items: string[]; next: number } | null {
+  const items: string[] = []
+  let i = skipWs(src, pos + 1)
+  while (i < src.length) {
+    if (src[i] === ']') return { items, next: i + 1 }
+    if (src[i] !== '"') return items.length > 0 ? { items, next: -1 } : null
+    const decoded = decodeString(src, i + 1)
+    if (!decoded.closed) return items.length > 0 ? { items, next: -1 } : null
+    if (items.length < MAX_LOADING_MESSAGES) items.push(decoded.value)
+    i = skipWs(src, decoded.next)
+    if (src[i] === ',') i = skipWs(src, i + 1)
+    else if (src[i] !== ']') return items.length > 0 ? { items, next: -1 } : null
+  }
+  return items.length > 0 ? { items, next: -1 } : null
 }
 
 /**
@@ -152,6 +182,7 @@ export function extractStreamArgs(argsRaw: string): StreamArgsView | null {
   pos = skipWs(argsRaw, pos + 1)
   let title: string | null = null
   let height: number | null = null
+  let loadingMessages: string[] = []
   while (pos < argsRaw.length) {
     if (argsRaw[pos] === '}') return null
     const key = readKey(argsRaw, pos)
@@ -167,11 +198,16 @@ export function extractStreamArgs(argsRaw: string): StreamArgsView | null {
         complete: decoded.closed,
         title,
         height,
+        loadingMessages,
       }
     }
     if (key.key === 'title' && argsRaw[pos] === '"') {
       const decoded = decodeString(argsRaw, pos + 1)
       if (decoded.closed) title = decoded.value
+    }
+    if (key.key === 'loadingMessages' && argsRaw[pos] === '[') {
+      const decoded = decodeStringArray(argsRaw, pos)
+      if (decoded !== null) loadingMessages = decoded.items
     }
     if (key.key === 'height') {
       const end = skipValue(argsRaw, pos)

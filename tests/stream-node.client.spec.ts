@@ -91,7 +91,7 @@ describe('visualizer-stream node', () => {
     const value = assembler(streamPrefix(1))
     const current = node(value)
     expect(current?.visibility).toBe('visible')
-    expect(data(value)?.cards).toEqual([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>rev' }])
+    expect(data(value)?.cards).toEqual([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>rev', loadingMessages: [] }])
   })
 
   it('stays unpublished while another tool streams and ignores its arguments', () => {
@@ -116,7 +116,7 @@ describe('visualizer-stream node', () => {
       }),
     ])
     const streaming = node(value)
-    expect(data(value)?.cards).toEqual([{ phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html }])
+    expect(data(value)?.cards).toEqual([{ phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html, loadingMessages: [] }])
     expect(node(value)?.key).toBe(streaming?.key)
   })
 
@@ -138,7 +138,7 @@ describe('visualizer-stream node', () => {
       ...streamPrefix(1),
       at(5, 'step/end', { turn: 1, step: 1 }),
     ])
-    expect(data(value)?.cards).toEqual([{ phase: 'interrupted', title: 'Dash', height: 320, html: '<p>rev' }])
+    expect(data(value)?.cards).toEqual([{ phase: 'interrupted', title: 'Dash', height: 320, html: '<p>rev', loadingMessages: [] }])
   })
 
   it('withdraws the evidence on model retry and re-anchors a fresh attempt', () => {
@@ -160,7 +160,7 @@ describe('visualizer-stream node', () => {
     const current = node(second)
     expect(current?.visibility).toBe('visible')
     expect(current?.anchorSeq).toBe(6)
-    expect(data(second)?.cards).toEqual([{ phase: 'streaming', title: null, height: null, html: '<p>two' }])
+    expect(data(second)?.cards).toEqual([{ phase: 'streaming', title: null, height: null, html: '<p>two', loadingMessages: [] }])
   })
 
   it('produces the same settled result through replay as live append produced', () => {
@@ -172,6 +172,6 @@ describe('visualizer-stream node', () => {
       }),
     ]
     const replayed = data(assembler(events))
-    expect(replayed?.cards).toEqual([{ phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html }])
+    expect(replayed?.cards).toEqual([{ phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html, loadingMessages: [] }])
   })
 })

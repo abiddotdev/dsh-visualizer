@@ -32,6 +32,45 @@
   font: var(--dsw-font-xs-13);
 }
 
+/* Diagonal sheen on the loader text while the document streams: the same
+ * brand band as the frame sweep, scaled down to the text line. Overlay
+ * blend keeps the text readable; the band is translucent and passes
+ * through on a slow 4.8s cadence, gated under reduced-motion. */
+.summarySweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.summarySweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    transparent 30%,
+    var(--dsw-static-deepseek-200) 50%,
+    transparent 70%
+  );
+  opacity: 0.40;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  transform: translate3d(-110%, 0, 0);
+  animation: text-sweep 2.4s linear infinite;
+}
+
+@keyframes text-sweep {
+  to {
+    transform: translate3d(200%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summarySweep::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .separator {
   flex: none;
   width: 8px;
