@@ -9,7 +9,7 @@ export const diagram: ModuleGuide = {
     'Three failures break nearly every diagram: a position defined in two places that drifts apart, layout math skipped until elements overlap, and the DOM mutated directly instead of re-rendered from one state object. Design against those three before drawing anything.',
     'Define the data first — nodes carrying label/type/metrics, edges carrying from/to/metrics, UI state separate — then derive every coordinate and edge path from that data.',
     'Layout strategy follows the data, not aesthetics: a fixed hierarchy (tiers, org charts, layered architecture) uses a manual row grid; an unknown or organic topology uses a force simulation.',
-    'Color encodes meaning, not sequence: assign hues to categories or states, never to steps 1-2-3 in order; at most 2-3 ramps per diagram, gray reserved for neutral or structural nodes, and fill and text of one component stay on the same ramp.',
+    'Color encodes meaning, not sequence: assign hues to categories or states, never to steps 1-2-3 in order; at most 2-3 ramps per diagram (deepseek, blue, green, amber, red from the --dsw-static-* set), neutral for structural nodes, and fill and text of one component stay on the same ramp.',
     '### Measurements',
     'Do the box math before writing coordinates: fix the viewBox, the node size, and each row y so nothing is placed by eye. Example grid: 800x400 canvas, 120x48 nodes, rows at y=50/170/300.',
     'Center text with text-anchor="middle" and dominant-baseline="central" at the computed box center; never approximate a baseline by nudging y.',
@@ -36,6 +36,6 @@ export const diagram: ModuleGuide = {
     '- Box math on paper, then coordinates; text centered via anchor attributes; truncation budget per node width.',
     '- Layer order: background, edges, nodes, labels, overlays; defs first.',
     '- Force layouts clamp and center; Mermaid inits startOnLoad:false with themeVariables.',
-    '- ViewBox height measured from content + 40px, never guessed; edges stop at borders with per-color markers; 2-3 ramps, gray for neutral.',
+    '- ViewBox height measured from content + 40px, never guessed; edges stop at borders with per-color markers; 2-3 static ramps, neutral for structural nodes.',
   ],
 }
