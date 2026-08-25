@@ -1,0 +1,153 @@
+/**
+ * Canvas popup styling: a floating panel above the composer (TodoPanel
+ * posture), an expand/collapse header row, the drawing surface (agent scene
+ * layer + user overlay layer), and the send row.
+ */
+
+.popover {
+  position: relative;
+  width: 100%;
+}
+
+.card {
+  background: var(--dsw-alias-elevated-default, var(--dsw-alias-surface-default, #fff));
+  border: 1px solid var(--dsw-alias-outline-default, rgba(74, 65, 54, 0.2));
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: var(--dsw-font-s-14, 14px sans-serif);
+  color: inherit;
+  text-align: left;
+}
+
+.header:hover {
+  background: var(--dsw-alias-surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+.lead {
+  display: inline-flex;
+  color: var(--dsw-alias-accent-default, #7a8f6b);
+}
+
+.title {
+  font-weight: 500;
+}
+
+.summary {
+  color: var(--dsw-alias-label-tertiary, #7a6b52);
+  font: var(--dsw-font-xs-13, 13px sans-serif);
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-accent-default, #7a8f6b);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.chevron {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary, #7a6b52);
+}
+
+.surface {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 640;
+  background: var(--dsw-alias-surface-default, #fbf7ee);
+  border-top: 1px solid var(--dsw-alias-outline-soft, rgba(74, 65, 54, 0.1));
+  border-bottom: 1px solid var(--dsw-alias-outline-soft, rgba(74, 65, 54, 0.1));
+  touch-action: none;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.overlay {
+  cursor: crosshair;
+}
+
+.sendRow {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  align-items: center;
+}
+
+.note {
+  flex: 1;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-outline-default, rgba(74, 65, 54, 0.25));
+  background: var(--dsw-alias-surface-default, transparent);
+  color: inherit;
+  font: var(--dsw-font-s-14, 14px sans-serif);
+  resize: none;
+}
+
+.note:focus-visible {
+  outline: 2px solid var(--dsw-alias-accent-default, #7a8f6b);
+  outline-offset: 1px;
+}
+
+.sendBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--dsw-alias-accent-default, #3f4f39);
+  color: var(--dsw-alias-accent-on, #fff);
+  font: var(--dsw-font-s-14, 14px sans-serif);
+  cursor: pointer;
+}
+
+.sendBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toolRow {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+
+.toolBtn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-outline-default, rgba(74, 65, 54, 0.25));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, inherit);
+  font: var(--dsw-font-xs-13, 13px sans-serif);
+  cursor: pointer;
+}
+
+.toolBtn:hover {
+  border-color: var(--dsw-alias-accent-default, #7a8f6b);
+}

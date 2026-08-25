@@ -13,6 +13,13 @@ export const zh = {
   'card.copied': '已复制',
   'card.scriptError': '库加载失败，交互可能不可用',
   'card.runtimeError': '脚本错误：',
+  'canvas.title': '共享画布',
+  'canvas.drawing': '正在绘制…',
+  'canvas.scene': '助手草图层',
+  'canvas.overlay': '你的绘制层',
+  'canvas.clearMine': '清除我的绘制',
+  'canvas.notePlaceholder': '给助手的可选备注…',
+  'canvas.send': '发送',
   'row.title': 'HTML 预览',
   'row.running': '正在渲染…',
   'row.chars': '{chars} 字符',
@@ -24,8 +31,15 @@ export const zh = {
   'row.runtimeError': '脚本错误：',
 } as const
 
-/** English streaming-HTML card messages. */
+/** English streaming-HTML card messages (canvas keys included). */
 export const en = {
+  'canvas.title': 'Shared canvas',
+  'canvas.drawing': 'Drawing…',
+  'canvas.scene': 'Agent sketch layer',
+  'canvas.overlay': 'Your drawing layer',
+  'canvas.clearMine': 'Clear my drawing',
+  'canvas.notePlaceholder': 'Optional note for the agent…',
+  'canvas.send': 'Send',
   'card.title': 'HTML preview',
   'card.thinking': 'Composing the document',
   'card.streaming': 'Streaming...',

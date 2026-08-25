@@ -14,13 +14,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { StreamCard } from './StreamCard.tsx'
 import { ResultRow } from './ResultRow.tsx'
+import { CanvasPopup, canvasDockEntry } from './CanvasPopup.tsx'
 import { en, zh, type GenerativeUiKey } from './locales.ts'
 import { generativeStreamDefinition } from './stream-node.ts'
+import { canvasStreamDefinition } from '../canvas/stream-node.ts'
 
 export type { StreamCardProps } from './StreamCard.tsx'
 export type { ResultRowProps } from './ResultRow.tsx'
 export type { GenerativeCardData, GenerativeStreamChatData } from './stream-node.ts'
 export type { GenerativeUiKey } from './locales.ts'
+export { canvasDockEntry } from './CanvasPopup.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -46,6 +49,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-visualizer: dictionaries')
 
   ctx.conversationEvents.register(generativeStreamDefinition)
+  ctx.conversationEvents.register(canvasStreamDefinition)
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,
@@ -54,4 +58,12 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview', key: 'visualizer', locale: NS,
   }, ResultRow))
+
+  // The interactive canvas: the hidden live node feeds streaming batches;
+  // the dock entry renders the popup above the composer.
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'visualizer-canvas-stream', locale: NS,
+  }, () => null))
+
+  ctx.plugin(canvasDockEntry)
 }

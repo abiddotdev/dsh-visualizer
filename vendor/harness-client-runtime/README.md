@@ -23,6 +23,16 @@ src/client/slots.ts
 plugin uses, aliases `ClientContext`, and augments the cordis `Context` with
 the `slots` and `conversationEvents` members.
 
+## Local divergence
+
+`src/client/slots.ts` carries one deliberate edit against the verbatim copy:
+the `SlotRegistry.register` definition face accepts `id`/`order` too, matching
+what the deployed runtime's full registration contract actually validates for
+list-kind slots (e.g. `conversation.input.dock`). The upstream snapshot's
+trimmed face predates those fields; without them the canvas popup's dock
+registration does not typecheck. Re-applying this edit is part of the sync
+procedure.
+
 ## Sync procedure
 
 Re-copy the six files from a newer harness checkout, update the pinned SHA in

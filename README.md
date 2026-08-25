@@ -1,8 +1,8 @@
 # dsh-visualizer
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin: the **`visualizer`** tool streams a self-contained HTML document into the chat as the model writes it, live-previewed inside a sandboxed inline frame — Chart.js, external CDN libraries, and all. Nothing touches the workspace; download is a client-side Blob.
+A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin with two surfaces: the **`visualizer`** tool streams a self-contained HTML document into the chat as the model writes it, live-previewed inside a sandboxed inline frame — Chart.js, external CDN libraries, and all; and the **`canvas_draw`** tool drives a shared sketch canvas that pops open above the composer, where the model draws while you watch and you can draw back. Nothing touches the workspace; download is a client-side Blob.
 
-One package ships both halves: the model-facing tool (`lib/index.js`) and the Web GUI card (`lib/client.js`, declared through the package's `dsh.client` manifest). Installing it activates a bundle layer that mounts both — no manual profile patch editing.
+One package ships both halves: the model-facing tools (`lib/index.js`) and the Web GUI cards (`lib/client.js`, declared through the package's `dsh.client` manifest). Installing it activates a bundle layer that mounts both — no manual profile patch editing.
 
 ## Install
 
@@ -18,7 +18,7 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 
 The first run fails with an "Add the package to allowBuilds" hint: pnpm's supply-chain gate blocks the package's `prepare` build until allowlisted, and the hint carries the exact key (keyed on the codeload URL and the resolved commit). Paste that block under `allowBuilds:` in `~/.dsh/profiles/<your-profile>/pnpm-workspace.yaml` and re-run the command. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
 
-Then boot the profile and ask the model to **"visualize …"** — the streamed document appears inline while it is being written. Pin a release with a ref fragment: `'git+https://github.com/abidhmuhsin/dsh-visualizer.git#v0.2.0'`. To remove:
+Then boot the profile and ask the model to **"visualize …"** — the streamed document appears inline while it is being written — or **"draw … on the canvas"** and the shared canvas opens above the composer. Pin a release with a ref fragment: `'git+https://github.com/abidhmuhsin/dsh-visualizer.git#v0.2.0'`. To remove:
 
 ```sh
 dsh plugin --profile <your-profile> remove dsh-visualizer
@@ -78,6 +78,14 @@ A settled card offers two client-side actions over the same bytes: **Download** 
 ## Settle-time document check
 
 When a call settles, `execute()` statically inspects the finished document (`src/inspect.ts`): script bodies are compiled — never executed — so syntax errors surface without side effects; attributes are scanned per tag for duplicates, ids for double definitions, and `url(#…)`/`href="#…"` references for dangling targets; inline event handlers get the same compile check. The verdict rides the tool result, which is the model's own channel: a clean render says `document check passed`, a defective one lists its findings (line-numbered, capped at six) with the instruction to fix and re-render in the same turn. Because tool results are logged, a replayed session reproduces the verdict exactly. The check is deliberately heuristic and conservative — it declines to judge a module script whose import statements cannot be lifted cleanly rather than risk a false verdict, and it cannot gate what already streamed: its guarantee is that authored defects are named and repaired in-turn, not that no intermediate frame was ever painted.
+
+## The interactive canvas
+
+The `canvas_draw` tool paints on a logical 1000×640 canvas through a small op vocabulary — `stroke` (flattened point runs), `rect`, `ellipse`, `line`, `arrow`, and `text` — in seven named palette ids (theme-resolved client-side; custom hex is rejected so streamed output cannot smuggle styling into the page). Every call validates at the boundary (`src/canvas/validate.ts`: ≤ 64 ops per call, ≤ 512 in the scene, even-length point runs, finite coordinates clamped to the canvas, text length and size caps) and appends a **whole-scene snapshot** to the session log as a custom `canvas/draw` event — the same durability pattern as the todo state. Replaying a session reproduces the scene exactly.
+
+The canvas renders as a collapsible popup docked above the composer (the todo strip's seat). Its agent layer repaints with the doodle-prototype reveal: each stroke animates in along its measured path length (~900 px/s) using a dash-offset trick ported from paper.js, with quadratic-midpoint smoothing. Because the schema places `ops` last, the logged tool-call arguments grow as a JSON prefix while the model streams; a string-aware scanner (`src/canvas/stream-args.ts`) recovers every complete op plus the trailing cut one from that prefix, so strokes appear live — before the tool even dispatches.
+
+The loop closes toward you: the popup carries its own transparent overlay where you draw freehand with pointer capture, plus an optional note. **Send** submits both as a `[canvas]`-prefixed user turn through the composer's own draft channel, so the model sees your ink as compact JSON ops and can answer it — draw a box around a chart and ask "what about this part?". The scene itself folds fresh from every session snapshot re-render: settled `canvas_draw` rows in the chat flow, dispatched-but-unsettled calls, and the still-streaming partial blocks, newest whole-scene snapshot wins.
 
 ## Development
 

@@ -142,7 +142,7 @@ describe('visualizer_guide tool', () => {
     const { ctx } = await setup()
     const schema = ctx.tools.schemas().find(tool => tool.name === 'visualizer_guide')
     if (schema === undefined) throw new Error('visualizer_guide was not registered')
-    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide', 'canvas_draw'])
     expect(schema.parameters).toMatchObject({
       type: 'object',
       properties: { modules: { type: 'array', items: { type: 'string', enum: ['chart', 'diagram', 'mockup', 'interactive', 'art'] } } },
@@ -171,12 +171,12 @@ describe('visualizer_guide tool', () => {
 
   it('registers the guide tool alone when the render tool stays and config disables nothing', async () => {
     const { ctx } = await setup({ guideTool: true, guideModules: ['chart', 'art'] })
-    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide', 'canvas_draw'])
   })
 
   it('skips the guide tool entirely when the config disables it', async () => {
     const { ctx } = await setup({ guideTool: false })
-    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer'])
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'canvas_draw'])
   })
 
   it('narrows the guide tool enum to the configured modules', async () => {

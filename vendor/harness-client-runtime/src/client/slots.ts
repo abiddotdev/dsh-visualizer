@@ -14,7 +14,13 @@ export interface SlotRegistry {
    * @returns disposer removing the contribution.
    */
   register(
-    definition: { readonly name: string; readonly key?: string; readonly locale?: string },
+    definition: {
+      readonly name: string
+      readonly key?: string
+      readonly id?: string
+      readonly order?: number
+      readonly locale?: string
+    },
     component: unknown,
   ): () => void
 

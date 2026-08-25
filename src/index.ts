@@ -21,6 +21,10 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
 import type { GuideModule } from './guide/index.ts'
 import { inspectDocument } from './inspect.ts'
+import * as canvas from './canvas/index.ts'
+
+export * from './canvas/types.ts'
+export { applyCanvas } from './canvas/index.ts'
 
 export const name = 'visualizer'
 export const inject = ['tools', 'systemPrompt']
@@ -135,6 +139,9 @@ function validateGuideModules(requested: readonly string[]): GuideModule[] {
  */
 export function apply(ctx: Context, config: ResolvedConfig): void {
   const modules = validateGuideModules(config.guideModules)
+  // The interactive canvas mounts as a child under the same plugin id, so
+  // one package install carries both tools and their shared client half.
+  ctx.plugin(canvas)
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
