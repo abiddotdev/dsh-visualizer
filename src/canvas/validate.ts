@@ -21,8 +21,36 @@ const MAX_TEXT_CHARS = 240
 const MAX_TEXT_SIZE = 96
 /** Most ops one call may add. */
 const MAX_OPS_PER_CALL = 64
+/** Stroke width used when an op omits `width` (the documented default). */
+const DEFAULT_STROKE_WIDTH = 3
+/** Text size used when a text op omits `size` (the documented default). */
+const DEFAULT_TEXT_SIZE = 20
 
 const COLOR_SET = new Set<string>(CANVAS_COLORS)
+
+/**
+ * Read one geometry value as a flat 4-number bounds array. Tolerates the two
+ * common model near-misses: [[x0,y0],[x1,y1]] point pairs, and the geometry
+ * riding in `points` instead of `bounds`.
+ * @param value - the candidate value.
+ * @returns four numbers, or null when nothing usable arrives.
+ */
+function readBounds4(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null
+  if (value.length === 4 && value.every(entry => typeof entry === 'number' && Number.isFinite(entry))) {
+    return [value[0] as number, value[1] as number, value[2] as number, value[3] as number]
+  }
+  if (
+    value.length === 2 && Array.isArray(value[0]) && Array.isArray(value[1])
+    && (value[0] as unknown[]).length === 2 && (value[1] as unknown[]).length === 2
+    && (value[0] as unknown[]).every(entry => typeof entry === 'number')
+    && (value[1] as unknown[]).every(entry => typeof entry === 'number')
+  ) {
+    const [from, to] = value as [[number, number], [number, number]]
+    return [from[0], from[1], to[0], to[1]]
+  }
+  return null
+}
 
 /**
  * Validate one op in isolation.
@@ -43,16 +71,14 @@ function validateOp(op: CanvasOp): void {
     if (!Array.isArray(points) || points.length < 4 || points.length > MAX_STROKE_POINTS || points.length % 2 !== 0) {
       throw new Error(`invalid stroke: points must be a flat even [x,y,...] array of 4–${MAX_STROKE_POINTS} numbers`)
     }
-    if (typeof width !== 'number') throw new Error('invalid stroke: width must be a number')
     checkFinite('stroke points', points as number[])
     return
   }
   if (op.op === 'rect' || op.op === 'ellipse' || op.op === 'line' || op.op === 'arrow') {
     const bounds = (op as { bounds?: unknown }).bounds
-    if (!Array.isArray(bounds) || bounds.length !== 4) {
-      throw new Error(`invalid ${op.op}: bounds must be an [x,y,w,h]/[x0,y0,x1,y1] array of 4 numbers`)
+    if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(entry => typeof entry === 'number')) {
+      throw new Error(`invalid ${op.op}: bounds must be four numbers [x,y,w,h] (rect/ellipse) or [x0,y0,x1,y1] (line/arrow); [[x0,y0],[x1,y1]] pairs are also accepted`)
     }
-    if (typeof width !== 'number') throw new Error(`invalid ${op.op}: width must be a number`)
     checkFinite(`${op.op} bounds`, bounds as number[])
     return
   }
@@ -62,7 +88,7 @@ function validateOp(op: CanvasOp): void {
       throw new Error(`invalid text: a non-empty string of at most ${MAX_TEXT_CHARS} chars`)
     }
     const size = (op as { size?: unknown }).size
-    if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0 || size > MAX_TEXT_SIZE) {
+    if (size !== undefined && (typeof size !== 'number' || !Number.isFinite(size) || size <= 0 || size > MAX_TEXT_SIZE)) {
       throw new Error(`invalid text: size must be a number in (0, ${MAX_TEXT_SIZE}]`)
     }
     const at = (op as { at?: unknown }).at
@@ -109,8 +135,16 @@ export function validateCanvasOps(raw: unknown, currentOps: readonly CanvasOp[])
     if (candidate === null || typeof candidate !== 'object') throw new Error('invalid canvas op: expected an object')
     const op = candidate as Record<string, unknown>
     if (op.op === 'clear') throw new Error('clear is a tool argument, not an op')
-    validateOp(candidate as unknown as CanvasOp)
-    ops.push(normalizeOp(candidate as unknown as CanvasOp))
+    // Shape ops: recover near-miss geometry (pair pairs, points alias) into
+    // the canonical flat bounds BEFORE validating, so a usable call never
+    // dies on form.
+    let normalized: unknown = candidate
+    if (op.op === 'rect' || op.op === 'ellipse' || op.op === 'line' || op.op === 'arrow') {
+      const bounds = readBounds4(op.bounds) ?? readBounds4(op.points)
+      if (bounds !== null) normalized = { ...op, bounds }
+    }
+    validateOp(normalized as CanvasOp)
+    ops.push(normalizeOp(normalized as CanvasOp))
   }
   return ops
 }
@@ -122,10 +156,10 @@ const clampY = (value: number): number => Math.min(CANVAS_H, Math.max(0, value))
 function normalizeOp(op: CanvasOp): CanvasOp {
   switch (op.op) {
     case 'stroke':
-      return { op: 'stroke', color: op.color, width: op.width, points: op.points.map((v, i) => (i % 2 === 0 ? clamp(v) : clampY(v))) }
+      return { op: 'stroke', color: op.color, width: op.width ?? DEFAULT_STROKE_WIDTH, points: op.points.map((v, i) => (i % 2 === 0 ? clamp(v) : clampY(v))) }
     case 'text':
-      return { op: 'text', text: op.text, color: op.color, size: op.size, at: [clamp(op.at[0]), clampY(op.at[1])] }
+      return { op: 'text', text: op.text, color: op.color, size: op.size ?? DEFAULT_TEXT_SIZE, at: [clamp(op.at[0]), clampY(op.at[1])] }
     default:
-      return { ...op, bounds: op.bounds.map((v, i) => (i % 2 === 0 ? clamp(v) : clampY(v))) }
+      return { ...op, width: op.width ?? DEFAULT_STROKE_WIDTH, bounds: op.bounds.map((v, i) => (i % 2 === 0 ? clamp(v) : clampY(v))) }
   }
 }

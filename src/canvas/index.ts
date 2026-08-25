@@ -53,6 +53,7 @@ const GUIDE_TEXT = [
   `A shared sketch canvas with the user: you draw ops, the user can draw strokes and reply in the same popup. Logical space is ${CANVAS_W}x${CANVAS_H} (x right, y down); coordinates outside are clamped. Draw incrementally — several small calls, coarse strokes first, refine after user feedback; the canvas shows each batch as it streams.`,
   'The user may sketch on the canvas and press Send; their strokes arrive as a [canvas] user message with flat [x,y,...] polylines in the same logical space, possibly with a note. Interpret them and keep drawing.',
   `Colors: ${CANVAS_COLORS.join(', ')}. Ops per call ≤ 64. Use clear:true to restart the scene (ask first when the user drew something).`,
+  'Op field shapes: stroke → {op:"stroke", color, width, points:[x0,y0,x1,y1,...]} · rect/ellipse → {op, color, width, bounds:[x,y,w,h]} · line/arrow → {op, color, width, bounds:[x0,y0,x1,y1]} (start point → end point) · text → {op:"text", color, text, size, at:[x,y]}. width and size are optional (defaults 3 / 20); every value is a bare number, never a nested pair or string.',
 ].join('\n')
 
 /** Alias so the parent package can re-export the canvas plugin's apply. */

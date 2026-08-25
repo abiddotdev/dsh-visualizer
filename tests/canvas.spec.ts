@@ -31,6 +31,32 @@ describe('validateCanvasOps', () => {
     expect(() => validateCanvasOps([{ op: 'text', color: 'ink', text: '', size: 10, at: [0, 0] }], [])).toThrow(/text/)
   })
 
+  it('accepts near-miss geometry: pair pairs and the points alias', () => {
+    const [line] = validateCanvasOps([
+      { op: 'line', color: 'ink', width: 2, bounds: [[10, 20], [30, 40]] },
+    ], []) as [{ bounds: number[] }]
+    expect(line.bounds).toEqual([10, 20, 30, 40])
+    const [arrow] = validateCanvasOps([
+      { op: 'arrow', color: 'ink', width: 2, points: [1, 2, 3, 4] },
+    ], []) as [{ bounds: number[] }]
+    expect(arrow.bounds).toEqual([1, 2, 3, 4])
+    const [rect] = validateCanvasOps([
+      { op: 'rect', color: 'ink', width: 2, points: [5, 6, 7, 8] },
+    ], []) as [{ bounds: number[] }]
+    expect(rect.bounds).toEqual([5, 6, 7, 8])
+  })
+
+  it('applies the documented width/size defaults when omitted', () => {
+    const [stroke] = validateCanvasOps([{ op: 'stroke', color: 'ink', points: [0, 0, 10, 10] }], []) as [{ width: number }]
+    expect(stroke.width).toBe(3)
+    const [shape] = validateCanvasOps([{ op: 'ellipse', color: 'ink', bounds: [0, 0, 10, 10] }], []) as [{ width: number }]
+    expect(shape.width).toBe(3)
+    const [text] = validateCanvasOps([{ op: 'text', color: 'ink', text: 'hi', at: [5, 5] }], []) as [{ size: number }]
+    expect(text.size).toBe(20)
+    // Out-of-range explicit widths still throw.
+    expect(() => validateCanvasOps([{ op: 'stroke', color: 'ink', width: 99, points: [0, 0, 1, 1] }], [])).toThrow(/width/)
+  })
+
   it('caps ops per call and scene size', () => {
     const many = Array.from({ length: 65 }, () => ({ op: 'line', color: 'ink', width: 1, bounds: [0, 0, 1, 1] }))
     expect(() => validateCanvasOps(many, [])).toThrow(/at most 64/)
