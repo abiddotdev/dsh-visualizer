@@ -8,7 +8,8 @@
  * channel.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the conversation package's SlotMap merge (the
@@ -195,21 +196,54 @@ function toLogical(canvas: HTMLCanvasElement, event: { clientX: number; clientY:
   ]
 }
 
-/** The popup panel. */
-export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasDockProps & { session?: CanvasSessionView }) {
+/** Last-resort boundary: a crash inside the panel degrades to a collapsed
+ * pill instead of silently removing the entry from the dock. */
+class CanvasErrorBoundary extends Component<{ t: Translate; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  override componentDidCatch(error: unknown): void {
+    // Surface the fault: the pill alone gives no diagnosis.
+    console.error('[dsh-visualizer] canvas panel crashed:', error)
+  }
+
+  override render(): ReactNode {
+    if (this.state.failed) {
+      return (
+        <section className={css.popover} data-testid="canvas-popup-error">
+          <div className={css.card}>
+            <span className={css.title}>{this.props.t('canvas.title')}</span>
+          </div>
+        </section>
+      )
+    }
+    return this.props.children
+  }
+}
+
+/** The popup panel (wrapped in the crash boundary). */
+export function CanvasPopup(props: CanvasDockProps & { session?: CanvasSessionView }) {
+  return (
+    <CanvasErrorBoundary t={props.t}>
+      <CanvasPopupInner {...props} />
+    </CanvasErrorBoundary>
+  )
+}
+
+function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDockProps & { session?: CanvasSessionView }) {
   const open = useSyncExternalStore(subscribeUi, () => uiState.open)
   const userOps = useSyncExternalStore(subscribeUi, () => uiState.userOps)
   const note = useSyncExternalStore(subscribeUi, () => uiState.note)
   // Durable scene off the host-folded 'canvas' projection (whole-scene,
-  // survives turn boundaries). Guarded read: an unregistered key or absent
-  // seam must never crash the render — it degrades to the args scan below.
-  const projected = useMemo(() => {
-    try {
-      return (useProjection ?? (() => undefined))('canvas') as CanvasOp[] | null | undefined
-    } catch {
-      return undefined
-    }
-  }, [useProjection])
+  // survives turn boundaries). useProjection is a HOOK supplied by the host
+  // (TodoDock pattern): it MUST be called directly in the body on every
+  // render — wrapping it in useMemo/try-catch skips its internal hooks on
+  // cached re-renders and crashes React with a hook-order mismatch.
+  const readProjection = useProjection ?? (() => undefined)
+  const projected = readProjection('canvas') as CanvasOp[] | null | undefined
   // Folded fresh from each re-render's session snapshot. The projection is
   // authoritative when live (it folds the durable whole-scene events);
   // per-call args carry only each call's incremental ops and would otherwise

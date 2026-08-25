@@ -127,12 +127,14 @@ describe('CanvasPopup panel', () => {
     expect((screen.getByText('canvas.clearMine') as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('renders nothing crashed when the projection hook throws for the canvas key', () => {
+  it('degrades to the fallback pill when the projection hook throws for the canvas key', () => {
     const session = sessionWithNodes([toolResultNode('canvas_draw', '{"ops":[{"op":"rect","color":"ink","bounds":[0,0,9,9]}]}')])
     const throwing = (_key: string): unknown => {
       throw new Error('unknown projection key')
     }
+    // The boundary contains the fault: the dock entry stays visible.
     render(<CanvasPopup t={T} inputActions={INPUT_ACTIONS} session={session} useProjection={throwing} />)
-    expect(screen.getByText('1 op(s)')).toBeTruthy()
+    expect(screen.getByTestId('canvas-popup-error')).toBeTruthy()
+    expect(screen.getByText('canvas.title')).toBeTruthy()
   })
 })
