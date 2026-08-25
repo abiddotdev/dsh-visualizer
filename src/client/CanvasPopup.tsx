@@ -8,7 +8,7 @@
  * channel.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the conversation package's SlotMap merge (the
@@ -34,6 +34,27 @@ import css from './CanvasPopup.module.css'
 
 /** Longest accepted user prompt; guards the submitted turn size. */
 const MAX_PROMPT_CHARS = 8_000
+
+// ---- Remount-proof panel state ----
+// Slot entries can be recycled by the host (error-boundary recovery,
+// dispatch-skeleton re-mounts). Component-local useState would reset `open`
+// on every recycle — the panel would spontaneously collapse mid-use. Module
+// scope survives recycling, so open/userOps/note live here.
+interface CanvasUiState {
+  readonly open: boolean
+  readonly userOps: readonly CanvasOp[]
+  readonly note: string
+}
+let uiState: CanvasUiState = { open: false, userOps: [], note: '' }
+const uiListeners = new Set<() => void>()
+function setUiState(patch: Partial<CanvasUiState>): void {
+  uiState = { ...uiState, ...patch }
+  for (const listener of uiListeners) listener()
+}
+function subscribeUi(listener: () => void): () => void {
+  uiListeners.add(listener)
+  return () => { uiListeners.delete(listener) }
+}
 /** Overlay ink color id (warm pencil from the doodle prototype). */
 const USER_INK = '#c96f4a'
 /** Overlay pen width in logical units: ~2.4 display px at the side panel's
@@ -52,14 +73,11 @@ const USER_PEN_WIDTH = 6
 // vendored — see vendor/harness-client-runtime/README.md), these structural
 // views describe only what this component reads.
 
-/** Structural view of one settled Chat tool row. */
+/** Structural view of one settled Chat tool row (deployed ToolResultNode:
+ * the call head lives under `call`, not `data.root`). */
 interface ToolChatNodeView {
   readonly kind: string
-  readonly data?: { readonly root?: {
-    readonly name?: string
-    readonly argsRaw?: string
-    readonly call?: { readonly name: string; readonly argsRaw: string } | null
-  } }
+  readonly call?: { readonly name?: string; readonly argsRaw?: string } | null
 }
 
 /** Structural view of the streaming assistant's partial block list. */
@@ -90,18 +108,20 @@ interface SceneSource {
 
 /** Collect every canvas_draw argsRaw in chronological order (flow order for
  * settled rows, then running calls, then the streaming partial blocks). */
-function collectSceneSources(session: CanvasSessionView | undefined): SceneSource[] {
+export function collectSceneSources(session: CanvasSessionView | undefined): SceneSource[] {
   const sources: SceneSource[] = []
   const nodes = session?.chat?.nodes
   if (nodes !== undefined && typeof nodes.get === 'function') {
     for (const key of session?.chat?.order ?? []) {
       const node = nodes.get(key) as ToolChatNodeView | undefined
-      if (node?.kind !== 'tool') continue
-      const root = node.data?.root
-      if (root === undefined) continue
-      const name = root.name ?? root.call?.name
-      const argsRaw = root.argsRaw ?? root.call?.argsRaw
-      if (name === CANVAS_TOOL_NAME && argsRaw !== undefined) sources.push({ argsRaw, settled: true })
+      // Deployed rows are ToolResultNode ('tool-result') with a paired call
+      // head; older builds nested it under data.root — accept both.
+      const root = (node as { data?: { root?: { name?: string; argsRaw?: string; call?: { name?: string; argsRaw?: string } } } })?.data?.root
+      const name = node?.call?.name ?? root?.name ?? root?.call?.name
+      const argsRaw = node?.call?.argsRaw ?? root?.argsRaw ?? root?.call?.argsRaw
+      if ((node?.kind === 'tool-result' || node?.kind === 'tool') && name === CANVAS_TOOL_NAME && argsRaw !== undefined) {
+        sources.push({ argsRaw, settled: true })
+      }
     }
   }
   for (const call of session?.runningCalls ?? []) {
@@ -116,8 +136,9 @@ function collectSceneSources(session: CanvasSessionView | undefined): SceneSourc
 }
 
 /** Fold the scene off the snapshot: last parseable source wins (whole-scene
- * snapshots); an unsettled winner additionally yields a live preview op. */
-function reconstructScene(session: CanvasSessionView | undefined): {
+ * snapshots); an unsettled winner additionally yields a live preview op.
+ * Exported for tests — this encodes the deployed snapshot contract. */
+export function reconstructScene(session: CanvasSessionView | undefined): {
   ops: CanvasOp[]
   liveOps: number
   preview: CanvasOp | null
@@ -176,26 +197,40 @@ function toLogical(canvas: HTMLCanvasElement, event: { clientX: number; clientY:
 
 /** The popup panel. */
 export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasDockProps & { session?: CanvasSessionView }) {
-  const [open, setOpen] = useState(false)
+  const open = useSyncExternalStore(subscribeUi, () => uiState.open)
+  const userOps = useSyncExternalStore(subscribeUi, () => uiState.userOps)
+  const note = useSyncExternalStore(subscribeUi, () => uiState.note)
   // Durable scene off the host-folded 'canvas' projection (whole-scene,
-  // survives turn boundaries). Unconditional call keeps hook order stable;
-  // absent seam falls back to the snapshot args scan below.
-  const readProjection = useProjection ?? (() => undefined)
-  const projected = readProjection('canvas') as CanvasOp[] | null | undefined
-  // Folded fresh from each re-render's session snapshot — no local state, the
-  // dispatching skeleton owns freshness.
+  // survives turn boundaries). Guarded read: an unregistered key or absent
+  // seam must never crash the render — it degrades to the args scan below.
+  const projected = useMemo(() => {
+    try {
+      return (useProjection ?? (() => undefined))('canvas') as CanvasOp[] | null | undefined
+    } catch {
+      return undefined
+    }
+  }, [useProjection])
+  // Folded fresh from each re-render's session snapshot. The projection is
+  // authoritative when live (it folds the durable whole-scene events);
+  // per-call args carry only each call's incremental ops and would otherwise
+  // replace the visible scene on every new call. The args scan stays as
+  // fallback for assemblies without the seam and feeds the live streaming
+  // preview either way.
+  const sceneCacheOpsRef = useRef<CanvasOp[] | null>(null)
+  const sceneCacheRef = useRef('')
   const { ops: scene, liveCount, preview } = useMemo(() => {
     const folded = reconstructScene(session)
-    // The projection is authoritative when live (it folds the durable whole-
-    // scene events); per-call args carry only each call's incremental ops and
-    // would otherwise replace the visible scene on every new call. The args
-    // scan stays as fallback for assemblies without the seam and feeds the
-    // live streaming preview either way.
     const ops = Array.isArray(projected) ? [...projected] : folded.ops
+    // Identity-stable scene: unrelated session ticks must not restart the
+    // reveal animation. Reuse the previous array while content is unchanged.
+    const signature = JSON.stringify(ops)
+    if (signature === sceneCacheRef.current && sceneCacheOpsRef.current !== null) {
+      return { ops: sceneCacheOpsRef.current, liveCount: folded.liveOps, preview: folded.preview }
+    }
+    sceneCacheRef.current = signature
+    sceneCacheOpsRef.current = ops
     return { ops, liveCount: folded.liveOps, preview: folded.preview }
   }, [session, projected])
-  const [userOps, setUserOps] = useState<CanvasOp[]>([])
-  const [note, setNote] = useState('')
   // Stroke-in-progress guards: some touch engines synthesize a click after a
   // captured stroke releases; it must never toggle the panel.
   const drawingRef = useRef(false)
@@ -263,7 +298,8 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
     const onDown = (event: PointerEvent): void => {
       event.preventDefault()
       drawingRef.current = true
-      canvas.setPointerCapture(event.pointerId)
+      // jsdom and some engines lack pointer capture; drawing must not depend on it.
+      try { canvas.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
       active = pos(event)
       ctx.beginPath()
       ctx.moveTo(active[0], active[1])
@@ -277,7 +313,7 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
     }
     const onUp = (): void => {
       if (active !== null && active.length >= 4) {
-        setUserOps(current => [...current, { op: 'stroke', color: 'accentWarm', width: USER_PEN_WIDTH, points: active as number[] }])
+        setUiState({ userOps: [...uiState.userOps, { op: 'stroke', color: 'accentWarm', width: USER_PEN_WIDTH, points: active as number[] }] })
       }
       active = null
       drawingRef.current = false
@@ -322,8 +358,7 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
     if (userOps.length === 0 && note.trim().length === 0) return
     inputActions.setDraft(prompt.slice(0, MAX_PROMPT_CHARS))
     inputActions.submit()
-    setUserOps([])
-    setNote('')
+    setUiState({ userOps: [], note: '' })
   }, [userOps, note, inputActions])
 
   const summary = liveCount > 0 ? t('canvas.drawing') : `${scene.length} op(s)`
@@ -340,7 +375,7 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
             // Ignore toggles during a stroke or just after one: released
             // touches may synthesize a header click on some engines.
             if (drawingRef.current || performance.now() - lastDrawEndRef.current < 400) return
-            setOpen(value => !value)
+            setUiState({ open: !uiState.open })
           }}
         >
           <span className={css.lead} aria-hidden><IconEditOutline16 size={14} /></span>
@@ -358,7 +393,7 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
               <canvas ref={overlayRef} className={`${css.layer} ${css.overlay}`} aria-label={t('canvas.overlay')} />
             </div>
             <div className={css.toolRow}>
-              <button type="button" className={css.toolBtn} onClick={() => { setUserOps([]) }}>{t('canvas.clearMine')}</button>
+              <button type="button" className={css.toolBtn} onClick={() => { setUiState({ userOps: [] }) }}>{t('canvas.clearMine')}</button>
             </div>
             <div className={css.sendRow}>
               <textarea
@@ -367,7 +402,7 @@ export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasD
                 value={note}
                 maxLength={CANVAS_NOTE_MAX_CHARS}
                 rows={1}
-                onChange={(event) => { setNote(event.target.value) }}
+                onChange={(event) => { setUiState({ note: event.target.value }) }}
               />
               <button
                 type="button"
