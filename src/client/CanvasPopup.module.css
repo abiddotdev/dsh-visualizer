@@ -1,26 +1,29 @@
 /**
- * Canvas popup styling: a compact right-aligned side panel above the
- * composer (TodoPanel posture), an expand/collapse header row, the drawing
- * surface (agent scene layer + user overlay layer), and the send row.
+ * Canvas popup styling: a compact right-aligned side panel that FLOATS above
+ * the layout (an expand/collapse header row, the drawing surface — agent
+ * scene layer + user overlay layer — and the send row). The wrapper takes
+ * zero space in the composer stack; the card hangs over the transcript's
+ * bottom-right corner instead of pushing content around.
  */
 
 .popover {
+  /* Zero footprint in the flex column stack; only a positioning anchor. */
   position: relative;
-  box-sizing: border-box;
-  /* Side-panel posture: pinned to the stack's right edge, narrow enough that
-   * the 25:16 surface stays fully visible above the composer (~256px tall at
-   * full width). Falls back to the full dock width on narrow windows. */
-  flex: none;
-  align-self: flex-end;
-  margin-left: auto;
-  width: min(400px, 100%);
+  height: 0;
+  z-index: 30;
 }
 
 .card {
+  /* Grows upward from the composer's top edge, pinned right. */
+  position: absolute;
+  bottom: 2px;
+  right: var(--dsh-composer-dock-inset, 10px);
+  box-sizing: border-box;
+  width: min(400px, calc(100% - 24px));
   background: var(--dsw-alias-elevated-default, var(--dsw-alias-surface-default, #fff));
   border: 1px solid var(--dsw-alias-outline-default, rgba(74, 65, 54, 0.2));
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
 
