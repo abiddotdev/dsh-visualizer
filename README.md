@@ -40,10 +40,11 @@ The bundle layer already inserts the loader row, so a profile overrides its conf
   config:
     maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
     guideTool: true         # default; set false to use only the render tool
+    canvasTool: true        # default; set false to mount without the interactive canvas
     guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
 ```
 
-`guideModules` narrows both guide surfaces together: the standing system-prompt roster lists only those types' one-liners, and the JIT tool's argument enum accepts only those ids — a disabled type is rejected at the argument boundary before any code runs. `guideTool: false` skips the second tool registration; the render tool and the standing prompt section are unaffected. Unknown module ids, or an empty `guideModules`, fail the plugin load. Both fields default to on/all five types (`chart`, `diagram`, `mockup`, `interactive`, `art`).
+`guideModules` narrows both guide surfaces together: the standing system-prompt roster lists only those types' one-liners, and the JIT tool's argument enum accepts only those ids — a disabled type is rejected at the argument boundary before any code runs. `guideTool: false` skips the second tool registration; the render tool and the standing prompt section are unaffected. `canvasTool: false` skips the whole model-facing canvas surface — the `canvas_draw` tool, its prompt section, and the host-folded scene projection; the client popup stays mounted as a plain user sketchpad (strokes still reach the model as `[canvas]` messages). Unknown module ids, or an empty `guideModules`, fail the plugin load. All fields default to on/all five types (`chart`, `diagram`, `mockup`, `interactive`, `art`).
 
 ## How it works
 
@@ -85,7 +86,7 @@ The `canvas_draw` tool paints on a logical 1000×640 canvas through a small op v
 
 The canvas renders as a compact collapsible side panel that floats above the layout: pinned to the right edge just above the composer (the todo strip's seat), it overlays the transcript's bottom-right corner instead of pushing content around — narrow enough that the whole 1000×640 surface stays visible without crowding anything. Its agent layer repaints with the doodle-prototype reveal: each stroke animates in along its measured path length (~900 px/s) using a dash-offset trick ported from paper.js, with quadratic-midpoint smoothing. Because the schema places `ops` last, the logged tool-call arguments grow as a JSON prefix while the model streams; a string-aware scanner (`src/canvas/stream-args.ts`) recovers every complete op plus the trailing cut one from that prefix, so strokes appear live — before the tool even dispatches.
 
-The loop closes toward you: the popup carries its own transparent overlay where you draw freehand with pointer capture, plus an optional note. **Send** submits both as a `[canvas]`-prefixed user turn through the composer's own draft channel, so the model sees your ink as compact JSON ops and can answer it — draw a box around a chart and ask "what about this part?". The scene itself folds fresh from every session snapshot re-render: settled `canvas_draw` rows in the chat flow, dispatched-but-unsettled calls, and the still-streaming partial blocks, newest whole-scene snapshot wins.
+The loop closes toward you: the popup carries its own transparent overlay where you draw freehand with pointer capture, plus an optional note. **Send** submits both as a `[canvas]`-prefixed user turn through the composer's own draft channel, so the model sees your ink as compact JSON ops and can answer it — draw a box around a chart and ask "what about this part?". The scene itself comes from the host-computed `canvas` **session projection** (the tool-todo pattern): the host folds the logged `canvas/draw` whole-scene snapshots and pushes them to the popup, so the drawing survives turn boundaries, replays, and new calls alike. The per-call argument scan remains as a fallback for assemblies without the projection seam, and doubles as the live streaming preview source — complete ops plus the trailing cut one appear while the model is still writing.
 
 ## Development
 

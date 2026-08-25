@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { validateCanvasOps } from '../src/canvas/validate.ts'
 import { extractCanvasStreamArgs } from '../src/canvas/stream-args.ts'
 import { canvasPromptText, CANVAS_PROMPT_PREFIX } from '../src/canvas/types.ts'
+import type { CanvasOp } from '../src/canvas/types.ts'
+import { canvasProjectionDefinition } from '../src/canvas/index.ts'
 
 describe('validateCanvasOps', () => {
   it('accepts a valid mixed batch', () => {
@@ -112,5 +114,42 @@ describe('canvasPromptText', () => {
   it('omits the note line when empty', () => {
     const text = canvasPromptText([], '   ')
     expect(text).toBe(`${CANVAS_PROMPT_PREFIX}[]`)
+  })
+})
+
+describe('canvas projection fold', () => {
+  const definition = canvasProjectionDefinition()
+
+  it('starts null and takes the whole scene from each draw event', () => {
+    expect(definition.init()).toBeNull()
+    const first = [{ op: 'stroke', color: 'ink', width: 3, points: [1, 2, 3, 4] }] as CanvasOp[]
+    const afterFirst = definition.apply(null, { type: 'canvas/draw', data: { ops: first } })
+    expect(afterFirst).toEqual(first)
+    // Whole-scene rule: the second event REPLACES, not appends.
+    const second = [
+      { op: 'stroke', color: 'ink', width: 3, points: [0, 0, 1, 1] },
+      { op: 'rect', color: 'accent', width: 2, bounds: [10, 10, 20, 20] },
+    ] as CanvasOp[]
+    expect(definition.apply(afterFirst, { type: 'canvas/draw', data: { ops: second } })).toEqual(second)
+  })
+
+  it('keeps the same state reference for unrelated events (zero downstream work)', () => {
+    const state = [{ op: 'text', color: 'ink', text: 'hi', at: [1, 1] }] as CanvasOp[]
+    expect(definition.apply(state, { type: 'turn/start' })).toBe(state)
+    expect(definition.apply(state, { type: 'message/update' })).toBe(state)
+  })
+
+  it('views state unchanged and versions at 1', () => {
+    const state = [{ op: 'ellipse', color: 'accent', bounds: [0, 0, 5, 5] }] as CanvasOp[]
+    expect(definition.view(state)).toBe(state)
+    expect(definition.stateVersion).toBe(1)
+    expect(definition.key).toBe('canvas')
+  })
+
+  it('schema accepts whole scenes and null', () => {
+    expect(definition.schema.safeParse(null).success).toBe(true)
+    expect(definition.schema.safeParse([{ op: 'stroke', color: 'ink' }]).success).toBe(true)
+    expect(definition.schema.safeParse('nope').success).toBe(false)
+    expect(definition.schema.safeParse([42]).success).toBe(false)
   })
 })

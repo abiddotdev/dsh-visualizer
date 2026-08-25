@@ -10,12 +10,15 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { z as zod } from 'zod'
+import type { ZodType } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-side-effect import: pulls the systemPrompt Context augmentation.
 import type {} from '@deepseek-ai/dsh-system-prompt'
-// Type-side-effect import: the SessionEventMap augmentation target. Importing
-// any value/type from the package root makes './types' resolvable for the
-// module augmentation below.
+// Type-side-effect imports: the SessionEventMap augmentation target and the
+// ctx.sessionProjections member + SessionProjectionMap merge target. The
+// projection package is types-only here; the host supplies the service.
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session'
 import {
   CANVAS_COLORS, CANVAS_H, CANVAS_W,
@@ -27,6 +30,55 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Whole-scene snapshot; latest write wins on replay. Log-only UI state. */
     'canvas/draw': { ops: CanvasOp[] }
+  }
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    canvas: CanvasOp[] | null
+  }
+  interface SessionProjectionMap {
+    /**
+     * The whole current canvas scene (the latest `canvas/draw` snapshot), or
+     * `null` before the first write. Whole-value rule: every event carries
+     * the complete replacement scene, so the fold is last-wins and survives
+     * turn boundaries — the sketch persists across turns by design.
+     */
+    canvas: CanvasOp[] | null
+  }
+}
+
+/** Wire/state schema of the `canvas` projection (loose on purpose: ops were
+ * already validated at tool-write time; the fold only re-ships them). */
+const canvasProjectionSchema = zod.union([
+  zod.array(zod.looseObject({ op: zod.string(), color: zod.string() })),
+  zod.null(),
+]) as ZodType<CanvasOp[] | null>
+
+/**
+ * Build the `canvas` projection unit: last whole-scene snapshot wins, and the
+ * state persists across turn boundaries (a sketch outlives the turn that
+ * drew it). Exported so tests exercise the pure fold without a host.
+ * @returns the projection definition for `sessionProjections.register`.
+ */
+export function canvasProjectionDefinition(): {
+  key: 'canvas'
+  schema: ZodType<CanvasOp[] | null>
+  init: () => CanvasOp[] | null
+  apply: (state: CanvasOp[] | null, event: { type: string; data?: unknown }) => CanvasOp[] | null
+  view: (state: CanvasOp[] | null) => CanvasOp[] | null
+  stateVersion: number
+} {
+  return {
+    key: 'canvas',
+    schema: canvasProjectionSchema,
+    init: () => null,
+    apply: (state, event) => {
+      if (event.type !== 'canvas/draw') return state
+      return (event.data as { ops: CanvasOp[] }).ops
+    },
+    view: state => state,
+    stateVersion: 1,
   }
 }
 
@@ -64,6 +116,14 @@ export const applyCanvas = apply
  * @param ctx - Cordis context carrying the registries.
  */
 export function apply(ctx: Context): void {
+  // Standing-plan fold (tool-todo pattern): the durable scene lives in the
+  // logged `canvas/draw` events; this unit projects the latest whole-scene
+  // snapshot to every client via useProjection('canvas'). Inject keeps
+  // headless assemblies without the seam unaffected.
+  ctx.inject(['sessionProjections'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register(canvasProjectionDefinition())
+  })
+
   ctx.systemPrompt.section({ name: 'tool:visualizer-canvas', order: 110, text: GUIDE_TEXT })
 
   ctx.tools.register(defineTool({

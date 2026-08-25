@@ -8,7 +8,7 @@ import * as toolGenerativeUi from '../src/index.ts'
 const testToolSignal = new AbortController().signal
 
 /** Partial plugin config one test overrides; defaults fill the rest. */
-type SetupConfig = Partial<{ maxHtmlBytes: number; guideTool: boolean; guideModules: string[] }>
+type SetupConfig = Partial<{ maxHtmlBytes: number; guideTool: boolean; canvasTool: boolean; guideModules: string[] }>
 
 async function setup(config: SetupConfig = {}) {
   const ctx = new Context()
@@ -177,6 +177,18 @@ describe('visualizer_guide tool', () => {
   it('skips the guide tool entirely when the config disables it', async () => {
     const { ctx } = await setup({ guideTool: false })
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'canvas_draw'])
+  })
+
+  it('skips the canvas tool entirely when the config disables it', async () => {
+    const { ctx } = await setup({ canvasTool: false })
+    expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
+  })
+
+  it('registers canvas_draw and the scene projection by default', async () => {
+    const { ctx } = await setup()
+    expect(ctx.tools.schemas().map(tool => tool.name)).toContain('canvas_draw')
+    // The projection registration is deferred behind inject(sessionProjections);
+    // headless assemblies without the seam simply never fire it.
   })
 
   it('narrows the guide tool enum to the configured modules', async () => {

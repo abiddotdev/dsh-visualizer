@@ -1,10 +1,11 @@
 /**
- * The interactive canvas popup: a dock panel (TodoPanel posture) above the
- * composer. The agent's scene folds fresh out of each session snapshot —
- * settled canvas_draw rows, in-flight calls, and the still-streaming partial
- * blocks (newest whole-scene snapshot wins); the user draws on an overlay and
- * presses Send to submit their ops back as a [canvas] user turn through the
- * composer's draft channel.
+ * The interactive canvas popup: a floating panel anchored above the composer.
+ * The durable agent scene comes from the host-computed 'canvas' projection
+ * (fold of whole-scene `canvas/draw` events, tool-todo pattern); the session
+ * snapshot's canvas_draw args remain a fallback plus the live streaming
+ * preview source. The user draws on an overlay and presses Send to submit
+ * their ops back as a [canvas] user turn through the composer's draft
+ * channel.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -141,6 +142,12 @@ function reconstructScene(session: CanvasSessionView | undefined): {
 /** Full props of the dock entry. */
 export type CanvasDockProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'visualizer'>
+  & {
+    /** Host-computed projection reader (the tool-todo pattern). Optional in
+     * this program because the vendored contract snapshot predates the
+     * projection seam; the deployed framework always supplies it here. */
+    useProjection?: <T = unknown>(key: string) => T
+  }
 
 type Translate = CanvasDockProps['t']
 
@@ -168,16 +175,31 @@ function toLogical(canvas: HTMLCanvasElement, event: { clientX: number; clientY:
 }
 
 /** The popup panel. */
-export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { session?: CanvasSessionView }) {
+export function CanvasPopup({ t, inputActions, session, useProjection }: CanvasDockProps & { session?: CanvasSessionView }) {
   const [open, setOpen] = useState(false)
-  // Durable scene: folded fresh from each re-render's session snapshot — no
-  // local state, the dispatching skeleton owns freshness.
+  // Durable scene off the host-folded 'canvas' projection (whole-scene,
+  // survives turn boundaries). Unconditional call keeps hook order stable;
+  // absent seam falls back to the snapshot args scan below.
+  const readProjection = useProjection ?? (() => undefined)
+  const projected = readProjection('canvas') as CanvasOp[] | null | undefined
+  // Folded fresh from each re-render's session snapshot — no local state, the
+  // dispatching skeleton owns freshness.
   const { ops: scene, liveCount, preview } = useMemo(() => {
     const folded = reconstructScene(session)
-    return { ...folded, liveCount: folded.liveOps }
-  }, [session])
+    // The projection is authoritative when live (it folds the durable whole-
+    // scene events); per-call args carry only each call's incremental ops and
+    // would otherwise replace the visible scene on every new call. The args
+    // scan stays as fallback for assemblies without the seam and feeds the
+    // live streaming preview either way.
+    const ops = Array.isArray(projected) ? [...projected] : folded.ops
+    return { ops, liveCount: folded.liveOps, preview: folded.preview }
+  }, [session, projected])
   const [userOps, setUserOps] = useState<CanvasOp[]>([])
   const [note, setNote] = useState('')
+  // Stroke-in-progress guards: some touch engines synthesize a click after a
+  // captured stroke releases; it must never toggle the panel.
+  const drawingRef = useRef(false)
+  const lastDrawEndRef = useRef(0)
 
   const sceneRef = useRef<HTMLCanvasElement | null>(null)
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
@@ -240,6 +262,7 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
     const pos = (event: PointerEvent): [number, number] => toLogical(canvas, event)
     const onDown = (event: PointerEvent): void => {
       event.preventDefault()
+      drawingRef.current = true
       canvas.setPointerCapture(event.pointerId)
       active = pos(event)
       ctx.beginPath()
@@ -257,6 +280,8 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
         setUserOps(current => [...current, { op: 'stroke', color: 'accentWarm', width: USER_PEN_WIDTH, points: active as number[] }])
       }
       active = null
+      drawingRef.current = false
+      lastDrawEndRef.current = performance.now()
     }
     canvas.addEventListener('pointerdown', onDown)
     canvas.addEventListener('pointermove', onMove)
@@ -304,8 +329,20 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
   const summary = liveCount > 0 ? t('canvas.drawing') : `${scene.length} op(s)`
   return (
     <section className={css.popover} data-testid="canvas-popup" aria-label={t('canvas.title')}>
-      <div className={css.card}>
-        <button type="button" className={css.header} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+      {/* stopPropagation: drawing pointers must not reach any ancestor gesture
+          logic (scrollports, outside-dismiss surfaces) as gesture starts. */}
+      <div className={css.card} onPointerDown={event => event.stopPropagation()}>
+        <button
+          type="button"
+          className={css.header}
+          aria-expanded={open}
+          onClick={() => {
+            // Ignore toggles during a stroke or just after one: released
+            // touches may synthesize a header click on some engines.
+            if (drawingRef.current || performance.now() - lastDrawEndRef.current < 400) return
+            setOpen(value => !value)
+          }}
+        >
           <span className={css.lead} aria-hidden><IconEditOutline16 size={14} /></span>
           <span className={css.title}>{t('canvas.title')}</span>
           {liveCount > 0 && <span className={css.liveDot} aria-hidden />}

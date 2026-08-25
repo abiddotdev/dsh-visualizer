@@ -49,6 +49,10 @@ export interface Config {
   maxHtmlBytes: number
   /** Whether the `visualizer_guide` spec-pull tool registers at all. */
   guideTool: boolean
+  /** Whether the interactive canvas mounts at all (tool + prompt section +
+   * scene projection). The popup stays available as a plain sketchpad when
+   * false; only the model-facing surface is removed. */
+  canvasTool: boolean
   /** Artifact types the guide teaches and the guide tool serves. */
   guideModules: string[]
 }
@@ -56,6 +60,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   maxHtmlBytes: z.number().default(DEFAULT_MAX_HTML_BYTES),
   guideTool: z.boolean().default(true),
+  canvasTool: z.boolean().default(true),
   guideModules: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
 })
 
@@ -141,7 +146,9 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   const modules = validateGuideModules(config.guideModules)
   // The interactive canvas mounts as a child under the same plugin id, so
   // one package install carries both tools and their shared client half.
-  ctx.plugin(canvas)
+  // canvasTool:false skips the whole model-facing surface (tool, prompt
+  // section, scene projection); the client dock stays as a user sketchpad.
+  if (config.canvasTool) ctx.plugin(canvas)
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,

@@ -103,6 +103,9 @@
 
 .overlay {
   cursor: crosshair;
+  /* Belt-and-braces: the touched element itself opts out of browser gesture
+     handling (pan/zoom/double-tap), not only the .surface ancestor. */
+  touch-action: none;
 }
 
 .sendRow {
