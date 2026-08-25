@@ -392,7 +392,7 @@ function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDoc
     // Repaint accumulated user ops (kept as flat polylines).
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
     for (const op of userOps) {
-      if (op.op === 'stroke') paintStroke(ctx, { color: USER_INK, width: USER_PEN_WIDTH, points: op.points, length: 0 } as PreparedStroke & { length: number }, 1)
+      if (op.op === 'stroke') paintStroke(ctx, { color: USER_INK, width: USER_PEN_WIDTH, points: op.points, length: 0 } as PreparedStroke & { length: number }, 1, false)
     }
     let active: number[] | null = null
     const pos = (event: PointerEvent): [number, number] => toLogical(canvas, event)

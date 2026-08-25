@@ -121,6 +121,11 @@ const GUIDE_TEXT = [
   '## Interactive canvas (canvas_draw)',
   `A shared sketch canvas with the user: you draw ops, the user can draw strokes and reply in the same popup. Logical space is ${CANVAS_W}x${CANVAS_H} (x right, y down); coordinates outside are clamped into it automatically.`,
   '',
+  '**Style — hand-drawn doodles only.** This is a napkin-sketch pad shared with the user, not a diagram tool: think pencil on paper. Loose wobbly lines are the aesthetic, not a flaw:',
+  '- Build shapes from 2–4 slightly-overlapping freehand strokes instead of one perfect rect/ellipse (a circle as two arcs that overshoot; a box as four lines whose corners don\'t quite meet).',
+  '- Sketchy details win: hatching for shading, short dashes for texture, a rough ground line under objects.',
+  '- Avoid text ops except tiny handwritten-style labels; never use the canvas for charts, layouts, or precise schematics.',
+  '',
   '**Hard rules for every op object:**',
   '1. EVERY op object starts with its "op" field — one of stroke | rect | ellipse | line | arrow | text. Never omit it; never call it "type".',
   '2. width (and text size) are OPTIONAL plain numbers. Omit them unless needed; when sent they must be bare numbers like 3 or 2.5 — never strings, never 0. Valid width range is 0.5–40.',
@@ -177,7 +182,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'canvas_draw',
     description: 'Draw on the shared interactive canvas the user sees in a popup. '
-      + 'Call repeatedly to build a sketch incrementally: each call\'s ops append to the scene and stream to the canvas as you write. '
+      + 'The canvas is a HAND-DRAWN DOODLE SKETCHPAD: loose, imperfect, pen-on-paper style — never diagrams, charts, or pixel-perfect geometry. '
+      + 'Build shapes from a few overlapping freehand strokes (like a pencil sketch), keep lines slightly wobbly, and prefer strokes over text; if you label anything, keep it tiny and handwritten-feeling. '
+      + 'Call repeatedly to build the sketch incrementally: each call\'s ops append to the scene and stream to the canvas as you write. '
       + `Coordinates are in a ${CANVAS_W}x${CANVAS_H} logical space. `
       + 'The user can draw strokes over yours and send them back as a [canvas] message — react to their sketch in the same space.',
     parameters: {

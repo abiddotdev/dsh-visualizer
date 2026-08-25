@@ -10,6 +10,7 @@ import { canvasPromptText, CANVAS_PROMPT_PREFIX } from '../src/canvas/types.ts'
 import type { CanvasOp } from '../src/canvas/types.ts'
 import { canvasProjectionDefinition } from '../src/canvas/index.ts'
 import { normalizeCanvasOps } from '../src/canvas/normalize.ts'
+import { sketchify } from '../src/canvas/render.ts'
 
 describe('validateCanvasOps', () => {
   it('accepts a valid mixed batch', () => {
@@ -353,5 +354,31 @@ describe('canvas_draw duplicate suppression and cap', () => {
     }
     const last = agent.history.at(-1) as { data: { ops: unknown[] } }
     expect(last.data.ops).toHaveLength(512)
+  })
+})
+
+describe('sketchy renderer (doodle aesthetic)', () => {
+  it('wobbles points deterministically and pins the endpoints', () => {
+    const line = [0, 0, 100, 0, 200, 50, 300, 10]
+    const a = sketchify(line)
+    const b = sketchify(line)
+    // Same input → identical wobble (repaints must not swim).
+    expect(a).toEqual(b)
+    // Something moved…
+    expect(a).not.toEqual(line)
+    // …but endpoints are pinned so shapes still connect.
+    expect([a[0], a[1]]).toEqual([line[0], line[1]])
+    expect([a.at(-2), a.at(-1)]).toEqual([line.at(-2), line.at(-1)])
+    // Displacement stays subtle (doodle, not scribble).
+    for (let i = 2; i < a.length - 2; i++) {
+      expect(Math.abs(a[i] - line[i])).toBeLessThanOrEqual(2.2 + 1e-9)
+    }
+  })
+
+  it('different geometry gets different wobble; amplitude 0 disables it', () => {
+    const a = sketchify([0, 0, 100, 100])
+    const b = sketchify([5, 3, 105, 103])
+    expect(a).not.toEqual(b)
+    expect(sketchify([0, 0, 100, 100], 0)).toEqual([0, 0, 100, 100])
   })
 })

@@ -87,6 +87,52 @@ function resample(points: readonly number[]): number[] {
   return out
 }
 
+/** Deterministic tiny PRNG (mulberry32): the wobble must be identical on
+ * every repaint or strokes visibly swim between frames. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** FNV-style hash of the first coordinates: same shape → same wobble. */
+function seedFromPoints(points: readonly number[]): number {
+  let hash = 2166136261
+  const span = Math.min(points.length, 24)
+  for (let i = 0; i < span; i++) {
+    hash ^= Math.round(points[i] * 10) & 0xffff
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+const WOBBLE_AMPLITUDE = 2.2
+
+/** Hand-drawn wobble: displace resampled points by small seeded offsets
+ * (endpoints pinned so multi-stroke shapes still meet roughly). This plus
+ * the double pencil pass is what turns plotter-perfect ops into doodles.
+ */
+export function sketchify(points: readonly number[], amplitude: number = WOBBLE_AMPLITUDE): number[] {
+  if (points.length < 4 || amplitude <= 0) return [...points]
+  const rand = mulberry32(seedFromPoints(points))
+  const out: number[] = []
+  for (let i = 0; i < points.length; i += 2) {
+    out.push(
+      points[i] + (rand() * 2 - 1) * amplitude,
+      points[i + 1] + (rand() * 2 - 1) * amplitude,
+    )
+  }
+  out[0] = points[0]
+  out[1] = points[1]
+  out[out.length - 2] = points[points.length - 2]
+  out[out.length - 1] = points[points.length - 1]
+  return out
+}
+
 /** Polyline length. */
 export function pathLength(points: readonly number[]): number {
   let len = 0
@@ -145,11 +191,12 @@ export function prepareStroke(op: CanvasOp, palette: CanvasPalette): PreparedStr
   const color = palette[op.color] ?? palette.ink
   if (op.op === 'stroke') {
     if (op.points.length < 4) return null
-    const points = op.points.length > 4 ? smoothPath(op.points) : resample(op.points)
+    const base = op.points.length > 4 ? smoothPath(op.points) : resample(op.points)
+    const points = sketchify(base)
     return { color, width: op.width, points, length: pathLength(points) }
   }
   if (op.op === 'rect' || op.op === 'ellipse' || op.op === 'line' || op.op === 'arrow') {
-    const points = shapePoints(op)
+    const points = sketchify(shapePoints(op), 3.2)
     return { color, width: op.width, points, length: pathLength(points) }
   }
   return null
@@ -173,20 +220,40 @@ export function setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D
  * Paint one prepared stroke at reveal fraction (1 = complete). Dash-array
  * reveal: dash [len, len] with offset len·(1−frac) — the paper.js trick.
  */
-export function paintStroke(ctx: CanvasRenderingContext2D, stroke: PreparedStroke, frac: number): void {
+export function paintStroke(ctx: CanvasRenderingContext2D, stroke: PreparedStroke, frac: number, doublePass = true): void {
   if (frac <= 0) return
+  const trace = (): void => {
+    ctx.beginPath()
+    ctx.moveTo(stroke.points[0], stroke.points[1])
+    for (let i = 2; i < stroke.points.length; i += 2) {
+      ctx.lineTo(stroke.points[i], stroke.points[i + 1])
+    }
+  }
+  const dashFor = (): void => {
+    if (frac >= 1) ctx.setLineDash([])
+    else {
+      ctx.setLineDash([stroke.length, stroke.length])
+      ctx.lineDashOffset = stroke.length * (1 - frac)
+    }
+  }
   ctx.strokeStyle = stroke.color
   ctx.lineWidth = stroke.width
-  if (frac >= 1) ctx.setLineDash([])
-  else ctx.setLineDash([stroke.length, stroke.length])
-  ctx.lineDashOffset = stroke.length * (1 - frac)
-  ctx.beginPath()
-  ctx.moveTo(stroke.points[0], stroke.points[1])
-  for (let i = 2; i < stroke.points.length; i += 2) {
-    ctx.lineTo(stroke.points[i], stroke.points[i + 1])
-  }
+  dashFor()
+  trace()
   ctx.stroke()
   ctx.setLineDash([])
+  // Faint nudged second pass — pencil-overdraw texture. Freehand user ink
+  // skips it (already hand-made).
+  if (!doublePass || stroke.points.length < 4) return
+  ctx.save()
+  ctx.globalAlpha *= 0.38
+  ctx.lineWidth = stroke.width * 0.7
+  ctx.translate(1.1, -0.9)
+  dashFor()
+  trace()
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.restore()
 }
 
 /** Paint one text op (immediate; no reveal animation). */
