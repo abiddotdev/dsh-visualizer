@@ -29,6 +29,8 @@ import { validateCanvasOps } from './validate.ts'
 
 /** Most per-call skip reasons reported to the model; the rest collapse. */
 const MAX_REPORTED_SKIPS = 4
+/** Scene size cap; overflow is trimmed oldest-first, never hard-failed. */
+const MAX_SCENE_OPS = 512
 
 /**
  * Authoritative per-session running scene, kept in the plugin process.
@@ -131,7 +133,7 @@ const GUIDE_TEXT = [
   '- {"op":"line", "color":"ink", "bounds":[x0,y0,x1,y1]}   ·   {"op":"arrow", ... same}',
   '- {"op":"text", "color":"ink", "text":"label", "size":20, "at":[x,y]}   ·   size optional, default 20',
   '',
-  '**Batching:** send at most ~8 ops per call and wait for the result before continuing. If a result lists skipped ops, resend ONLY corrected versions of those ops — do not redraw everything. Draw incrementally: coarse shapes first, refine after looking at the result counts and user feedback.',
+  '**Batching:** the canvas PERSISTS — every shape you sent in earlier calls is still there. Each call must contain ONLY genuinely new shapes; resending old ones just wastes budget (they are ignored as duplicates). Send at most ~8 ops per call and wait for the result. If a result lists skipped ops, resend ONLY corrected versions of those — do not redraw everything. Draw incrementally: coarse shapes first, refine after looking at the result counts and user feedback.',
   `The user may sketch on the canvas and press Send; their strokes arrive as a [canvas] user message with flat [x,y,...] polylines in the same logical space, possibly with a note. Interpret them and keep drawing. Use clear:true (with ops:[]) to restart the scene — ask first when the user drew something.`,
 ].join('\n')
 
@@ -147,6 +149,12 @@ function renderCanvasResult(value: CanvasDrawResult): string {
     const lines = [...value.skipped]
     if (total > lines.length) lines.push(`…and ${total - lines.length} more`)
     text += `\nSkipped (fix these and resend only them):\n- ${lines.join('\n- ')}`
+  }
+  if (value.duplicates !== undefined && value.duplicates > 0) {
+    text += `\n${value.duplicates} duplicate shape(s) ignored — the canvas already keeps everything from earlier calls, so each call should contain ONLY new shapes.`
+  }
+  if (value.trimmed !== undefined && value.trimmed > 0) {
+    text += `\n${value.trimmed} oldest op(s) were trimmed to stay within the ${MAX_SCENE_OPS}-op canvas; start a fresh drawing with clear:true when the picture is done.`
   }
   return text
 }
@@ -193,6 +201,8 @@ export function apply(ctx: Context): void {
           added: { type: 'number', required: true },
           skippedCount: { type: 'number' },
           skipped: { type: 'array', items: { type: 'string' } },
+          duplicates: { type: 'number' },
+          trimmed: { type: 'number' },
         },
       },
       render: (_args, value) => [{
@@ -220,7 +230,45 @@ export function apply(ctx: Context): void {
       const added = args.clear === true && (!Array.isArray(args.ops) || args.ops.length === 0)
         ? []
         : validateCanvasOps(norm.ops, priorOps)
-      const next = clear ? [...added] : [...priorOps, ...added]
+      // Models 'add details' by resending shapes from earlier calls; exact
+      // duplicates add nothing visually (same pixels) but inflate the scene
+      // toward its cap — suppress them instead of failing the call.
+      const signatureOf = (op: CanvasOp): string => JSON.stringify(op)
+      let duplicates = 0
+      let merged: CanvasOp[]
+      if (clear) {
+        const seen = new Set<string>()
+        merged = []
+        for (const op of added) {
+          const signature = signatureOf(op)
+          if (seen.has(signature)) {
+            duplicates++
+            continue
+          }
+          seen.add(signature)
+          merged.push(op)
+        }
+      } else {
+        const seen = new Set<string>(priorOps.map(signatureOf))
+        const fresh: CanvasOp[] = []
+        for (const op of added) {
+          const signature = signatureOf(op)
+          if (seen.has(signature)) {
+            duplicates++
+            continue
+          }
+          seen.add(signature)
+          fresh.push(op)
+        }
+        merged = [...priorOps, ...fresh]
+      }
+      // Recency-biased cap: never hard-fail a draw for size; trim the oldest
+      // overflow and say so. The model keeps drawing; the user keeps seeing.
+      let trimmed = 0
+      if (merged.length > MAX_SCENE_OPS) {
+        trimmed = merged.length - MAX_SCENE_OPS
+      }
+      const next = trimmed > 0 ? merged.slice(trimmed) : merged
       exec.agent.session.append('canvas/draw', { ops: next })
       sceneCache.set(sid, next)
       if (sceneCache.size > SCENE_CACHE_MAX) {
@@ -229,7 +277,9 @@ export function apply(ctx: Context): void {
       }
       return Promise.resolve({
         ops: next.length,
-        added: added.length,
+        added: added.length - duplicates,
+        ...(duplicates > 0 ? { duplicates } : {}),
+        ...(trimmed > 0 ? { trimmed } : {}),
         ...(norm.notes.length > 0
           ? {
               skippedCount: norm.notes.length,

@@ -127,9 +127,8 @@ export function validateCanvasOps(raw: unknown, currentOps: readonly CanvasOp[])
   if (raw.length > MAX_OPS_PER_CALL) {
     throw new Error(`a call may add at most ${MAX_OPS_PER_CALL} ops (got ${raw.length}); split across calls`)
   }
-  if (currentOps.length + raw.length > 512) {
-    throw new Error('the canvas scene is full (512 ops); call canvas_draw with clear first')
-  }
+  // Scene-level capping lives in the tool's execute (duplicate suppression +
+  // oldest-first trim) — a full canvas must never hard-fail a draw.
   const ops: CanvasOp[] = []
   for (const candidate of raw) {
     if (candidate === null || typeof candidate !== 'object') throw new Error('invalid canvas op: expected an object')

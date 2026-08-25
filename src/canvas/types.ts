@@ -61,6 +61,10 @@ export interface CanvasDrawResult {
   readonly skippedCount?: number
   /** Human-readable skip reasons, first few only. */
   readonly skipped?: string[]
+  /** Ops identical to shapes already on the canvas (absent when none). */
+  readonly duplicates?: number
+  /** Oldest ops evicted to stay within the scene cap (absent when none). */
+  readonly trimmed?: number
 }
 
 /** The wire view of the durable canvas state. */

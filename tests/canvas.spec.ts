@@ -65,13 +65,11 @@ describe('validateCanvasOps', () => {
     expect(() => validateCanvasOps([{ op: 'stroke', color: 'ink', width: 99, points: [0, 0, 1, 1] }], [])).toThrow(/width/)
   })
 
-  it('caps ops per call and scene size', () => {
+  it('caps ops per call', () => {
     const many = Array.from({ length: 65 }, () => ({ op: 'line', color: 'ink', width: 1, bounds: [0, 0, 1, 1] }))
     expect(() => validateCanvasOps(many, [])).toThrow(/at most 64/)
-    // 8 calls of 64 fill the scene; the next op exceeds the 512 cap.
-    const full: unknown[] = []
-    for (let i = 0; i < 8; i++) full.push(...validateCanvasOps(many.slice(0, 64), full as never[]))
-    expect(() => validateCanvasOps([{ op: 'line', color: 'ink', width: 1, bounds: [0, 0, 1, 1] }], full as never[])).toThrow(/scene is full/)
+    // Scene-size capping moved to the tool's execute (dedupe + oldest-first
+    // trim): a full canvas must never hard-fail a draw.
   })
 })
 
@@ -290,5 +288,70 @@ describe('canvas_draw scene accumulation', () => {
     expect(cleared).toEqual({ ops: 0, added: 0 })
     const again = await draw(agent, { ops: [{ op: 'rect', color: 'ink', bounds: [1, 1, 5, 5] }] })
     expect(again).toEqual({ ops: 1, added: 1 })
+  })
+})
+
+describe('canvas_draw duplicate suppression and cap', () => {
+  const testSignal = new AbortController().signal
+  let callCounter = 0
+
+  function fakeAgent() {
+    const history: { type: string; data: unknown }[] = []
+    return {
+      history,
+      session: {
+        id: 'dup-test',
+        get events(): { type: string; data: unknown }[] {
+          return history
+        },
+        append(type: string, data: unknown): void {
+          history.push({ type, data })
+        },
+      },
+    }
+  }
+
+  async function draw(agent: ReturnType<typeof fakeAgent>, args: unknown): Promise<string> {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(pluginModule)
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: CallId(`dup-${++callCounter}`),
+      name: 'canvas_draw',
+      arguments: args,
+      agent: agent as never,
+    })
+    return result.content.map(block => block.text ?? '').join('\n')
+  }
+
+  const rectAt = (x: number): CanvasOp => ({ op: 'rect', color: 'ink', bounds: [x, 0, 5, 5] })
+
+  it('ignores exact duplicates instead of inflating the scene', async () => {
+    const agent = fakeAgent()
+    await draw(agent, { ops: [rectAt(0), rectAt(10)] })
+    // Model 'adds' one shape but resends both existing ones verbatim.
+    const text = await draw(agent, { ops: [rectAt(0), rectAt(10), rectAt(20)] })
+    const last = agent.history.at(-1) as { data: { ops: unknown[] } }
+    expect(last.data.ops).toHaveLength(3) // 2 prior + only the NEW rect
+    expect(text).toContain('holds 3 op(s)')
+    expect(text).toContain('2 duplicate shape(s) ignored')
+  })
+
+  it('trims oldest overflow instead of failing when the scene cap is reached', async () => {
+    const agent = fakeAgent()
+    // 64-op batches × 9 calls = 576 > 512 → the last batch must still land.
+    for (let batch = 0; batch < 9; batch++) {
+      // Distinct rows inside the logical canvas (clamping would merge them).
+      const ops: CanvasOp[] = Array.from({ length: 64 }, (_, i) => ({ op: 'rect', color: 'ink', bounds: [i * 15, batch * 65, 5, 5] }))
+      const text = await draw(agent, { ops })
+      if (batch === 8) {
+        expect(text).not.toMatch(/scene is full/)
+        expect(text).toMatch(/trimmed/i)
+      }
+    }
+    const last = agent.history.at(-1) as { data: { ops: unknown[] } }
+    expect(last.data.ops).toHaveLength(512)
   })
 })
