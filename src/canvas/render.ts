@@ -28,7 +28,9 @@ export function resolvePalette(): CanvasPalette {
     inkSoft: read(['--dsw-alias-label-tertiary'], '#7a6b52'),
     accent: read(['--dsw-alias-accent-default'], '#7a8f6b'),
     accentWarm: '#c96f4a',
-    guide: read(['--dsw-alias-accent-default'], '#7a8f6b'),
+    // Faint construction-line grey — deliberately distinct from accent (the
+    // old accent fallback made every "guide" stroke sage green).
+    guide: read(['--dsw-alias-label-tertiary', '--dsw-alias-label-secondary'], '#b3a893'),
     white: '#ffffff',
     black: '#000000',
   }

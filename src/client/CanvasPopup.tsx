@@ -301,12 +301,18 @@ function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDoc
   // captured stroke releases; it must never toggle the panel.
   const drawingRef = useRef(false)
   const lastDrawEndRef = useRef(0)
+  /** How many scene strokes are already on screen — only newer ones animate. */
+  const paintedCountRef = useRef(0)
 
   const sceneRef = useRef<HTMLCanvasElement | null>(null)
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
   const palette = useMemo(() => resolvePalette(), [])
 
-  // ---- Agent scene painting with reveal animation ----
+  // ---- Agent scene painting ----
+  // Policy: strokes already revealed stay painted INSTANTLY; only strokes
+  // newer than the last paint animate, within a hard ~1.1s window. Streaming
+  // previews never animate at all (their JSON grows per token — restarting a
+  // long reveal on every tick left big scenes permanently half-drawn).
   useEffect(() => {
     const canvas = sceneRef.current
     if (canvas === null || !open) return
@@ -314,33 +320,62 @@ function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDoc
     if (ctx === null) return
     const drawable = preview !== null ? [...scene, preview] : scene
     const { strokes, texts } = prepareScene(drawable, palette)
-    // Reveal schedule: ~SPEED px per second of path length (doodle prototype).
-    const SPEED = 900
+
+    const SPEED = 1400 // logical px/s reveal pace
+    const WINDOW = 1.1 // hard cap on any animated segment, seconds
+    const durOf = (stroke: PreparedStroke): number =>
+      Number.isFinite(stroke.length) && stroke.length > 0 ? Math.max(0.06, stroke.length / SPEED) : 0.06
+
+    // Shrink (model cleared) → replay everything briefly; otherwise only the
+    // tail beyond the last painted stroke animates.
+    let baseline = Math.min(paintedCountRef.current, strokes.length)
+    if (strokes.length < paintedCountRef.current) baseline = 0
+    paintedCountRef.current = strokes.length
+    if (preview !== null) baseline = strokes.length // streaming: no animation
+
+    const animating = strokes.slice(baseline)
     let cursor = 0
-    const starts = strokes.map((stroke) => {
+    const starts = animating.map((stroke) => {
       const start = cursor
-      cursor += Math.max(0.12, stroke.length / SPEED)
+      cursor += durOf(stroke)
       return start
     })
-    const endTime = cursor + 0.2
+    if (cursor > WINDOW) {
+      const scale = WINDOW / cursor
+      for (let i = 0; i < starts.length; i++) starts[i] = (starts[i] ?? 0) * scale
+      cursor = WINDOW
+    }
+    const endTime = cursor + 0.08
+
+    const paintAll = (elapsed: number): void => {
+      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+      for (let i = 0; i < baseline && i < strokes.length; i++) {
+        const stroke = strokes[i]
+        if (stroke !== undefined) paintStroke(ctx, stroke, 1)
+      }
+      for (let i = 0; i < animating.length; i++) {
+        const stroke = animating[i]
+        if (stroke === undefined) continue
+        const dur = durOf(stroke)
+        const at = starts[i] ?? 0
+        const frac = cursor <= 0 ? 1 : Math.min(1, Math.max(0, (elapsed - at) / dur))
+        paintStroke(ctx, stroke, frac)
+      }
+      for (const op of texts) {
+        if (op.op === 'text') paintText(ctx, op, palette)
+      }
+    }
+
+    if (animating.length === 0 || endTime <= 0.09) {
+      paintAll(Number.POSITIVE_INFINITY)
+      return
+    }
     const start = performance.now()
     let raf = 0
     const frame = (now: number): void => {
       const elapsed = (now - start) / 1000
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-      for (let i = 0; i < strokes.length; i++) {
-        const stroke = strokes[i]
-        const at = starts[i]
-        if (at === undefined) continue
-        const frac = Math.min(1, Math.max(0, (elapsed - at) / Math.max(0.12, stroke.length / SPEED)))
-        paintStroke(ctx, stroke, frac)
-      }
-      if (elapsed > endTime * 0.55) {
-        for (const op of texts) {
-          if (op.op === 'text') paintText(ctx, op, palette)
-        }
-      }
-      if (elapsed < endTime + 0.3) raf = requestAnimationFrame(frame)
+      paintAll(elapsed)
+      if (elapsed < endTime) raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(raf) }

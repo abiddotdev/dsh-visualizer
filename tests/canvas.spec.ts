@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { CallId } from '@deepseek-ai/dsh-llm'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as pluginModule from '../src/index.ts'
 import { validateCanvasOps } from '../src/canvas/validate.ts'
 import { extractCanvasStreamArgs } from '../src/canvas/stream-args.ts'
 import { canvasPromptText, CANVAS_PROMPT_PREFIX } from '../src/canvas/types.ts'
@@ -208,5 +213,82 @@ describe('canvas op normalization tolerance', () => {
     // The streaming decoder also recovers every op from this payload.
     const view = extractCanvasStreamArgs(JSON.stringify({ ops: car }))
     expect(view?.ops).toHaveLength(6)
+  })
+})
+
+describe('canvas_draw scene accumulation', () => {
+  const testSignal = new AbortController().signal
+  let callCounter = 0
+
+  /** Fake agent session: events optionally scoped to the current turn (the
+   * deployment shape that exposed the replace-instead-of-extend bug). */
+  function fakeAgent(turnScoped: boolean) {
+    const history: { type: string; data: unknown }[] = []
+    return {
+      history,
+      session: {
+        id: `s-${turnScoped ? 'turn' : 'full'}`,
+        get events() {
+          return turnScoped ? [] : history
+        },
+        append(type: string, data: unknown): void {
+          history.push({ type, data })
+        },
+      },
+    }
+  }
+
+  async function draw(agent: ReturnType<typeof fakeAgent>, args: unknown): Promise<{ ops: number; added: number }> {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(pluginModule)
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: CallId(`draw-${++callCounter}`),
+      name: 'canvas_draw',
+      arguments: args,
+      agent: agent as never,
+    })
+    if (result.isError) throw new Error(result.content.map(b => b.text ?? '').join(''))
+    const text = result.content[0]?.text ?? ''
+    const match = /Canvas now holds (\d+) op\(s\); this call added (\d+)\./.exec(text)
+    if (match === null) throw new Error(`unexpected tool output: ${text}`)
+    return { ops: Number(match[1]), added: Number(match[2]) }
+  }
+
+  it('extends the scene across calls even when session.events is turn-scoped', async () => {
+    const agent = fakeAgent(true) // prior calls invisible to the tool each time
+    const first = await draw(agent, { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 10, 10] }] })
+    expect(first).toEqual({ ops: 1, added: 1 })
+    const second = await draw(agent, { ops: [{ op: 'ellipse', color: 'accentWarm', bounds: [5, 5, 8, 8] }] })
+    // THE regression: scene must hold BOTH calls' ops, not just the last.
+    expect(second).toEqual({ ops: 2, added: 1 })
+    // The appended event carries the whole accumulated scene.
+    const last = agent.history.at(-1) as { data: { ops: unknown[] } }
+    expect(last.data.ops).toHaveLength(2)
+  })
+
+  it('recovers the running scene from the newest whole-scene event after restart (no concat duplication)', async () => {
+    const agent = fakeAgent(false)
+    agent.history.push(
+      { type: 'canvas/draw', data: { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 9, 9] }, { op: 'rect', color: 'ink', bounds: [1, 1, 9, 9] }] } },
+      { type: 'canvas/draw', data: { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 9, 9] }, { op: 'rect', color: 'ink', bounds: [1, 1, 9, 9] }, { op: 'rect', color: 'ink', bounds: [2, 2, 9, 9] }] } },
+    )
+    // Fresh sid → cache miss → recovery takes the LAST event's scene as-is.
+    const fresh = fakeAgent(false)
+    fresh.session.id = 'brand-new'
+    for (const event of agent.history) (fresh.session.append as (t: string, d: unknown) => void)(event.type, event.data)
+    const out = await draw(fresh, { ops: [{ op: 'ellipse', color: 'ink', bounds: [3, 3, 4, 4] }] })
+    expect(out).toEqual({ ops: 4, added: 1 }) // 3 recovered + 1 added, NOT 6+
+  })
+
+  it('clear:true resets both the appended scene and the cache', async () => {
+    const agent = fakeAgent(true)
+    await draw(agent, { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 5, 5] }] })
+    const cleared = await draw(agent, { clear: true, ops: [] })
+    expect(cleared).toEqual({ ops: 0, added: 0 })
+    const again = await draw(agent, { ops: [{ op: 'rect', color: 'ink', bounds: [1, 1, 5, 5] }] })
+    expect(again).toEqual({ ops: 1, added: 1 })
   })
 })

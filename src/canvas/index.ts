@@ -30,6 +30,17 @@ import { validateCanvasOps } from './validate.ts'
 /** Most per-call skip reasons reported to the model; the rest collapse. */
 const MAX_REPORTED_SKIPS = 4
 
+/**
+ * Authoritative per-session running scene, kept in the plugin process.
+ * `exec.agent.session.events` is NOT a reliable prior: some assemblies scope
+ * it to the current turn (older calls invisible → each call replaced the
+ * scene instead of extending it), and folding every event would double-count
+ * anyway since each event carries the WHOLE accumulated scene. The cache is
+ * primary; the last event's whole-scene ops are only a restart recovery.
+ */
+const sceneCache = new Map<string, CanvasOp[]>()
+const SCENE_CACHE_MAX = 64
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Whole-scene snapshot; latest write wins on replay. Log-only UI state. */
@@ -191,22 +202,31 @@ export function apply(ctx: Context): void {
     },
     execute(args, exec): Promise<CanvasDrawResult> {
       const clear = args.clear === true
-      // The running scene is the executing agent's own session events; a
-      // non-agent caller has no owning canvas and is rejected (todo_write
+      // A non-agent caller has no owning canvas and is rejected (todo_write
       // semantics).
       if (!exec.agent) throw new Error('canvas_draw requires an owning agent session')
-      const prior: CanvasOp[] = []
-      if (!clear) {
+      const sid = typeof exec.agent.session.id === 'string' ? exec.agent.session.id : '∅'
+      let prior = sceneCache.get(sid)
+      if (prior === undefined && !clear) {
+        // Restart recovery: the newest canvas/draw event IS the whole scene.
         for (const event of exec.agent.session.events) {
-          if (event.type === 'canvas/draw') prior.push(...(event.data as { ops: CanvasOp[] }).ops)
+          if (event.type !== 'canvas/draw') continue
+          const ops = (event.data as { ops?: unknown }).ops
+          if (Array.isArray(ops)) prior = ops as CanvasOp[]
         }
       }
+      const priorOps = Array.isArray(prior) ? [...prior] : []
       const norm = normalizeCanvasOps(args.ops)
       const added = args.clear === true && (!Array.isArray(args.ops) || args.ops.length === 0)
         ? []
-        : validateCanvasOps(norm.ops, prior)
-      const next = clear ? [...added] : [...prior, ...added]
+        : validateCanvasOps(norm.ops, priorOps)
+      const next = clear ? [...added] : [...priorOps, ...added]
       exec.agent.session.append('canvas/draw', { ops: next })
+      sceneCache.set(sid, next)
+      if (sceneCache.size > SCENE_CACHE_MAX) {
+        const oldest = sceneCache.keys().next().value
+        if (oldest !== undefined) sceneCache.delete(oldest)
+      }
       return Promise.resolve({
         ops: next.length,
         added: added.length,
