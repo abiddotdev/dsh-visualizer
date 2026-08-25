@@ -42,6 +42,19 @@ const MAX_SCENE_OPS = 512
  */
 const sceneCache = new Map<string, CanvasOp[]>()
 const SCENE_CACHE_MAX = 64
+/** Last scene this process touched, whatever the session key. Covers
+ * assemblies whose per-call `session.id` is unstable (every call would
+ * otherwise miss the keyed cache and fall back to turn-scoped events —
+ * i.e. an empty prior that REPLACES the scene). Single-canvas toy: the MRU
+ * scene is the right guess across key churn; a real clear still resets it. */
+let lastSceneTouched: CanvasOp[] | null = null
+
+/** Test isolation only: wipes the process-scene state (real deployments
+ * keep it for the process lifetime). */
+export function resetCanvasSceneCache(): void {
+  sceneCache.clear()
+  lastSceneTouched = null
+}
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -161,6 +174,9 @@ function renderCanvasResult(value: CanvasDrawResult): string {
   if (value.trimmed !== undefined && value.trimmed > 0) {
     text += `\n${value.trimmed} oldest op(s) were trimmed to stay within the ${MAX_SCENE_OPS}-op canvas; start a fresh drawing with clear:true when the picture is done.`
   }
+  if (value.priorSource !== undefined) {
+    text += `\n(scene ${value.priorSource === 'empty' ? 'started fresh' : `continued from ${value.priorCount ?? '?'} op(s) via ${value.priorSource}`})`
+  }
   return text
 }
 
@@ -210,6 +226,8 @@ export function apply(ctx: Context): void {
           skipped: { type: 'array', items: { type: 'string' } },
           duplicates: { type: 'number' },
           trimmed: { type: 'number' },
+          priorSource: { type: 'string' },
+          priorCount: { type: 'number' },
         },
       },
       render: (_args, value) => [{
@@ -222,14 +240,25 @@ export function apply(ctx: Context): void {
       // A non-agent caller has no owning canvas and is rejected (todo_write
       // semantics).
       if (!exec.agent) throw new Error('canvas_draw requires an owning agent session')
-      const sid = typeof exec.agent.session.id === 'string' ? exec.agent.session.id : '∅'
+      const rawId: unknown = (exec.agent.session as { id?: unknown }).id
+      const sid = rawId === undefined || rawId === null ? '∅' : String(rawId)
       let prior = sceneCache.get(sid)
+      let priorSource: 'cache' | 'events' | 'mru' | 'empty' = prior !== undefined ? 'cache' : 'empty'
       if (prior === undefined && !clear) {
-        // Restart recovery: the newest canvas/draw event IS the whole scene.
+        // Recovery tier 1: the newest canvas/draw event IS the whole scene.
         for (const event of exec.agent.session.events) {
           if (event.type !== 'canvas/draw') continue
           const ops = (event.data as { ops?: unknown }).ops
-          if (Array.isArray(ops)) prior = ops as CanvasOp[]
+          if (Array.isArray(ops)) {
+            prior = ops as CanvasOp[]
+            priorSource = 'events'
+          }
+        }
+        // Recovery tier 2: turn-scoped assemblies expose no older events;
+        // the process-wide MRU scene is the only remaining witness.
+        if (prior === undefined && lastSceneTouched !== null) {
+          prior = lastSceneTouched
+          priorSource = 'mru'
         }
       }
       const priorOps = Array.isArray(prior) ? [...prior] : []
@@ -278,6 +307,7 @@ export function apply(ctx: Context): void {
       const next = trimmed > 0 ? merged.slice(trimmed) : merged
       exec.agent.session.append('canvas/draw', { ops: next })
       sceneCache.set(sid, next)
+      lastSceneTouched = [...next]
       if (sceneCache.size > SCENE_CACHE_MAX) {
         const oldest = sceneCache.keys().next().value
         if (oldest !== undefined) sceneCache.delete(oldest)
@@ -287,6 +317,8 @@ export function apply(ctx: Context): void {
         added: added.length - duplicates,
         ...(duplicates > 0 ? { duplicates } : {}),
         ...(trimmed > 0 ? { trimmed } : {}),
+        priorSource,
+        priorCount: priorOps.length,
         ...(norm.notes.length > 0
           ? {
               skippedCount: norm.notes.length,

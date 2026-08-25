@@ -65,6 +65,10 @@ export interface CanvasDrawResult {
   readonly duplicates?: number
   /** Oldest ops evicted to stay within the scene cap (absent when none). */
   readonly trimmed?: number
+  /** Where the prior scene came from: cache | events | mru | empty. */
+  readonly priorSource?: string
+  /** How many ops the prior held before this call. */
+  readonly priorCount?: number
 }
 
 /** The wire view of the durable canvas state. */

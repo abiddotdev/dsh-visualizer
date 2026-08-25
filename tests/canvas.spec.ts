@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -8,7 +8,7 @@ import { validateCanvasOps } from '../src/canvas/validate.ts'
 import { extractCanvasStreamArgs } from '../src/canvas/stream-args.ts'
 import { canvasPromptText, CANVAS_PROMPT_PREFIX } from '../src/canvas/types.ts'
 import type { CanvasOp } from '../src/canvas/types.ts'
-import { canvasProjectionDefinition } from '../src/canvas/index.ts'
+import { canvasProjectionDefinition, resetCanvasSceneCache } from '../src/canvas/index.ts'
 import { normalizeCanvasOps } from '../src/canvas/normalize.ts'
 import { sketchify } from '../src/canvas/render.ts'
 
@@ -216,6 +216,7 @@ describe('canvas op normalization tolerance', () => {
 })
 
 describe('canvas_draw scene accumulation', () => {
+  beforeEach(resetCanvasSceneCache)
   const testSignal = new AbortController().signal
   let callCounter = 0
 
@@ -293,6 +294,7 @@ describe('canvas_draw scene accumulation', () => {
 })
 
 describe('canvas_draw duplicate suppression and cap', () => {
+  beforeEach(resetCanvasSceneCache)
   const testSignal = new AbortController().signal
   let callCounter = 0
 
@@ -380,5 +382,66 @@ describe('sketchy renderer (doodle aesthetic)', () => {
     const b = sketchify([5, 3, 105, 103])
     expect(a).not.toEqual(b)
     expect(sketchify([0, 0, 100, 100], 0)).toEqual([0, 0, 100, 100])
+  })
+})
+
+describe('canvas_draw prior recovery against unstable session identity', () => {
+  beforeEach(resetCanvasSceneCache)
+  const testSignal = new AbortController().signal
+  let callCounter = 0
+
+  /** Session whose id CHANGES every call and exposes no older events — the
+   * deployment shape suspected of defeating the keyed cache. */
+  function chameleonAgent() {
+    const history: { type: string; data: unknown }[] = []
+    return {
+      history,
+      session: {
+        id: `call-${Math.random()}`,
+        get events(): { type: string; data: unknown }[] {
+          return []
+        },
+        append(type: string, data: unknown): void {
+          history.push({ type, data })
+        },
+      },
+    }
+  }
+
+  async function draw(agent: ReturnType<typeof chameleonAgent>, args: unknown): Promise<string> {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(pluginModule)
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: CallId(`cham-${++callCounter}`),
+      name: 'canvas_draw',
+      arguments: args,
+      agent: agent as never,
+    })
+    return result.content.map(block => block.text ?? '').join('\n')
+  }
+
+  it('still extends the scene when session.id changes every call (MRU fallback)', async () => {
+    await draw(chameleonAgent(), { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 10, 10] }] })
+    const text = await draw(chameleonAgent(), { ops: [{ op: 'rect', color: 'ink', bounds: [20, 0, 10, 10] }] })
+    expect(text).toContain('holds 2 op(s)')
+    expect(text).toContain('via mru')
+  })
+
+  it('prefers the keyed cache over MRU when the id is stable, and reports provenance', async () => {
+    const stable = {
+      session: {
+        id: 'stable-sid',
+        events: [] as unknown[],
+        append(_type: string, _data: unknown): void {},
+      },
+    }
+    const first = await draw(stable as never as ReturnType<typeof chameleonAgent>, { ops: [{ op: 'rect', color: 'ink', bounds: [0, 0, 9, 9] }] })
+    expect(first).toContain('started fresh')
+    const second = await draw(stable as never as ReturnType<typeof chameleonAgent>, { ops: [{ op: 'rect', color: 'ink', bounds: [12, 0, 9, 9] }] })
+    expect(second).toContain('holds 2 op(s)')
+    expect(second).toContain('via cache')
   })
 })
