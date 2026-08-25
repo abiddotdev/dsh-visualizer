@@ -57,6 +57,10 @@ export interface CanvasDrawResult {
   readonly ops: number
   /** Number of ops this call added. */
   readonly added: number
+  /** Raw ops dropped by tolerance normalization (absent when none). */
+  readonly skippedCount?: number
+  /** Human-readable skip reasons, first few only. */
+  readonly skipped?: string[]
 }
 
 /** The wire view of the durable canvas state. */

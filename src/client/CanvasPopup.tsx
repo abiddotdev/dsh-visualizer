@@ -61,6 +61,9 @@ const USER_INK = '#c96f4a'
 /** Overlay pen width in logical units: ~2.4 display px at the side panel's
  * 400px width, and a normal pen weight when the ops reach the model. */
 const USER_PEN_WIDTH = 6
+/** Client build tag: bump on client-visible fixes; lands in the DOM so a
+ * deployed bundle can be identified from a screenshot/devtools. */
+export const CANVAS_CLIENT_BUILD = 4
 
 // ---- Session-snapshot scene reconstruction ----
 // The dock entry receives the session snapshot as a point-in-time owner prop,
@@ -90,12 +93,18 @@ interface PartialAssistantView {
   }[]
 }
 
-/** Structural view of what CanvasPopup reads off the InputZone session share. */
+/** Structural view of what CanvasPopup reads off the InputZone session share
+ * (deployed ConversationSnapshot, plus its legacy top-level node array). */
 interface CanvasSessionView {
   readonly chat?: {
     readonly order?: readonly string[]
-    readonly nodes?: { readonly get: (key: string) => unknown }
+    readonly nodes?: {
+      readonly get: (key: string) => unknown
+      readonly values?: () => IterableIterator<unknown>
+    }
   }
+  /** Legacy top-level flow (same ConversationNode union, as a plain array). */
+  readonly nodes?: readonly unknown[]
   readonly runningCalls?: readonly { readonly name?: string; readonly argsRaw?: string }[]
   readonly partial?: PartialAssistantView | null
 }
@@ -107,24 +116,42 @@ interface SceneSource {
   readonly settled: boolean
 }
 
+/** Extract one canvas_draw argsRaw+settled flag from any candidate node:
+ * deployed ToolResultNode (`call` head), vendored-era row (`data.root`). */
+function canvasArgsFromNode(node: unknown): SceneSource | null {
+  const candidate = node as ToolChatNodeView & {
+    data?: { root?: { name?: string; argsRaw?: string; call?: { name?: string; argsRaw?: string } } }
+  }
+  const root = candidate?.data?.root
+  const name = candidate?.call?.name ?? root?.name ?? root?.call?.name
+  const argsRaw = candidate?.call?.argsRaw ?? root?.argsRaw ?? root?.call?.argsRaw
+  const kind = candidate?.kind
+  if ((kind === 'tool-result' || kind === 'tool') && name === CANVAS_TOOL_NAME && typeof argsRaw === 'string') {
+    return { argsRaw, settled: true }
+  }
+  return null
+}
+
 /** Collect every canvas_draw argsRaw in chronological order (flow order for
  * settled rows, then running calls, then the streaming partial blocks). */
 export function collectSceneSources(session: CanvasSessionView | undefined): SceneSource[] {
   const sources: SceneSource[] = []
-  const nodes = session?.chat?.nodes
-  if (nodes !== undefined && typeof nodes.get === 'function') {
-    for (const key of session?.chat?.order ?? []) {
-      const node = nodes.get(key) as ToolChatNodeView | undefined
-      // Deployed rows are ToolResultNode ('tool-result') with a paired call
-      // head; older builds nested it under data.root — accept both.
-      const root = (node as { data?: { root?: { name?: string; argsRaw?: string; call?: { name?: string; argsRaw?: string } } } })?.data?.root
-      const name = node?.call?.name ?? root?.name ?? root?.call?.name
-      const argsRaw = node?.call?.argsRaw ?? root?.argsRaw ?? root?.call?.argsRaw
-      if ((node?.kind === 'tool-result' || node?.kind === 'tool') && name === CANVAS_TOOL_NAME && argsRaw !== undefined) {
-        sources.push({ argsRaw, settled: true })
-      }
+  const seen = new Set<string>()
+  const push = (source: SceneSource | null): void => {
+    if (source !== null && !seen.has(source.argsRaw)) {
+      seen.add(source.argsRaw)
+      sources.push(source)
     }
   }
+  // Settled rows: chat.indexed store first, then the legacy top-level array.
+  const nodes = session?.chat?.nodes
+  if (nodes !== undefined && typeof nodes.get === 'function') {
+    for (const key of session?.chat?.order ?? []) push(canvasArgsFromNode(nodes.get(key)))
+    if (typeof nodes.values === 'function') {
+      for (const node of nodes.values()) push(canvasArgsFromNode(node))
+    }
+  }
+  for (const node of session?.nodes ?? []) push(canvasArgsFromNode(node))
   for (const call of session?.runningCalls ?? []) {
     if (call.name === CANVAS_TOOL_NAME && call.argsRaw !== undefined) sources.push({ argsRaw: call.argsRaw, settled: false })
   }
@@ -252,6 +279,11 @@ function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDoc
   // preview either way.
   const sceneCacheOpsRef = useRef<CanvasOp[] | null>(null)
   const sceneCacheRef = useRef('')
+  // Diagnostics: how many canvas_draw sources exist per channel, so an empty
+  // scene is explainable from the pill alone ("calls seen but none decoded").
+  const sources = useMemo(() => collectSceneSources(session), [session])
+  const settledCount = sources.filter(source => source.settled).length
+  const liveSources = sources.length - settledCount
   const { ops: scene, liveCount, preview } = useMemo(() => {
     const folded = reconstructScene(session)
     const ops = Array.isArray(projected) ? [...projected] : folded.ops
@@ -395,9 +427,17 @@ function CanvasPopupInner({ t, inputActions, session, useProjection }: CanvasDoc
     setUiState({ userOps: [], note: '' })
   }, [userOps, note, inputActions])
 
-  const summary = liveCount > 0 ? t('canvas.drawing') : `${scene.length} op(s)`
+  let summary: string
+  if (liveCount > 0) summary = t('canvas.drawing')
+  else if (scene.length > 0) summary = `${scene.length} op(s)`
+  else if (settledCount + liveSources > 0) summary = `${settledCount + liveSources} draw call(s) · scene hidden`
+  else summary = '0 op(s)'
+  const diag = `build ${CANVAS_CLIENT_BUILD}`
+    + ` · settled ${settledCount} · live ${liveSources}`
+    + ` · proj ${projected === undefined ? 'absent' : projected === null ? 'empty' : Array.isArray(projected) ? String(projected.length) : '?'}`
+    + ` · session ${session === undefined ? 'none' : 'ok'}`
   return (
-    <section className={css.popover} data-testid="canvas-popup" aria-label={t('canvas.title')}>
+    <section className={css.popover} data-testid="canvas-popup" data-canvas-build={CANVAS_CLIENT_BUILD} title={diag} data-diag={diag} aria-label={t('canvas.title')}>
       {/* stopPropagation: drawing pointers must not reach any ancestor gesture
           logic (scrollports, outside-dismiss surfaces) as gesture starts. */}
       <div className={css.card} onPointerDown={event => event.stopPropagation()}>

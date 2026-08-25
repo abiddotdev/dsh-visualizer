@@ -4,6 +4,7 @@ import { extractCanvasStreamArgs } from '../src/canvas/stream-args.ts'
 import { canvasPromptText, CANVAS_PROMPT_PREFIX } from '../src/canvas/types.ts'
 import type { CanvasOp } from '../src/canvas/types.ts'
 import { canvasProjectionDefinition } from '../src/canvas/index.ts'
+import { normalizeCanvasOps } from '../src/canvas/normalize.ts'
 
 describe('validateCanvasOps', () => {
   it('accepts a valid mixed batch', () => {
@@ -151,5 +152,61 @@ describe('canvas projection fold', () => {
     expect(definition.schema.safeParse([{ op: 'stroke', color: 'ink' }]).success).toBe(true)
     expect(definition.schema.safeParse('nope').success).toBe(false)
     expect(definition.schema.safeParse([42]).success).toBe(false)
+  })
+})
+
+describe('canvas op normalization tolerance', () => {
+  it('aliases type→op and infers a missing discriminator from shape fields', () => {
+    const norm = normalizeCanvasOps([
+      { type: 'rect', color: 'ink', bounds: [1, 2, 3, 4] },          // alias
+      { color: 'ink', points: [0, 0, 10, 10] },                      // infer stroke
+      { text: 'hi', at: [5, 5] },                                    // infer text
+      { color: 'ink', bounds: [2, 2, 8, 8] },                        // infer rect
+    ])
+    expect(norm.notes).toHaveLength(0)
+    expect(norm.ops.map(op => op.op)).toEqual(['rect', 'stroke', 'text', 'rect'])
+  })
+
+  it('coerces numeric strings and clamps width into range instead of throwing', () => {
+    const norm = normalizeCanvasOps([
+      { op: 'rect', color: 'ink', width: '2.5', bounds: ['10', 20, 30, '40'] },
+      { op: 'stroke', color: 'ink', width: 0, points: [0, 0, 5, 5] },   // below range → clamped up
+      { op: 'stroke', color: 'ink', width: 'broad', points: [0, 0, 5, 5] }, // unusable → dropped field
+    ])
+    expect(norm.notes).toHaveLength(0)
+    expect(norm.ops[0]).toMatchObject({ width: 2.5, bounds: [10, 20, 30, 40] })
+    expect(norm.ops[1]?.width).toBe(0.5)
+    expect(norm.ops[2]?.width).toBeUndefined()
+  })
+
+  it('drops hopeless ops with reasons but keeps the rest of the batch', () => {
+    const norm = normalizeCanvasOps([
+      { op: 'circle', color: 'ink' },                                   // unknown kind
+      { op: 'ellipse', color: 'ink', bounds: [1, 2, 3] },               // short bounds
+      { op: 'stroke', color: 'ink', points: [1, 2, 3] },                // odd length
+      { op: 'rect', color: 'ink', bounds: [1, 2, 3, 4] },               // fine
+      'garbage',
+    ])
+    expect(norm.ops).toHaveLength(1)
+    expect(norm.notes.map(note => note.index)).toEqual([0, 1, 2, 4])
+    expect(norm.notes[2]?.reason).toContain('even length')
+  })
+
+  it('accepts the exact car-drawing batch from a live session (regression)', () => {
+    const car = [
+      { bounds: [250, 350, 200, 120], color: 'ink', op: 'rect', width: 2.5 },
+      { bounds: [300, 280, 160, 80], color: 'ink', op: 'rect', width: 2.5 },
+      { bounds: [200, 450, 40, 40], color: 'ink', op: 'ellipse', width: 2.5 },
+      { bounds: [420, 450, 40, 40], color: 'ink', op: 'ellipse', width: 2.5 },
+      { points: [220, 470, 200, 470, 200, 490, 220, 490], color: 'ink', op: 'stroke', width: 3 },
+      { points: [480, 470, 500, 470, 500, 490, 480, 490], color: 'ink', op: 'stroke', width: 3 },
+    ]
+    const norm = normalizeCanvasOps(car)
+    expect(norm.notes).toHaveLength(0)
+    // And it survives the strict validator unchanged.
+    expect(() => validateCanvasOps(norm.ops, [])).not.toThrow()
+    // The streaming decoder also recovers every op from this payload.
+    const view = extractCanvasStreamArgs(JSON.stringify({ ops: car }))
+    expect(view?.ops).toHaveLength(6)
   })
 })

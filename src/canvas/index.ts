@@ -24,7 +24,11 @@ import {
   CANVAS_COLORS, CANVAS_H, CANVAS_W,
 } from './types.ts'
 import type { CanvasDrawResult, CanvasOp } from './types.ts'
+import { normalizeCanvasOps } from './normalize.ts'
 import { validateCanvasOps } from './validate.ts'
+
+/** Most per-call skip reasons reported to the model; the rest collapse. */
+const MAX_REPORTED_SKIPS = 4
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -102,14 +106,39 @@ const OP_ITEMS = {
 
 const GUIDE_TEXT = [
   '## Interactive canvas (canvas_draw)',
-  `A shared sketch canvas with the user: you draw ops, the user can draw strokes and reply in the same popup. Logical space is ${CANVAS_W}x${CANVAS_H} (x right, y down); coordinates outside are clamped. Draw incrementally — several small calls, coarse strokes first, refine after user feedback; the canvas shows each batch as it streams.`,
-  'The user may sketch on the canvas and press Send; their strokes arrive as a [canvas] user message with flat [x,y,...] polylines in the same logical space, possibly with a note. Interpret them and keep drawing.',
-  `Colors: ${CANVAS_COLORS.join(', ')}. Ops per call ≤ 64. Use clear:true to restart the scene (ask first when the user drew something).`,
-  'Op field shapes: stroke → {op:"stroke", color, width, points:[x0,y0,x1,y1,...]} · rect/ellipse → {op, color, width, bounds:[x,y,w,h]} · line/arrow → {op, color, width, bounds:[x0,y0,x1,y1]} (start point → end point) · text → {op:"text", color, text, size, at:[x,y]}. width and size are optional (defaults 3 / 20); every value is a bare number, never a nested pair or string.',
+  `A shared sketch canvas with the user: you draw ops, the user can draw strokes and reply in the same popup. Logical space is ${CANVAS_W}x${CANVAS_H} (x right, y down); coordinates outside are clamped into it automatically.`,
+  '',
+  '**Hard rules for every op object:**',
+  '1. EVERY op object starts with its "op" field — one of stroke | rect | ellipse | line | arrow | text. Never omit it; never call it "type".',
+  '2. width (and text size) are OPTIONAL plain numbers. Omit them unless needed; when sent they must be bare numbers like 3 or 2.5 — never strings, never 0. Valid width range is 0.5–40.',
+  '3. color is one palette id: ' + CANVAS_COLORS.join(', ') + '.',
+  '4. All values are flat numbers: points [x0,y0,x1,y1,...], bounds [x,y,w,h] or [x0,y0,x1,y1], at [x,y]. No nested pairs, no objects.',
+  '',
+  '**Field shapes:**',
+  '- {"op":"stroke", "color":"ink", "width":3, "points":[x0,y0,x1,y1,...]}',
+  '- {"op":"rect", "color":"ink", "width":2.5, "bounds":[x,y,w,h]}   ·   {"op":"ellipse", ... same}',
+  '- {"op":"line", "color":"ink", "bounds":[x0,y0,x1,y1]}   ·   {"op":"arrow", ... same}',
+  '- {"op":"text", "color":"ink", "text":"label", "size":20, "at":[x,y]}   ·   size optional, default 20',
+  '',
+  '**Batching:** send at most ~8 ops per call and wait for the result before continuing. If a result lists skipped ops, resend ONLY corrected versions of those ops — do not redraw everything. Draw incrementally: coarse shapes first, refine after looking at the result counts and user feedback.',
+  `The user may sketch on the canvas and press Send; their strokes arrive as a [canvas] user message with flat [x,y,...] polylines in the same logical space, possibly with a note. Interpret them and keep drawing. Use clear:true (with ops:[]) to restart the scene — ask first when the user drew something.`,
 ].join('\n')
 
 /** Alias so the parent package can re-export the canvas plugin's apply. */
 export const applyCanvas = apply
+
+/** Model-visible result text: counts first, then the skip reasons so the
+ * next call fixes exactly those ops instead of redrawing the batch. */
+function renderCanvasResult(value: CanvasDrawResult): string {
+  let text = `Canvas now holds ${value.ops} op(s); this call added ${value.added}.`
+  if (value.skipped !== undefined && value.skipped.length > 0) {
+    const total = value.skippedCount ?? value.skipped.length
+    const lines = [...value.skipped]
+    if (total > lines.length) lines.push(`…and ${total - lines.length} more`)
+    text += `\nSkipped (fix these and resend only them):\n- ${lines.join('\n- ')}`
+  }
+  return text
+}
 
 /**
  * Register the `canvas_draw` tool and its prompt section.
@@ -151,11 +180,13 @@ export function apply(ctx: Context): void {
         properties: {
           ops: { type: 'number', required: true },
           added: { type: 'number', required: true },
+          skippedCount: { type: 'number' },
+          skipped: { type: 'array', items: { type: 'string' } },
         },
       },
       render: (_args, value) => [{
         type: 'text',
-        text: `Canvas now holds ${(value as CanvasDrawResult).ops} op(s); this call added ${(value as CanvasDrawResult).added}.`,
+        text: renderCanvasResult(value as CanvasDrawResult),
       }],
     },
     execute(args, exec): Promise<CanvasDrawResult> {
@@ -170,12 +201,22 @@ export function apply(ctx: Context): void {
           if (event.type === 'canvas/draw') prior.push(...(event.data as { ops: CanvasOp[] }).ops)
         }
       }
+      const norm = normalizeCanvasOps(args.ops)
       const added = args.clear === true && (!Array.isArray(args.ops) || args.ops.length === 0)
         ? []
-        : validateCanvasOps(args.ops, prior)
+        : validateCanvasOps(norm.ops, prior)
       const next = clear ? [...added] : [...prior, ...added]
       exec.agent.session.append('canvas/draw', { ops: next })
-      return Promise.resolve({ ops: next.length, added: added.length })
+      return Promise.resolve({
+        ops: next.length,
+        added: added.length,
+        ...(norm.notes.length > 0
+          ? {
+              skippedCount: norm.notes.length,
+              skipped: norm.notes.slice(0, MAX_REPORTED_SKIPS).map(note => `ops[${note.index}] ${note.reason}`),
+            }
+          : {}),
+      })
     },
     presentCall: args => ({ card: 'generic', title: 'Draw on canvas', kind: 'other', rawInput: args.ops }),
   }))
