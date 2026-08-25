@@ -35,6 +35,9 @@ import css from './CanvasPopup.module.css'
 const MAX_PROMPT_CHARS = 8_000
 /** Overlay ink color id (warm pencil from the doodle prototype). */
 const USER_INK = '#c96f4a'
+/** Overlay pen width in logical units: ~2.4 display px at the side panel's
+ * 400px width, and a normal pen weight when the ops reach the model. */
+const USER_PEN_WIDTH = 6
 
 // ---- Session-snapshot scene reconstruction ----
 // The dock entry receives the session snapshot as a point-in-time owner prop,
@@ -227,11 +230,11 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
     const ctx = setupCanvas(canvas)
     if (ctx === null) return
     ctx.strokeStyle = USER_INK
-    ctx.lineWidth = 3
+    ctx.lineWidth = USER_PEN_WIDTH
     // Repaint accumulated user ops (kept as flat polylines).
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
     for (const op of userOps) {
-      if (op.op === 'stroke') paintStroke(ctx, { color: USER_INK, width: 3, points: op.points, length: 0 } as PreparedStroke & { length: number }, 1)
+      if (op.op === 'stroke') paintStroke(ctx, { color: USER_INK, width: USER_PEN_WIDTH, points: op.points, length: 0 } as PreparedStroke & { length: number }, 1)
     }
     let active: number[] | null = null
     const pos = (event: PointerEvent): [number, number] => toLogical(canvas, event)
@@ -251,7 +254,7 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
     }
     const onUp = (): void => {
       if (active !== null && active.length >= 4) {
-        setUserOps(current => [...current, { op: 'stroke', color: 'accentWarm', width: 3, points: active as number[] }])
+        setUserOps(current => [...current, { op: 'stroke', color: 'accentWarm', width: USER_PEN_WIDTH, points: active as number[] }])
       }
       active = null
     }
@@ -277,7 +280,7 @@ export function CanvasPopup({ t, inputActions, session }: CanvasDockProps & { se
     if (ctx === null) return
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
     ctx.strokeStyle = USER_INK
-    ctx.lineWidth = 3
+    ctx.lineWidth = USER_PEN_WIDTH
     for (const op of userOps) {
       if (op.op === 'stroke') {
         ctx.beginPath()

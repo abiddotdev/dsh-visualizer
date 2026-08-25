@@ -1,19 +1,26 @@
 /**
- * Canvas popup styling: a floating panel above the composer (TodoPanel
- * posture), an expand/collapse header row, the drawing surface (agent scene
- * layer + user overlay layer), and the send row.
+ * Canvas popup styling: a compact right-aligned side panel above the
+ * composer (TodoPanel posture), an expand/collapse header row, the drawing
+ * surface (agent scene layer + user overlay layer), and the send row.
  */
 
 .popover {
   position: relative;
-  width: 100%;
+  box-sizing: border-box;
+  /* Side-panel posture: pinned to the stack's right edge, narrow enough that
+   * the 25:16 surface stays fully visible above the composer (~256px tall at
+   * full width). Falls back to the full dock width on narrow windows. */
+  flex: none;
+  align-self: flex-end;
+  margin-left: auto;
+  width: min(400px, 100%);
 }
 
 .card {
   background: var(--dsw-alias-elevated-default, var(--dsw-alias-surface-default, #fff));
   border: 1px solid var(--dsw-alias-outline-default, rgba(74, 65, 54, 0.2));
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   overflow: hidden;
 }
 
@@ -48,6 +55,11 @@
 .summary {
   color: var(--dsw-alias-label-tertiary, #7a6b52);
   font: var(--dsw-font-xs-13, 13px sans-serif);
+  /* Narrow panel: the op count yields to the chevron instead of wrapping. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .liveDot {
