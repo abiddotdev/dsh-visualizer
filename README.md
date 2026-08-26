@@ -4,9 +4,9 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin. Th
 
 One package ships both halves: the model-facing tool (`lib/index.js`) and the Web GUI card (`lib/client.js`, declared through the package's `dsh.client` manifest). Install it and a bundle layer mounts both. No manual profile patch editing.
 
-![Highlights: documents streaming into the chat and rendering live in the card](assets/demos/demo-combined.gif)
-
 ![A computer-architecture diagram streaming into the chat and rendering live in the card](assets/demos/how-computers-work.gif)
+
+![Documents streaming into the chat and rendering live in the card](assets/demos/combined-demo.gif)
 
 Every generation is downloadable from the card as a self-contained `.html` (or `.svg`) file. No server round-trip.
 
@@ -16,7 +16,8 @@ Full-length demos, one per artifact type:
 2. [Photosynthesis explainer](assets/demos/photosynthesis_explainer_trimmed.webm) — interactive
 3. [How computers work](assets/demos/how-computers-work.gif) — mockup (shown above)
 4. [The plugin itself, explained and rendered by the plugin](assets/demos/plugin_explainer_full.webm) — self-hosted
-5. [Streaming generative UI highlights](assets/demos/streaming-generative-ui-highlights.webm) — highlights (GIF shown above)
+5. [Streaming generative UI highlights](assets/demos/streaming-generative-ui-highlights.webm) — highlights
+6. [Combined demo](assets/demos/combined-demo.webm) — multiple use cases in one run
 
 ## Install
 
