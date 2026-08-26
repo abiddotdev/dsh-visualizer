@@ -4,6 +4,18 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin: th
 
 One package ships both halves: the model-facing tool (`lib/index.js`) and the Web GUI card (`lib/client.js`, declared through the package's `dsh.client` manifest). Installing it activates a bundle layer that mounts both — no manual profile patch editing.
 
+![Highlights: documents streaming into the chat and rendering live in the card](assets/demos/demo-combined.gif)
+
+![A computer-architecture diagram streaming into the chat and rendering live in the card](assets/demos/how-computers-work.gif)
+
+Full-length demos, one per artifact type:
+
+1. [Bitbucket Data Center overview](assets/demos/bitbucket_datacenter_full.webm) — diagram
+2. [Photosynthesis explainer](assets/demos/photosynthesis_explainer_trimmed.webm) — interactive
+3. [How computers work](assets/demos/how-computers-work.gif) — mockup (shown above)
+4. [The plugin itself, explained and rendered by the plugin](assets/demos/plugin_explainer_full.webm) — self-hosted
+5. [Streaming generative UI highlights](assets/demos/streaming-generative-ui-highlights.webm) — highlights (GIF shown above)
+
 ## Install
 
 Requires Node ^22.19 or >=24 and a DeepSeek Harness installation:
@@ -17,6 +29,22 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 ```
 
 The first run fails with an "Add the package to allowBuilds" hint: pnpm's supply-chain gate blocks the package's `prepare` build until allowlisted, and the hint carries the exact key (keyed on the codeload URL and the resolved commit). Paste that block under `allowBuilds:` in `~/.dsh/profiles/<your-profile>/pnpm-workspace.yaml` and re-run the command. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
+
+### Or Install from a local checkout
+
+To hack on the plugin (or install a version not yet pushed), check it out, build, and add it by local path:
+
+```sh
+git clone https://github.com/abidhmuhsin/dsh-visualizer.git ~/tools/dsh-visualizer
+cd ~/tools/dsh-visualizer
+pnpm install
+pnpm build
+
+cd ~/tools/deepseek-harness
+pnpm dsh plugin --profile visualizer add '/home/user/tools/dsh-visualizer'
+```
+
+A local path skips the git fetch and the `allowBuilds` dance — `pnpm build` has already produced `lib/` — but the loader still imports from the installed copy under the profile, so re-run `pnpm build` in the checkout and the `pnpm dsh plugin … add` (after `remove`) to pick up changes. Remove/re-add with the same `remove` command as above.
 
 Then boot the profile and ask the model to **"visualize …"** — the streamed document appears inline while it is being written. Pin a release with a ref fragment: `'git+https://github.com/abidhmuhsin/dsh-visualizer.git#v0.2.0'`. To remove:
 
