@@ -69,7 +69,6 @@ interface RenderHtmlResult {
   /** Settle-time document check findings, one string per defect; empty when clean. */
   issues: string[]
 }
-
 /** Result of one guide lookup; `text` is the model-visible recipe. */
 interface GuideResult {
   modules: string[]
@@ -78,6 +77,9 @@ interface GuideResult {
 
 /** Most inspection findings listed in one result; the rest collapse to a count. */
 const MAX_REPORTED_ISSUES = 6
+
+/** Most loading messages the tool accepts. */
+const MAX_LOADING_MESSAGES = 4
 
 /**
  * Panel title for a document: the explicit `title` argument, else a fixed
@@ -154,6 +156,11 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         type: 'number',
         description: `Opening frame height in pixels (${MIN_FRAME_HEIGHT_PX}–${MAX_FRAME_HEIGHT_PX}); the frame then grows with its content. Defaults to ${DEFAULT_FRAME_HEIGHT_PX}.`,
       },
+      loadingMessages: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '1–4 messages (~5 words each, in the user\'s language) shown while the document streams; the tool card cycles through them on a fixed dwell. Plain messages for serious topics (illness, war, grief — if you have to ask, it is), playful ones otherwise. Write them in the guide\'s loading-messages contract.',
+      },
       html: {
         type: 'string',
         required: true,
@@ -180,6 +187,11 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
     execute(args): Promise<RenderHtmlResult> {
       const title = deriveTitle(args.title)
       const height = args.height ?? DEFAULT_FRAME_HEIGHT_PX
+      if (args.loadingMessages !== undefined
+        && (!Array.isArray(args.loadingMessages) || args.loadingMessages.length < 1 || args.loadingMessages.length > MAX_LOADING_MESSAGES
+          || args.loadingMessages.some(m => typeof m !== 'string' || m.trim().length === 0))) {
+        throw new Error(`loadingMessages must be 1-${MAX_LOADING_MESSAGES} non-empty strings`)
+      }
       if (!Number.isInteger(height) || height < MIN_FRAME_HEIGHT_PX || height > MAX_FRAME_HEIGHT_PX) {
         throw new Error(`height must be an integer between ${MIN_FRAME_HEIGHT_PX} and ${MAX_FRAME_HEIGHT_PX}`)
       }

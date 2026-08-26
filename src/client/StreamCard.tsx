@@ -7,7 +7,7 @@
 // tool.call.toolview row takes over, so this component only ever renders
 // live evidence.
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
@@ -23,6 +23,14 @@ export type StreamCardProps = PropsRuntime<'conversation.chat.node', 'visualizer
 
 type Translate = StreamCardProps['t']
 
+/** Dwell time per model-authored loading message before the next rotates in. */
+const LOADING_MESSAGE_MS = 4_800
+
+/** Index into the loading messages, clamped to those arrived so far. */
+function messageIndex(tick: number, count: number): number {
+  return count === 0 ? 0 : tick % count
+}
+
 /** One live document card and its shell frame. */
 function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
@@ -37,17 +45,33 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
     setRuntimeError(current => current ?? message)
   }, [])
   const title = card.title ?? t('card.title')
+  // Model-authored loading messages rotate on a fixed dwell while the
+  // document streams; the generic phase label is the fallback when the
+  // model passed none.
+  const messages = card.loadingMessages ?? []
+  const [tick, setTick] = useState(0)
+  const live = card.phase === 'streaming'
+  useEffect(() => {
+    if (!live || messages.length <= 1) return
+    const timer = window.setInterval(() => { setTick(value => value + 1) }, LOADING_MESSAGE_MS)
+    return () => { window.clearInterval(timer) }
+  }, [live, messages.length])
+  const streamingLabel = messages.length > 0
+    ? (messages[messageIndex(tick, messages.length)] ?? '')
+    : card.html.length === 0 ? t('card.thinking') : t('card.streaming')
   // State follows the document's title: the same title regenerates into the
   // same scope, and the settled row derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(card.title)), [card.title])
   const summary = card.phase === 'streaming'
-    ? card.html.length === 0 ? t('card.thinking') : t('card.streaming')
+    ? streamingLabel
     : card.phase === 'interrupted'
       ? t('card.interrupted')
       : t('card.chars', { chars: card.html.length })
+  // The loader text sweep runs only while model-authored messages are
+  // cycling; composing/streaming fallbacks show no sweep.
+  const isLoaderText = card.phase === 'streaming' && messages.length > 0
   // The typing wave runs for the whole streaming phase — composing and
   // writing alike — and stops the moment the document settles.
-  const live = card.phase === 'streaming'
 
   return (
     <div className={css.card} data-tool="visualizer" data-phase={card.phase}>
@@ -65,7 +89,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={css.summary}>
+            <span className={`${css.summary}${isLoaderText ? ` ${css.summarySweep}` : ''}`}>
               {summary}
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}

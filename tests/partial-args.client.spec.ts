@@ -13,10 +13,10 @@ describe('extractStreamArgs', () => {
 
   it('decodes a growing html prefix with title and height', () => {
     const early = extractStreamArgs('{"title":"Dash","height":480,"html":"<p>he')
-    expect(early).toEqual({ html: '<p>he', complete: false, title: 'Dash', height: 480 })
+    expect(early).toEqual({ html: '<p>he', complete: false, title: 'Dash', height: 480, loadingMessages: [] })
 
     const late = extractStreamArgs('{"title":"Dash","height":480,"html":"<p>hello</p>"}')
-    expect(late).toEqual({ html: '<p>hello</p>', complete: true, title: 'Dash', height: 480 })
+    expect(late).toEqual({ html: '<p>hello</p>', complete: true, title: 'Dash', height: 480, loadingMessages: [] })
   })
 
   it('unescapes JSON string escapes inside the streaming value', () => {
@@ -33,11 +33,24 @@ describe('extractStreamArgs', () => {
     expect(extractStreamArgs('{"html":"\\ud83d\\')?.html).toBe('')
   })
 
+  it('decodes a settled loadingMessages array before the html key opens', () => {
+    // While the array is still streaming (bracket not closed), the html key
+    // cannot have opened, so every observable view carries settled items.
+    const growing = extractStreamArgs('{"loadingMessages":["Setting up","Wiring"],"html":"<p>x')
+    expect(growing?.loadingMessages).toEqual(['Setting up', 'Wiring'])
+
+    const escaped = extractStreamArgs('{"loadingMessages":["Bribing bars to stand \u0041"],"html":"<p>x')
+    expect(escaped?.loadingMessages).toEqual(['Bribing bars to stand A'])
+
+    const empty = extractStreamArgs('{"loadingMessages":[],"html":"<p>x')
+    expect(empty?.loadingMessages).toEqual([])
+  })
+
   it('carries settled title and height; values before html closed by the time it opened', () => {
     // A cut earlier value cannot coexist with an opened html: the scanner is
     // still inside that value. So every observable view carries settled ones.
     const view = extractStreamArgs('{"title":"Da","height":48,"html":"<p>x')
-    expect(view).toEqual({ html: '<p>x', complete: false, title: 'Da', height: 48 })
+    expect(view).toEqual({ html: '<p>x', complete: false, title: 'Da', height: 48, loadingMessages: [] })
 
     const nonInteger = extractStreamArgs('{"height":48.5,"html":"<p>x"}')
     expect(nonInteger?.height).toBeNull()

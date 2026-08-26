@@ -54,6 +54,7 @@ describe('visualizer tool', () => {
         properties: {
           title: { type: 'string' },
           height: { type: 'number' },
+          loadingMessages: { type: 'array', items: { type: 'string' } },
           html: { type: 'string' },
         },
         required: ['html'],
@@ -62,7 +63,7 @@ describe('visualizer tool', () => {
     // Parameter order is the streaming contract: the document must be the
     // tail of the arguments JSON or no prefix preview is possible.
     const properties = (schema.parameters as { properties: Record<string, unknown> }).properties
-    expect(Object.keys(properties)).toEqual(['title', 'height', 'html'])
+    expect(Object.keys(properties)).toEqual(['title', 'height', 'loadingMessages', 'html'])
   })
 
   it('renders a document from its arguments without touching the filesystem', async () => {
@@ -117,6 +118,22 @@ describe('visualizer tool', () => {
     const fracResult = await call(fractional.ctx, { html: '<p>x</p>', height: 480.5 })
     expect(fracResult.isError).toBe(true)
     expect(firstText(fracResult)).toContain('height must be an integer between 50 and 2000')
+  })
+
+  it('accepts 1-4 loading messages and rejects anything else', async () => {
+    const ok = await setup()
+    const good = await call(ok.ctx, { html: '<p>x</p>', loadingMessages: ['Setting up the model'] })
+    expect(good.isError).toBe(false)
+
+    const blank = await call(ok.ctx, { html: '<p>x</p>', loadingMessages: ['  '] })
+    expect(blank.isError).toBe(true)
+    expect(firstText(blank)).toContain('loadingMessages must be 1-4 non-empty strings')
+
+    const tooMany = await call(ok.ctx, { html: '<p>x</p>', loadingMessages: ['a', 'b', 'c', 'd', 'e'] })
+    expect(tooMany.isError).toBe(true)
+
+    const absent = await call(ok.ctx, { html: '<p>x</p>' })
+    expect(absent.isError).toBe(false)
   })
 
   it('rejects a blank explicit title', async () => {

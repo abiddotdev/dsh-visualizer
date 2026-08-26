@@ -81,6 +81,33 @@ describe('StreamCard', () => {
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
+  it('shows the model-authored loading messages, rotating on a dwell', () => {
+    vi.useFakeTimers()
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Bribing bars', 'Asking Q4'] }])
+    expect(screen.getByText('Bribing bars')).toBeTruthy()
+    expect(screen.queryByText('Streaming...')).toBeNull()
+    // The loader text gets the sweep class while messages are cycling.
+    expect(document.querySelector('[class*="summarySweep"]')).not.toBeNull()
+
+    elapse(4_800)
+    expect(screen.getByText('Asking Q4')).toBeTruthy()
+    elapse(4_800)
+    expect(screen.getByText('Bribing bars')).toBeTruthy()
+
+    // A settled card drops the sweep class and messages for the char count.
+    cleanup()
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>', loadingMessages: ['Bribing bars'] }])
+    expect(screen.queryByText('Bribing bars')).toBeNull()
+    expect(screen.getByText('11 chars')).toBeTruthy()
+    expect(document.querySelector('[class*="summarySweep"]')).toBeNull()
+  })
+
+  it('does not apply the sweep class when messages are absent', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
+    expect(screen.getByText('Composing the document')).toBeTruthy()
+    expect(document.querySelector('[class*="summarySweep"]')).toBeNull()
+  })
+
   it('keeps the composing label plain; the frame sweep carries the live phase', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
     expect(screen.getByText('Composing the document')).toBeTruthy()

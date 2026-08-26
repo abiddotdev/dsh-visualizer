@@ -29,6 +29,8 @@ export interface GenerativeCardData {
    * row reads the same argument from the logged call as its opening height.
    */
   readonly height: number | null
+  /** Model-authored loading messages, shown rotating while the document streams. */
+  readonly loadingMessages: readonly string[]
   /** Latest decoded document prefix, or the complete document. */
   readonly html: string
 }
@@ -215,6 +217,7 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
         title: view.title,
         height: view.height,
         html: view.html,
+        loadingMessages: view.loadingMessages,
       }
       cards.push(card)
       if (!state.dispatched.includes(block.callId)) live.push(card)
