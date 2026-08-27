@@ -7,11 +7,16 @@
  * still writing. Nothing touches the workspace: the document's durable home
  * is the logged `tool/call` arguments themselves, so a replayed transcript
  * re-renders the panel without re-running anything, and the card offers a
- * client-side download of the settled document.
+ * client-side download of the settled document. Where the surface mounts a
+ * web server, the export fanout additionally mirrors the stream into an
+ * exports directory and serves each settled document at a suburl the card's
+ * share control opens — see `./export-fanout`.
  *
  * @module dsh-visualizer
  */
 
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -20,6 +25,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
 import type { GuideModule } from './guide/index.ts'
+import { registerExportFanout } from './export-fanout.ts'
 import { inspectDocument } from './inspect.ts'
 
 export const name = 'visualizer'
@@ -47,12 +53,46 @@ export interface Config {
   guideTool: boolean
   /** Artifact types the guide teaches and the guide tool serves. */
   guideModules: string[]
+  /**
+   * Whether the export fanout runs at all: the streaming mirror to disk, the
+   * serve route, and the card's share control all hang off this one switch.
+   */
+  exports: boolean
+  /** Directory the export fanout mirrors streamed documents into. */
+  exportDir: string
+}
+
+/**
+ * Default export directory: `$DSH_HOME/exports`, falling back to
+ * `~/.dsh/exports` — the same precedence the harness's own home resolution
+ * uses, mirrored locally because the plugin does not depend on
+ * `@deepseek-ai/dsh-home-paths`.
+ * @returns the absolute default exports directory.
+ */
+function defaultExportDir(): string {
+  const env = process.env.DSH_HOME
+  const home = env !== undefined && env.trim().length > 0 ? env : join(homedir(), '.dsh')
+  return resolve(expandHomePath(home), 'exports')
+}
+
+/**
+ * Expand a leading `~` against the OS home, matching the harness's path
+ * convention for configured directories.
+ * @param path - a configured path that may begin with `~`.
+ * @returns the expanded path.
+ */
+function expandHomePath(path: string): string {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2))
+  return path
 }
 
 export const Config: z<Config> = z.object({
   maxHtmlBytes: z.number().default(DEFAULT_MAX_HTML_BYTES),
   guideTool: z.boolean().default(true),
   guideModules: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
+  exports: z.boolean().default(true),
+  exportDir: z.string().default(defaultExportDir()),
 })
 
 /** The shape after schemastery applied the defaults. */
@@ -137,6 +177,20 @@ function validateGuideModules(requested: readonly string[]): GuideModule[] {
  */
 export function apply(ctx: Context, config: ResolvedConfig): void {
   const modules = validateGuideModules(config.guideModules)
+
+  // Export fanout: one switch gates the whole feature — the streaming mirror,
+  // the serve route, and (through the boot-table announcement) the card's
+  // share control. It mounts only where the surface provides a web server
+  // (the web profile), because an export exists exactly when it is shareable;
+  // the sub-fiber unmounts with the service, so TUI/headless profiles keep
+  // the untouched, filesystem-free tool behavior either way.
+  if (config.exports) {
+    const exportDir = expandHomePath(config.exportDir).trim() || defaultExportDir()
+    ctx.inject(['webServer'], webCtx => {
+      registerExportFanout(webCtx, { dir: resolve(exportDir), maxHtmlBytes: config.maxHtmlBytes })
+    })
+  }
+
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
