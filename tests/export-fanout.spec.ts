@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -45,11 +45,11 @@ async function setup(config: Record<string, unknown> = {}): Promise<Harness> {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(FakeWebServer)
-  await ctx.plugin(visualizer, { exportDir: dir, ...config })
+  await ctx.plugin(visualizer, { artifactDir: dir, ...config })
   const server = ctx.get('webServer') as FakeWebServer
   // The webServer-injected sub-fiber activates on its own microtask chain;
   // a disabled feature registers no route to wait for.
-  if (config.exports !== false) {
+  if (config.shareArtifacts !== false) {
     for (let i = 0; i < 100 && server.routes.length === 0; i++) {
       await new Promise(resolve => { setTimeout(resolve, 2) })
     }
@@ -218,7 +218,7 @@ describe('export fanout', () => {
   })
 
   it('never finalizes an over-limit document', async () => {
-    const harness = await setup({ maxHtmlBytes: 8 })
+    const harness = await setup({ maxArtifactBytes: 8 })
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Big', html: DOC })))
     await flush()
     expect(await readFileOrNull(join(harness.dir, 'Big.html'))).toBeNull()
@@ -299,7 +299,7 @@ describe('export fanout', () => {
   })
 
   it('stays entirely dormant when the config disables exports', async () => {
-    const harness = await setup({ exports: false })
+    const harness = await setup({ shareArtifacts: false })
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
     await flush()
     // No route serves anything and no file lands: one flag gates the feature.
@@ -320,7 +320,7 @@ describe('export fanout', () => {
     expect(typeof row.value).toBe('string')
     expect((row.value as string).length).toBeGreaterThan(15)
 
-    const disabled = await setup({ exports: false })
+    const disabled = await setup({ shareArtifacts: false })
     const empty: unknown[] = []
     ;(disabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
       .emit('webserver/index-inject', empty)
@@ -478,6 +478,49 @@ describe('exports serve route', () => {
     const a = read(first)
     const b = read(second)
     expect(a).not.toBe(b)
+  })
+
+  it('sweeps artifacts past the retention window at activation and keeps fresh ones', async () => {
+    // The sweep runs once when the fanout mounts, so the files must exist
+    // before the plugin does: age two entries (one servable, one stray) and
+    // leave one fresh, then mount and read the survivors.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-visualizer-exports-'))
+    const aged = new Date(Date.now() - 40 * 86_400_000)
+    await writeFile(join(dir, 'aged-dash.html'), '<p>old</p>')
+    await writeFile(join(dir, 'fresh-dash.html'), '<p>new</p>')
+    await writeFile(join(dir, 'aged.partial'), '<p>stray</p>')
+    await utimes(join(dir, 'aged-dash.html'), aged, aged)
+    await utimes(join(dir, 'aged.partial'), aged, aged)
+
+    const harness = await setup({ artifactDir: dir, artifactRetentionDays: 30 })
+    await flush()
+    expect(await readFileOrNull(join(dir, 'aged-dash.html'))).toBeNull()
+    expect(await readFileOrNull(join(dir, 'fresh-dash.html'))).toBe('<p>new</p>')
+    // Sidecars never pass the servable-name check; the sweep leaves them.
+    expect(await readFileOrNull(join(dir, 'aged.partial'))).toBe('<p>stray</p>')
+  })
+
+  it('pins the announced key to a configured shareKey and serves under it', async () => {
+    const harness = await setup({ shareKey: 'my-stable-shared-key-01' })
+    const table: unknown[] = []
+    ;(harness.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
+      .emit('webserver/index-inject', table)
+    expect((table[0] as { value: string }).value).toBe('my-stable-shared-key-01')
+
+    // A link from "before the restart" — a second mount with the same key —
+    // keeps working: same key, same name, still served.
+    const reborn = await setup({ shareKey: 'my-stable-shared-key-01' })
+    emitSession(reborn.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
+    await flush()
+    const route = reborn.server.routes.find(entry => entry.path === EXPORTS_ROUTE_PATH)
+    if (route === undefined) throw new Error('exports route was not registered')
+    const res = fakeResponse()
+    await route.handler({
+      method: 'GET',
+      url: `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=${encodeURIComponent('my-stable-shared-key-01')}`,
+    } as IncomingMessage, res)
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('sandbox="allow-scripts"')
   })
 
   it('answers 405 with the method table for anything but GET and HEAD', async () => {

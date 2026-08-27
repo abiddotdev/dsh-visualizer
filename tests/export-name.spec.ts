@@ -6,7 +6,7 @@ import {
 
 describe('export naming', () => {
   it('keeps the shared route path under the plugin namespace', () => {
-    expect(EXPORTS_ROUTE_PATH).toBe('/visualizer')
+    expect(EXPORTS_ROUTE_PATH).toBe('/artifacts/visualizer')
     expect(PARTIAL_SUFFIX).toBe('.partial')
   })
 
@@ -76,6 +76,45 @@ describe('export naming', () => {
     expect(exportShareName('Dash', html)).not.toBe(exportShareName('Dash', v2))
     // Same bytes under different titles never collide either.
     expect(exportShareName('A', html)).not.toBe(exportShareName('B', html))
+  })
+
+  it('spreads every single-character mutation to a distinct digest', () => {
+    // Avalanche property of the imul-lane fingerprint: flipping any one
+    // character anywhere in a document-sized identity must change the name.
+    const filler = 'lorem ipsum dolor sit amet '.repeat(400)
+    const base = `<!DOCTYPE html><html><body>${filler}</body></html>`
+    const baseline = exportShareName('Dash', base)
+    const names = new Set<string>()
+    for (let position = 30; position < base.length - 20; position += 97) {
+      const mutated = `${base.slice(0, position)}${base[position] === 'x' ? 'y' : 'x'}${base.slice(position + 1)}`
+      const name = exportShareName('Dash', mutated)
+      expect(name).not.toBe(baseline)
+      names.add(name)
+    }
+    expect(names.size).toBeGreaterThan(50)
+  })
+
+  it('keeps near-adjacent inputs collision-free at scale', () => {
+    // Sequential, visually-near-identical documents (the realistic render
+    // workload) must all land on unique names.
+    const seen = new Set<string>()
+    for (let i = 0; i < 10_000; i++) {
+      const name = exportShareName('Report', `<p>row ${i}</p>`.repeat(20))
+      expect(seen.has(name)).toBe(false)
+      seen.add(name)
+    }
+  })
+
+  it('digests large documents fast enough for the click path', () => {
+    // The share control digests on click while the tab paints; a max-size
+    // document must cost milliseconds, not frames. Guarded loosely — an
+    // order-of-magnitude regression (e.g. back to per-byte BigInt) trips
+    // this long before it reaches a user.
+    const doc = `<!DOCTYPE html><html><body>${'x'.repeat(262_144 - 34)}</body></html>`
+    exportShareName('Warm', doc)
+    const started = performance.now()
+    for (let i = 0; i < 5; i++) exportShareName(`Run ${i}`, doc)
+    expect(performance.now() - started).toBeLessThan(500)
   })
 
   it('serves only finalized single-segment names', () => {

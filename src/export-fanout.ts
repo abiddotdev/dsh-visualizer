@@ -122,10 +122,12 @@ interface SessionState {
 export interface ExportFanoutConfig {
   /** Absolute exports directory; created on activation. */
   readonly dir: string
-  /** Per-call render limit in bytes; the fanout mirrors it, never exceeds it. */
-  readonly maxHtmlBytes: number
-  /** Days a finalized export survives; `0` disables the expiry sweep. */
-  readonly maxExportAgeDays: number
+  /** Per-call render size limit in bytes; the fanout mirrors it, never exceeds it. */
+  readonly maxArtifactBytes: number
+  /** Days a finalized artifact survives; `0` disables the expiry sweep. */
+  readonly artifactRetentionDays: number
+  /** Fixed share key; empty issues a fresh random one per boot. */
+  readonly shareKey: string
 }
 
 /** All fanout state for one registration. */
@@ -262,7 +264,7 @@ function streamPrefix(state: FanoutState, session: SessionState, block: WireBloc
   if (block.callId.length === 0) return
   const view = extractStreamArgs(block.argsRaw)
   if (view === null || view.html.length === 0) return
-  if (Buffer.byteLength(view.html, 'utf8') > state.config.maxHtmlBytes) return
+  if (Buffer.byteLength(view.html, 'utf8') > state.config.maxArtifactBytes) return
   const now = Date.now()
   if (now - (state.lastPartialAt.get(block.callId) ?? 0) < PARTIAL_WRITE_INTERVAL_MS) return
   state.lastPartialAt.set(block.callId, now)
@@ -333,7 +335,7 @@ function finalizeCall(state: FanoutState, session: SessionState, event: ToolCall
     return
   }
   if (typeof parsed.html !== 'string' || parsed.html.trim().length === 0) return
-  if (Buffer.byteLength(parsed.html, 'utf8') > state.config.maxHtmlBytes) return
+  if (Buffer.byteLength(parsed.html, 'utf8') > state.config.maxArtifactBytes) return
   const html = parsed.html
   const title = typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : null
   const shareName = exportShareName(title, html)
@@ -371,14 +373,17 @@ const SERVE_HEADERS: Record<string, string> = {
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), usb=(), interest-cohort=()',
 }
 
-/** The not-found page served for any name the route does not hold. */
+/** The not-found page served for any name the route does not hold, and for
+ * every failure class alike — missing token, stale token after a restart,
+ * unknown or malformed name — so an answer never reveals which applied. */
 const NOT_FOUND_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Export not found</title></head>
 <body style="font-family: system-ui, sans-serif; color: #888; padding: 2rem;">
 <p>No exported visualizer document answers this address.</p>
-<p>没有找到对应的可视化导出文档。</p>
-<p style="font-size: 0.85em;">Exports are written while a document streams; ask the agent to render it again.</p>
+<p style="font-size: 0.85em;">The share link carries a key that is renewed each time the harness starts,
+so links saved before a restart stop working — open the document again from the chat and share it fresh.
+Otherwise the export may have expired by the retention policy; ask the agent to render it again.</p>
 </body>
 </html>`
 
@@ -520,6 +525,14 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
  * @param config - exports directory and the mirrored render limit.
  */
 export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): void {
+  // The share key gates every serve request. Empty (the default) takes the
+  // fresh-per-boot random; a configured value pins it so links survive
+  // restarts — but then the key lives in a plaintext config file, so a short
+  // one turns an unguessable gate into a guessable one and earns a warning.
+  const trimmedKey = config.shareKey.trim()
+  if (trimmedKey.length > 0 && trimmedKey.length < 16) {
+    ctx.logger.warn(`export fanout: shareKey is shorter than 16 characters — a fixed weak key makes shared pages guessable`) 
+  }
   const state: FanoutState = {
     config,
     ctx,
@@ -530,7 +543,7 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     chains: new Map(),
     lastPartialAt: new Map(),
     finalOwners: new Map(),
-    token: bootToken(),
+    token: trimmedKey.length > 0 ? trimmedKey : bootToken(),
   }
 
   const server = (ctx as unknown as { webServer: WebServerLike }).webServer
@@ -543,8 +556,8 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
   // Retention sweep at activation, before any request can arrive: digest-keyed
   // names accumulate by design, so expiry replaces the overwrite self-cleaning.
   // A failure logs one line and never blocks the route or the fold.
-  if (config.maxExportAgeDays > 0) {
-    const cutoff = Date.now() - config.maxExportAgeDays * 86_400_000
+  if (config.artifactRetentionDays > 0) {
+    const cutoff = Date.now() - config.artifactRetentionDays * 86_400_000
     enqueue(state, ':retention', async () => {
       await state.ready
       for (const entry of await readdir(config.dir)) {

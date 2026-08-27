@@ -9,7 +9,7 @@
  */
 
 /** Suburl the exports route owns on the harness web server. */
-export const EXPORTS_ROUTE_PATH = '/visualizer'
+export const EXPORTS_ROUTE_PATH = '/artifacts/visualizer'
 
 /**
  * `globalThis` property the host sets through the web server's index-inject

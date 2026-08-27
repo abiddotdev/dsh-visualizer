@@ -48,38 +48,46 @@ const DEFAULT_FRAME_HEIGHT_PX = 480
 /** Plugin configuration after schemastery fills defaults. */
 export interface Config {
   /** Largest document one call renders, in UTF-8 bytes. */
-  maxHtmlBytes: number
+  maxArtifactBytes: number
   /** Whether the `visualizer_guide` spec-pull tool registers at all. */
   guideTool: boolean
   /** Artifact types the guide teaches and the guide tool serves. */
-  guideModules: string[]
+  guideTypes: string[]
   /**
    * Whether the export fanout runs at all: the streaming mirror to disk, the
    * serve route, and the card's share control all hang off this one switch.
    */
-  exports: boolean
+  shareArtifacts: boolean
   /** Directory the export fanout mirrors streamed documents into. */
-  exportDir: string
+  artifactDir: string
   /**
    * Days a finalized export survives on disk. Content-digested share names no
    * longer self-clean by overwrite, so retention replaces that sweep; `0`
    * disables expiry and keeps every export until removed by hand.
    */
-  maxExportAgeDays: number
+  artifactRetentionDays: number
+  /**
+   * Fixed share-key capability token. Empty (default) issues a fresh random
+   * key per harness boot — the stronger posture, at the cost of share links
+   * expiring on every restart. A non-empty value pins the key instead: links
+   * survive restarts and the value rides a plaintext config file, so choose
+   * it like a password (long and unguessable).
+   */
+  shareKey: string
 }
 
 /**
- * Default export directory: `$DSH_HOME/visualizer/exports`, falling back to
- * `~/.dsh/visualizer/exports` — the same precedence the harness's own home
- * resolution uses, mirrored locally because the plugin does not depend on
- * `@deepseek-ai/dsh-home-paths`. The plugin owns its whole subtree under the
- * harness home instead of squatting the shared root.
- * @returns the absolute default exports directory.
+ * Default artifact directory: `$DSH_HOME/visualizer/artifacts`, falling back
+ * to `~/.dsh/visualizer/artifacts` — the same precedence the harness's own
+ * home resolution uses, mirrored locally because the plugin does not depend
+ * on `@deepseek-ai/dsh-home-paths`. The plugin owns its whole subtree under
+ * the harness home instead of squatting a shared root.
+ * @returns the absolute default artifact directory.
  */
-function defaultExportDir(): string {
+function defaultArtifactDir(): string {
   const env = process.env.DSH_HOME
   const home = env !== undefined && env.trim().length > 0 ? env : join(homedir(), '.dsh')
-  return resolve(expandHomePath(home), 'visualizer', 'exports')
+  return resolve(expandHomePath(home), 'visualizer', 'artifacts')
 }
 
 /**
@@ -95,12 +103,13 @@ function expandHomePath(path: string): string {
 }
 
 export const Config: z<Config> = z.object({
-  maxHtmlBytes: z.number().default(DEFAULT_MAX_HTML_BYTES),
+  maxArtifactBytes: z.number().default(DEFAULT_MAX_HTML_BYTES),
   guideTool: z.boolean().default(true),
-  guideModules: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
-  exports: z.boolean().default(true),
-  exportDir: z.string().default(defaultExportDir()),
-  maxExportAgeDays: z.number().default(7),
+  guideTypes: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
+  shareArtifacts: z.boolean().default(true),
+  artifactDir: z.string().default(defaultArtifactDir()),
+  artifactRetentionDays: z.number().default(30),
+  shareKey: z.string().default(''),
 })
 
 /** The shape after schemastery applied the defaults. */
@@ -164,16 +173,16 @@ function renderResultText(value: RenderHtmlResult): string {
 /**
  * Validate the configured module set at load: unknown ids and an empty set
  * are deployment mistakes, not runtime conditions.
- * @param requested - the raw `guideModules` config value.
+ * @param requested - the raw `guideTypes` config value.
  * @returns the enabled ids in roster order, duplicates collapsed.
  */
 function validateGuideModules(requested: readonly string[]): GuideModule[] {
   const unknown = [...new Set(requested)].filter(id => !GUIDE_MODULE_IDS.includes(id as GuideModule))
   if (unknown.length > 0) {
-    throw new Error(`config guideModules lists unknown artifact type(s) ${unknown.join(', ')}; known types: ${GUIDE_MODULE_IDS.join(', ')}`)
+    throw new Error(`config guideTypes lists unknown artifact type(s) ${unknown.join(', ')}; known types: ${GUIDE_MODULE_IDS.join(', ')}`)
   }
   const enabled = GUIDE_MODULE_IDS.filter(id => requested.includes(id))
-  if (enabled.length === 0) throw new Error('config guideModules must list at least one artifact type')
+  if (enabled.length === 0) throw new Error('config guideTypes must list at least one artifact type')
   return enabled
 }
 
@@ -184,7 +193,7 @@ function validateGuideModules(requested: readonly string[]): GuideModule[] {
  * @param config - resolved plugin configuration.
  */
 export function apply(ctx: Context, config: ResolvedConfig): void {
-  const modules = validateGuideModules(config.guideModules)
+  const modules = validateGuideModules(config.guideTypes)
 
   // Export fanout: one switch gates the whole feature — the streaming mirror,
   // the serve route, and (through the boot-table announcement) the card's
@@ -192,21 +201,30 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   // (the web profile), because an export exists exactly when it is shareable;
   // the sub-fiber unmounts with the service, so TUI/headless profiles keep
   // the untouched, filesystem-free tool behavior either way.
-  if (config.exports) {
-    const exportDir = expandHomePath(config.exportDir).trim() || defaultExportDir()
+  if (config.shareArtifacts) {
+    const artifactDir = expandHomePath(config.artifactDir).trim() || defaultArtifactDir()
     ctx.inject(['webServer'], webCtx => {
       registerExportFanout(webCtx, {
-        dir: resolve(exportDir),
-        maxHtmlBytes: config.maxHtmlBytes,
-        maxExportAgeDays: config.maxExportAgeDays,
+        dir: resolve(artifactDir),
+        maxArtifactBytes: config.maxArtifactBytes,
+        artifactRetentionDays: config.artifactRetentionDays,
+        shareKey: config.shareKey.trim(),
       })
     })
   }
 
+  // Only when sharing is mounted: the fanout already writes every render to
+  // disk under a shareable name, so an extra file-writing tool call after a
+  // render duplicates the artifact and wastes tokens. The tool description
+  // alone cannot carry this — it must track the mount condition.
+  const shareNote = config.shareArtifacts
+    ? '\n\nEvery successful render is saved automatically as a shareable standalone page — do not write the document again with a file-writing tool unless the user explicitly asks for a copy at a specific path.'
+    : ''
+
   ctx.systemPrompt.section({
     name: 'tool:visualizer',
     order: 100,
-    text: composeGuideText(modules, config.guideTool),
+    text: composeGuideText(modules, config.guideTool) + shareNote,
   })
 
   ctx.tools.register(defineTool({
@@ -265,8 +283,8 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         throw new Error('html must be a non-empty document')
       }
       const bytes = encoder.encode(args.html).byteLength
-      if (bytes > config.maxHtmlBytes) {
-        throw new Error(`the document is ${bytes} bytes, over the ${config.maxHtmlBytes}-byte render limit`)
+      if (bytes > config.maxArtifactBytes) {
+        throw new Error(`the document is ${bytes} bytes, over the ${config.maxArtifactBytes}-byte render limit`)
       }
       const issues = inspectDocument(args.html).issues
         .map(issue => `line ${issue.line}: ${issue.message}`)
