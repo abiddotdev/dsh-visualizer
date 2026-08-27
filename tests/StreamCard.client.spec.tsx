@@ -7,6 +7,8 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { StreamCard, type StreamCardProps } from '../src/client/StreamCard.tsx'
+import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+
 import type { GenerativeCardData } from '../src/client/stream-node.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
@@ -198,12 +200,13 @@ describe('StreamCard', () => {
   it('opens the served export page from the complete card, named for the document', () => {
     vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', true)
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
-    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: '<svg><rect/></svg>' }])
+    const SVG_DOC = '<svg><rect/></svg>'
+    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
 
     screen.getByRole('button', { name: 'Open standalone page' }).click()
     // The URL is the same name the host's export fanout finalized under.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}/visualizer/${encodeURIComponent('中文 图表.svg')}`,
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}`,
       '_blank',
       'noopener,noreferrer',
     )

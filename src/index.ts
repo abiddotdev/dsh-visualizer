@@ -60,6 +60,12 @@ export interface Config {
   exports: boolean
   /** Directory the export fanout mirrors streamed documents into. */
   exportDir: string
+  /**
+   * Days a finalized export survives on disk. Content-digested share names no
+   * longer self-clean by overwrite, so retention replaces that sweep; `0`
+   * disables expiry and keeps every export until removed by hand.
+   */
+  maxExportAgeDays: number
 }
 
 /**
@@ -94,6 +100,7 @@ export const Config: z<Config> = z.object({
   guideModules: z.array(z.string()).default([...GUIDE_MODULE_IDS]),
   exports: z.boolean().default(true),
   exportDir: z.string().default(defaultExportDir()),
+  maxExportAgeDays: z.number().default(7),
 })
 
 /** The shape after schemastery applied the defaults. */
@@ -188,7 +195,11 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
   if (config.exports) {
     const exportDir = expandHomePath(config.exportDir).trim() || defaultExportDir()
     ctx.inject(['webServer'], webCtx => {
-      registerExportFanout(webCtx, { dir: resolve(exportDir), maxHtmlBytes: config.maxHtmlBytes })
+      registerExportFanout(webCtx, {
+        dir: resolve(exportDir),
+        maxHtmlBytes: config.maxHtmlBytes,
+        maxExportAgeDays: config.maxExportAgeDays,
+      })
     })
   }
 

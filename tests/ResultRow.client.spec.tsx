@@ -8,6 +8,8 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
+import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+
 import { STREAM_SHELL } from '../src/client/shell.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
@@ -100,7 +102,7 @@ describe('ResultRow', () => {
     screen.getByRole('button', { name: 'Open standalone page' }).click()
     // The URL is the same name the host's export fanout finalized under.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}/visualizer/${encodeURIComponent('Dash.html')}`,
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`,
       '_blank',
       'noopener,noreferrer',
     )

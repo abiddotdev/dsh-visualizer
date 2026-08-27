@@ -31,7 +31,7 @@ export const PARTIAL_SUFFIX = '.partial'
 const HTML_EXTENSION = '.html'
 const SVG_EXTENSION = '.svg'
 
-/** Most characters an export's base name keeps; bounds the name past any filesystem limit. */
+/** Most characters a friendly base name keeps; the digest appends past it. */
 export const MAX_EXPORT_BASE_CHARS = 100
 
 /** Prefix length examined to tell a bare SVG document from an HTML one. */
@@ -68,15 +68,50 @@ export function exportFileBase(title: string | null): string {
 }
 
 /**
- * The finalized export's file name. The host derives it from the authoritative
- * settled bytes; the card derives it from the same bytes it already holds, so
- * the two never disagree.
+ * The finalized export's file name for local saves: the sanitized title plus
+ * the kind extension, no digest. A download's name stays human-shaped.
  * @param title - the call's explicit `title` argument, or null when absent.
  * @param html - the complete document.
  * @returns `<base>.svg` for a bare SVG document, `<base>.html` otherwise.
  */
 export function exportFileName(title: string | null, html: string): string {
   return exportFileBase(title) + (isSvgDocument(html) ? SVG_EXTENSION : HTML_EXTENSION)
+}
+
+/**
+ * One 64-bit FNV-1a digest over the document identity, hex-encoded. Pure
+ * JavaScript rather than SubtleCrypto: the derivation must stay synchronous
+ * and identical in both bundles, and node has no monopoly on TextEncoder.
+ * Sixteen hex digits give a collision birthday far beyond any deployment's
+ * render count; the point is uniqueness, not secrecy — anyone holding the
+ * page can recompute it.
+ * @param identity - the string to digest: the base name and the complete
+ *   document, separated so neither alone collides across pairs.
+ * @returns sixteen lowercase hex characters.
+ */
+function digestHex(identity: string): string {
+  let hash = 0xcbf29ce484222325n
+  const prime = 0x100000001b3n
+  for (const byte of new TextEncoder().encode(identity)) {
+    hash ^= BigInt(byte)
+    hash = (hash * prime) & 0xffffffffffffffffn
+  }
+  return hash.toString(16).padStart(16, '0')
+}
+
+/**
+ * The finalized export's served/sidecar name: the friendly base plus a
+ * content digest, so one title under different bytes never clobbers an
+ * earlier export, and one exact render always shares one stable URL no
+ * matter how often it re-renders. Both planes derive this from the same
+ * `(title, html)` pair they each hold, so host and card cannot disagree.
+ * @param title - the call's explicit `title` argument, or null when absent.
+ * @param html - the complete document.
+ * @returns `<base>-<16 hex digits>.svg|.html`.
+ */
+export function exportShareName(title: string | null, html: string): string {
+  const base = exportFileBase(title)
+  return `${base}-${digestHex(`${base}\u0000${html}`)}${isSvgDocument(html) ? SVG_EXTENSION : HTML_EXTENSION}`
 }
 
 /**
@@ -92,6 +127,9 @@ export function partialFileName(base: string): string {
  * Validate one request path segment as a finalized export name. The serve
  * route answers `<route>/<name>`; everything else (nested paths, dot-dot,
  * partial sidecars, unknown extensions) is a 404, never a directory read.
+ * One safe segment before one known extension is the whole contract — what
+ * bases may look like is the derivation's business, and serving is anyway a
+ * lookup of files this plugin's finalize wrote.
  * @param name - the decoded single segment after the route prefix.
  * @returns true when the name may be served.
  */

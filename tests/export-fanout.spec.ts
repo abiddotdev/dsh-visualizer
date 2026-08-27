@@ -9,7 +9,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as visualizer from '../src/index.ts'
 import { PARTIAL_WRITE_INTERVAL_MS } from '../src/export-fanout.ts'
-import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../src/shared/export-name.ts'
+import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
 
 /**
  * Minimal stand-in for the harness web server's route registry: the same
@@ -184,7 +184,7 @@ describe('export fanout', () => {
     // The landed call finalizes: exact bytes under the final name, sidecar gone.
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', args))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.html'))).toBe(DOC)
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBe(DOC)
     expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).toBeNull()
   })
 
@@ -192,7 +192,7 @@ describe('export fanout', () => {
     const harness = await setup()
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ html: DOC })))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'render.html'))).toBe(DOC)
+    expect(await readFileOrNull(join(harness.dir, exportShareName(null, DOC)))).toBe(DOC)
   })
 
   it('finalizes a bare SVG document under .svg', async () => {
@@ -200,7 +200,7 @@ describe('export fanout', () => {
     const svg = '<svg viewBox="0 0 10 10"><rect width="4" height="4"/></svg>'
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Flow', html: svg })))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Flow.svg'))).toBe(svg)
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Flow', svg)))).toBe(svg)
   })
 
   it('never finalizes an over-limit document', async () => {
@@ -224,23 +224,25 @@ describe('export fanout', () => {
     // A landed call's finalized file is likewise removed by its error result.
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.html'))).not.toBeNull()
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).not.toBeNull()
     emitSession(harness.ctx, toolResultEvent('c1', { name: 'Error', code: 'E_TOOL' }))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.html'))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBeNull()
   })
 
-  it('keeps a later call\'s overwrite when an earlier same-title call errors', async () => {
+  it('keeps a later call\'s distinct export when an earlier same-title call errors', async () => {
     const harness = await setup()
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
     await flush()
     const rewritten = '<!DOCTYPE html><html><body><h1>v2</h1></body></html>'
     emitSession(harness.ctx, toolCallEvent('c2', 'visualizer', JSON.stringify({ title: 'Dash', html: rewritten })))
     await flush()
-    // c1's late error must not remove c2's overwrite of the shared name.
+    // Digest-keyed names: different bytes land under different files, and
+    // c1's late error removes only c1's own export, never c2's.
     emitSession(harness.ctx, toolResultEvent('c1', { name: 'Error', code: 'E_TOOL' }))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.html'))).toBe(rewritten)
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', rewritten)))).toBe(rewritten)
   })
 
   it('drops interrupted partials and resets cleanly on llm/retry', async () => {
@@ -271,7 +273,7 @@ describe('export fanout', () => {
 
     emitSession(harness.ctx, toolCallEvent('c9', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.html'))).toBe(DOC)
+    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBe(DOC)
   })
 
   it('ignores other tools entirely', async () => {
@@ -316,14 +318,14 @@ describe('exports serve route', () => {
 
   it('serves a finalized export with the shell CSP and hardening headers', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Dash.html`)
+    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(200)
     expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     // The wrapper embeds the document verbatim (once-attribute-escaped), and
     // frames it sandboxed: generated scripts run in an opaque origin.
     expect(res.body).toContain('sandbox="allow-scripts"')
     expect(res.body).toContain(`srcdoc="${DOC.replaceAll('&', '&amp;')}`.slice(0, 60))
-    expect(res.body).toContain('<title>Dash</title>')
+    expect(res.body).toContain(`<title>${exportShareName('Dash', DOC).slice(0, -'.html'.length)}</title>`)
     expect(res.headerMap['x-content-type-options']).toBe('nosniff')
     // The page content mutates under one name (latest wins), so never cached:
     expect(res.headerMap['cache-control']).toBe('no-store')
@@ -339,18 +341,18 @@ describe('exports serve route', () => {
   it('wraps a document whose bytes carry quotes and ampersands, escaping once', async () => {
     const doc = '<!DOCTYPE html><html><body data-x="a&amp;b">42</body></html>'
     const harness = await landed('Tick & Tock', doc)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent('Tick & Tock.html')}`)
+    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Tick & Tock', doc))}`)
     expect(res.status).toBe(200)
     // `&` → `&amp;`, `"` → `&quot;`: attribute-safe exactly one level deep,
     // the srcdoc parser undoes it into the original bytes.
-    expect(res.body).toContain('<title>Tick &amp; Tock</title>')
+    expect(res.body).toContain(`<title>${exportShareName('Tick & Tock', doc).slice(0, -'.html'.length).replaceAll('&', '&amp;')}</title>`)
     expect(res.body).toContain(`srcdoc="${doc.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`)
   })
 
   it('keeps the hardening headers on every answer class', async () => {
     const harness = await landed('Dash', DOC)
     const answers = [
-      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`),
       await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
       await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`),
     ]
@@ -387,21 +389,22 @@ describe('exports serve route', () => {
 
   it('serves a unicode title under its encoded name', async () => {
     const harness = await landed('中文 图表', DOC)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent('中文 图表.html')}`)
+    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', DOC))}`)
     expect(res.status).toBe(200)
     // HTML answers are the wrapper page; the document rides inside escaped.
     expect(res.body).toContain(`srcdoc="${DOC.replaceAll('&', '&amp;')}`.slice(0, 60))
-    expect(res.body).toContain('<title>中文 图表</title>')
+    expect(res.body).toContain(`<title>${exportShareName('中文 图表', DOC).slice(0, -'.html'.length)}</title>`)
   })
 
   it('serves a bare SVG raw with scripting stripped from its policy', async () => {
-    const harness = await landed('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>')
-    const url = `${EXPORTS_ROUTE_PATH}/Flow.svg`
+    const SVG_DOC = '<svg viewBox="0 0 10 10"><rect/></svg>'
+    const harness = await landed('Flow', SVG_DOC)
+    const url = `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>'))}`
     // Raw bytes stay hotlinkable as an image; the policy alone drops script.
     const res = await request(harness, 'GET', url)
     expect(res.status).toBe(200)
     expect(res.headerMap['content-type']).toBe('image/svg+xml')
-    expect(res.body).toBe('<svg viewBox="0 0 10 10"><rect/></svg>')
+    expect(res.body).toBe(SVG_DOC)
     const csp = String(res.headerMap['content-security-policy'])
     expect(csp).toContain("script-src 'none'")
     // Script sources are gone; the fetch directives stay for image/data use.
@@ -432,7 +435,7 @@ describe('exports serve route', () => {
 
   it('answers 405 with the method table for anything but GET and HEAD', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`)
+    const res = await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
     expect(res.headerMap.allow).toBe('GET, HEAD')
   })

@@ -19,18 +19,15 @@
  * @module dsh-visualizer/export-fanout
  */
 
-import { lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { extractStreamArgs } from './client/partial-args.ts'
 import { RENDER_CSP_DIRECTIVES } from './shared/export-csp.ts'
 import {
-  EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportFileName, isServableExportName, partialFileName,
+  EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportShareName, isServableExportName, partialFileName,
 } from './shared/export-name.ts'
-
-/** Extension constant mirrored from the shared naming module for slicing wrapper titles. */
-const HTML_EXTENSION = '.html'
 
 /** Wire name of the render tool; only its calls fan out. */
 const TOOL_NAME = 'visualizer'
@@ -125,6 +122,8 @@ export interface ExportFanoutConfig {
   readonly dir: string
   /** Per-call render limit in bytes; the fanout mirrors it, never exceeds it. */
   readonly maxHtmlBytes: number
+  /** Days a finalized export survives; `0` disables the expiry sweep. */
+  readonly maxExportAgeDays: number
 }
 
 /** One fanout's private mutable bookkeeping. */
@@ -333,8 +332,9 @@ function finalizeCall(state: FanoutState, session: SessionState, event: ToolCall
   if (Buffer.byteLength(parsed.html, 'utf8') > state.config.maxHtmlBytes) return
   const html = parsed.html
   const title = typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : null
-  const sidecar = join(state.config.dir, partialFileName(exportFileBase(title)))
-  const final = join(state.config.dir, exportFileName(title, html))
+  const shareName = exportShareName(title, html)
+  const sidecar = join(state.config.dir, partialFileName(shareName))
+  const final = join(state.config.dir, shareName)
   const record = exportRecord(session, id)
   const stale = record.sidecar !== null && record.sidecar !== sidecar ? record.sidecar : null
   record.sidecar = null
@@ -466,7 +466,9 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     } else {
       // An HTML document runs inside the sandboxed wrapper, never on this
       // origin; the wrapper inherits the policy below into its srcdoc frame.
-      const page = Buffer.from(wrapExportPage(name.slice(0, -HTML_EXTENSION.length), body.toString('utf8')), 'utf8')
+      // The wrapper title is the served name sans extension — friendly base
+      // plus digest — matching what a saved wrapper file will be called.
+      const page = Buffer.from(wrapExportPage(name.slice(0, -'.html'.length), body.toString('utf8')), 'utf8')
       res.writeHead(200, {
         ...SERVE_HEADERS,
         'content-type': 'text/html; charset=utf-8',
@@ -510,6 +512,22 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     path: EXPORTS_ROUTE_PATH,
     handler: (req, res) => serveExport(state, req, res),
   }), 'visualizer: exports route')
+
+  // Retention sweep at activation, before any request can arrive: digest-keyed
+  // names accumulate by design, so expiry replaces the overwrite self-cleaning.
+  // A failure logs one line and never blocks the route or the fold.
+  if (config.maxExportAgeDays > 0) {
+    const cutoff = Date.now() - config.maxExportAgeDays * 86_400_000
+    enqueue(state, ':retention', async () => {
+      await state.ready
+      for (const entry of await readdir(config.dir)) {
+        if (!isServableExportName(entry)) continue
+        const stats = await lstat(join(config.dir, entry)).catch(() => null)
+        if (stats === null || !stats.isFile() || stats.mtimeMs >= cutoff) continue
+        await unlinkQuiet(join(config.dir, entry))
+      }
+    })
+  }
 
   const on = (ctx as unknown as { on: LooseOn }).on
   on('session/event', (session: unknown, event: unknown) => {

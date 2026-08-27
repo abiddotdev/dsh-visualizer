@@ -1,15 +1,17 @@
 /**
  * The share control's action: open one document's served export page. The
  * host's export fanout mirrors the streamed document into the exports
- * directory and the web server hands it back at the suburl built here — the
- * file name comes from the same shared derivation the host named the file
- * with, so the URL always matches a page the server can produce. Where the
- * deployment disabled the feature, the boot-table announcement is absent and
- * the cards never offer the control at all.
+ * directory under a content-digested name ({@link exportShareName}) and the
+ * web server hands it back at the suburl built here — the URL derives from
+ * the same `(title, html)` pair the card holds, so it always matches a page
+ * the server can produce. One exact render maps to one stable shareable URL;
+ * changed content lands beside it under a fresh name rather than clobbering.
+ * Where the deployment disabled the feature, the boot-table announcement is
+ * absent and the cards never offer the control at all.
  * @module dsh-visualizer/share
  */
 
-import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileName } from '../shared/export-name.ts'
+import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../shared/export-name.ts'
 
 /**
  * Whether the host's export fanout is live: the served page carries a
@@ -34,7 +36,7 @@ export function exportShareEnabled(): boolean {
 export function exportPageUrl(title: string | null, html: string): string | null {
   if (!exportShareEnabled()) return null
   if (!/^https?:$/.test(window.location.protocol)) return null
-  const name = exportFileName(title, html)
+  const name = exportShareName(title, html)
   return `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`
 }
 

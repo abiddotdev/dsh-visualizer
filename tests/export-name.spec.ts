@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EXPORTS_ROUTE_PATH, MAX_EXPORT_BASE_CHARS, PARTIAL_SUFFIX,
-  exportFileBase, exportFileName, isServableExportName, isSvgDocument, partialFileName,
+  exportFileBase, exportFileName, exportShareName, isServableExportName, isSvgDocument, partialFileName,
 } from '../src/shared/export-name.ts'
 
 describe('export naming', () => {
@@ -42,6 +42,25 @@ describe('export naming', () => {
     expect(exportFileName('Flow', '<svg><rect/></svg>')).toBe('Flow.svg')
     expect(exportFileName(null, '<p>x</p>')).toBe('render.html')
     expect(partialFileName('Dash')).toBe('Dash.partial')
+  })
+
+  it('keys served names by friendly base plus content digest', () => {
+    const html = '<!DOCTYPE html><html></html>'
+    // Friendly base, digest suffix of sixteen lowercase hex digits.
+    expect(exportShareName('Dash', html)).toMatch(/^Dash-[0-9a-f]{16}\.html$/)
+    expect(exportShareName(null, '<p>x</p>')).toMatch(/^render-[0-9a-f]{16}\.html$/)
+    expect(exportShareName('Flow', '<svg><rect/></svg>')).toMatch(/^Flow-[0-9a-f]{16}\.svg$/)
+  })
+
+  it('gives identical renders one stable name and changed bytes another', () => {
+    const html = '<!DOCTYPE html><html><body>v1</body></html>'
+    const v2 = '<!DOCTYPE html><html><body>v2</body></html>'
+    // Re-rendering exact same output: the same shareable URL, forever.
+    expect(exportShareName('Dash', html)).toBe(exportShareName('Dash', html))
+    // Changed content under one title: a new file, the old link intact.
+    expect(exportShareName('Dash', html)).not.toBe(exportShareName('Dash', v2))
+    // Same bytes under different titles never collide either.
+    expect(exportShareName('A', html)).not.toBe(exportShareName('B', html))
   })
 
   it('serves only finalized single-segment names', () => {
