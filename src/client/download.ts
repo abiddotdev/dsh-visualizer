@@ -5,6 +5,8 @@
  * @module dsh-visualizer/download
  */
 
+import { exportFileName } from '../shared/export-name.ts'
+
 /**
  * Delay before the object URL is released. The browser starts the download
  * only after `click()` returns, so revoking in the same task can yield an
@@ -12,37 +14,25 @@
  */
 export const REVOKE_DELAY_MS = 4_000
 
-/** Prefix length examined to tell a bare SVG document from an HTML one. */
-const MODE_SNIFF_CHARS = 80
-
 /** How long the copy control shows its confirmation before reverting. */
 export const COPY_FEEDBACK_MS = 1_600
 
 /**
- * Whether the document is a bare SVG rather than HTML: it opens with `<svg`
- * before any HTML framing appears. The guide teaches raw SVG as the
- * diagram/mockup carriage, so both kinds reach the download control.
- * @param html - the complete document.
- * @returns true when the bytes should be saved as `.svg`.
- */
-function isSvgDocument(html: string): boolean {
-  return html.trimStart().slice(0, MODE_SNIFF_CHARS).toLowerCase().startsWith('<svg')
-}
-
-/**
  * Save one document as a standalone file: `.svg` for a bare SVG document,
- * `.html` otherwise.
+ * `.html` otherwise. The name is the same one the host's export fanout and
+ * the share control derive, so a download, a shared page, and the file on
+ * disk all carry one name.
  * @param title - card title; sanitized into the download file name.
  * @param html - the complete document.
  */
 export function downloadDocument(title: string, html: string): void {
-  const svg = isSvgDocument(html)
-  const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'render'
+  const name = exportFileName(title, html)
+  const svg = name.endsWith('.svg')
   const blob = new Blob([html], { type: svg ? 'image/svg+xml' : 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${safe}.${svg ? 'svg' : 'html'}`
+  anchor.download = name
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
