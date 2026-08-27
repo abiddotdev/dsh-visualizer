@@ -318,8 +318,12 @@ describe('exports serve route', () => {
     const harness = await landed('Dash', DOC)
     const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Dash.html`)
     expect(res.status).toBe(200)
-    expect(res.body).toBe(DOC)
     expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
+    // The wrapper embeds the document verbatim (once-attribute-escaped), and
+    // frames it sandboxed: generated scripts run in an opaque origin.
+    expect(res.body).toContain('sandbox="allow-scripts"')
+    expect(res.body).toContain(`srcdoc="${DOC.replaceAll('&', '&amp;')}`.slice(0, 60))
+    expect(res.body).toContain('<title>Dash</title>')
     expect(res.headerMap['x-content-type-options']).toBe('nosniff')
     // The page content mutates under one name (latest wins), so never cached:
     expect(res.headerMap['cache-control']).toBe('no-store')
@@ -332,16 +336,18 @@ describe('exports serve route', () => {
     expect(String(res.headerMap['permissions-policy'])).toContain('camera=()')
   })
 
-  it('answers HEAD with headers only and svg with the svg type', async () => {
-    const harness = await landed('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>')
-    const res = await request(harness, 'HEAD', `${EXPORTS_ROUTE_PATH}/Flow.svg`)
+  it('wraps a document whose bytes carry quotes and ampersands, escaping once', async () => {
+    const doc = '<!DOCTYPE html><html><body data-x="a&amp;b">42</body></html>'
+    const harness = await landed('Tick & Tock', doc)
+    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent('Tick & Tock.html')}`)
     expect(res.status).toBe(200)
-    expect(res.headerMap['content-type']).toBe('image/svg+xml')
-    expect(res.headerMap['cache-control']).toBe('no-store')
-    expect(res.body).toBe('')
+    // `&` → `&amp;`, `"` → `&quot;`: attribute-safe exactly one level deep,
+    // the srcdoc parser undoes it into the original bytes.
+    expect(res.body).toContain('<title>Tick &amp; Tock</title>')
+    expect(res.body).toContain(`srcdoc="${doc.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`)
   })
 
-  it('carries the hardening headers on every answer class', async () => {
+  it('keeps the hardening headers on every answer class', async () => {
     const harness = await landed('Dash', DOC)
     const answers = [
       await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Dash.html`),
@@ -383,7 +389,28 @@ describe('exports serve route', () => {
     const harness = await landed('中文 图表', DOC)
     const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent('中文 图表.html')}`)
     expect(res.status).toBe(200)
-    expect(res.body).toBe(DOC)
+    // HTML answers are the wrapper page; the document rides inside escaped.
+    expect(res.body).toContain(`srcdoc="${DOC.replaceAll('&', '&amp;')}`.slice(0, 60))
+    expect(res.body).toContain('<title>中文 图表</title>')
+  })
+
+  it('serves a bare SVG raw with scripting stripped from its policy', async () => {
+    const harness = await landed('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>')
+    const url = `${EXPORTS_ROUTE_PATH}/Flow.svg`
+    // Raw bytes stay hotlinkable as an image; the policy alone drops script.
+    const res = await request(harness, 'GET', url)
+    expect(res.status).toBe(200)
+    expect(res.headerMap['content-type']).toBe('image/svg+xml')
+    expect(res.body).toBe('<svg viewBox="0 0 10 10"><rect/></svg>')
+    const csp = String(res.headerMap['content-security-policy'])
+    expect(csp).toContain("script-src 'none'")
+    // Script sources are gone; the fetch directives stay for image/data use.
+    expect(csp).not.toMatch(/script-src[^;]*esm\.sh/)
+    expect(csp).toContain("object-src 'none'")
+    // HEAD keeps the same headers with an empty body.
+    const head = await request(harness, 'HEAD', url)
+    expect(head.headerMap['content-type']).toBe('image/svg+xml')
+    expect(head.body).toBe('')
   })
 
   it('answers 404 for missing, partial, and traversal names', async () => {

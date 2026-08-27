@@ -29,6 +29,9 @@ import {
   EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportFileName, isServableExportName, partialFileName,
 } from './shared/export-name.ts'
 
+/** Extension constant mirrored from the shared naming module for slicing wrapper titles. */
+const HTML_EXTENSION = '.html'
+
 /** Wire name of the render tool; only its calls fan out. */
 const TOOL_NAME = 'visualizer'
 
@@ -376,11 +379,50 @@ const NOT_FOUND_PAGE = `<!DOCTYPE html>
 </html>`
 
 /**
- * Serve one finalized export. The response carries the same network-egress
- * CSP the sandboxed shell enforces, so the standalone page can fetch nothing
- * the inline preview could not, plus the shared hardening table. Only a
- * regular file of the exports directory is servable: a symlink planted in
- * the directory (or any special node) refuses with the indistinguishable
+ * Escape one string for embedding inside a double-quoted attribute value:
+ * `&` first (so later escapes stay escaped), then the quote delimiter. `<`
+ * needs no escape in a quoted attribute value, keeping the payload of large
+ * documents close to its original size.
+ */
+function escapeAttr(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+}
+
+/**
+ * The wrapper page one exported HTML document serves through: a chrome-less
+ * frame whose `sandbox="allow-scripts"` places the document in an opaque
+ * origin — generated scripts execute, but hold no handle on the harness
+ * origin's cookies, storage, or same-origin endpoints. The frame's `srcdoc`
+ * inherits this page's CSP, so {@link SERVE_HEADERS}'s policy governs both
+ * layers from one response. The wrapper carries no scripts of its own.
+ * @param base - the export's base name, echoed as the page title so a saved
+ * wrapper file stays recognizable.
+ * @param doc - the complete escaped-once document bytes.
+ */
+function wrapExportPage(base: string, doc: string): string {
+  const title = escapeAttr(base)
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%;display:block;background:#fff}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" title="${title}" srcdoc="${escapeAttr(doc)}"></iframe>
+</body>
+</html>`
+}
+
+/**
+ * Serve one finalized export. HTML documents go out through the sandboxed
+ * wrapper — an LLM-authored page never runs on the harness origin itself;
+ * bare SVG goes out raw under a CSP variant with scripting removed outright,
+ * since a diagram has no honest use for script and `<img>`-embedded copies
+ * would not run it either. Both answers carry the shared hardening table.
+ * Only a regular file of the exports directory is servable: a symlink planted
+ * in the directory (or any special node) refuses with the indistinguishable
  * not-found answer instead of leaking another path's bytes. TOCTOU between
  * lstat and readFile is accepted — the check closes the planted-entry class;
  * narrowing it further needs O_NOFOLLOW semantics out of scope here.
@@ -411,11 +453,28 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     const stats = await lstat(path)
     if (!stats.isFile()) throw new Error('not a regular file')
     const body = await readFile(path)
-    res.writeHead(200, {
-      ...SERVE_HEADERS,
-      'content-type': name.endsWith('.svg') ? 'image/svg+xml' : 'text/html; charset=utf-8',
-      'content-length': body.length,
-    })
+    if (name.endsWith('.svg')) {
+      // A bare SVG diagram serves directly (it stays hotlinkable as an
+      // image), but its document-level CSP drops scripting entirely: the
+      // only change against the shared policy.
+      res.writeHead(200, {
+        ...SERVE_HEADERS,
+        'content-security-policy': RENDER_CSP_DIRECTIVES.replace(/script-src[^;]+;/, "script-src 'none';"),
+        'content-type': 'image/svg+xml',
+        'content-length': body.length,
+      })
+    } else {
+      // An HTML document runs inside the sandboxed wrapper, never on this
+      // origin; the wrapper inherits the policy below into its srcdoc frame.
+      const page = Buffer.from(wrapExportPage(name.slice(0, -HTML_EXTENSION.length), body.toString('utf8')), 'utf8')
+      res.writeHead(200, {
+        ...SERVE_HEADERS,
+        'content-type': 'text/html; charset=utf-8',
+        'content-length': page.length,
+      })
+      res.end(method === 'HEAD' ? undefined : page)
+      return
+    }
     res.end(method === 'HEAD' ? undefined : body)
   } catch {
     res.writeHead(404, notFoundHeaders)
