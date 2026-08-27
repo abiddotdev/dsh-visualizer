@@ -436,7 +436,7 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
   const state: FanoutState = {
     config,
     ctx,
-    ready: mkdir(config.dir, { recursive: true }).then(() => undefined, (error: unknown) => {
+    ready: mkdir(config.dir, { recursive: true, mode: 0o700 }).then(() => undefined, (error: unknown) => {
       ctx.logger.warn(`export fanout: cannot create ${config.dir}: ${error instanceof Error ? error.message : String(error)}`)
     }),
     sessions: new WeakMap(),

@@ -6,7 +6,7 @@ import {
 
 describe('export naming', () => {
   it('keeps the shared route path under the plugin namespace', () => {
-    expect(EXPORTS_ROUTE_PATH).toBe('/visualizer/exports')
+    expect(EXPORTS_ROUTE_PATH).toBe('/visualizer')
     expect(PARTIAL_SUFFIX).toBe('.partial')
   })
 

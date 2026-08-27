@@ -100,7 +100,7 @@ describe('ResultRow', () => {
     screen.getByRole('button', { name: 'Open standalone page' }).click()
     // The URL is the same name the host's export fanout finalized under.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}/visualizer/exports/${encodeURIComponent('Dash.html')}`,
+      `${window.location.origin}/visualizer/${encodeURIComponent('Dash.html')}`,
       '_blank',
       'noopener,noreferrer',
     )

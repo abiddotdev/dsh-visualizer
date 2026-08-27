@@ -63,16 +63,17 @@ export interface Config {
 }
 
 /**
- * Default export directory: `$DSH_HOME/exports`, falling back to
- * `~/.dsh/exports` — the same precedence the harness's own home resolution
- * uses, mirrored locally because the plugin does not depend on
- * `@deepseek-ai/dsh-home-paths`.
+ * Default export directory: `$DSH_HOME/visualizer/exports`, falling back to
+ * `~/.dsh/visualizer/exports` — the same precedence the harness's own home
+ * resolution uses, mirrored locally because the plugin does not depend on
+ * `@deepseek-ai/dsh-home-paths`. The plugin owns its whole subtree under the
+ * harness home instead of squatting the shared root.
  * @returns the absolute default exports directory.
  */
 function defaultExportDir(): string {
   const env = process.env.DSH_HOME
   const home = env !== undefined && env.trim().length > 0 ? env : join(homedir(), '.dsh')
-  return resolve(expandHomePath(home), 'exports')
+  return resolve(expandHomePath(home), 'visualizer', 'exports')
 }
 
 /**
