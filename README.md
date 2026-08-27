@@ -71,7 +71,9 @@ The bundle layer already inserts the loader row, so overriding config takes a fl
   config:
     maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
     guideTool: true         # default; set false to use only the render tool
-    guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
+    guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve
+    exports: true           # default; set false to disable the export fanout, serve route, and share control
+    exportDir: ~/.dsh/exports   # default ($DSH_HOME honored); where exports are mirrored and served from
 ```
 
 `guideModules` narrows both guide surfaces at once. The standing system-prompt roster lists only those types' one-liners, and the JIT tool's argument enum accepts only those ids, so a disabled type is rejected at the argument boundary before any code runs. `guideTool: false` skips the second tool registration; the render tool and the standing prompt section are unaffected. Unknown module ids or an empty `guideModules` fail the plugin load. Defaults are on, all five types (`chart`, `diagram`, `mockup`, `interactive`, `art`).
@@ -104,9 +106,15 @@ At boot the shell asks the host for its design tokens. AutoFrame collects every 
 
 ## Card controls and failure notices
 
-A settled card offers two client-side actions over the same bytes. **Download** uses a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`. **Copy HTML** uses `navigator.clipboard.writeText` with a brief confirmation (a denied clipboard shows none).
+A settled card offers three actions. **Download** and **Copy HTML** are client-side over the same bytes: the download uses a Blob URL, a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`, and the copy uses `navigator.clipboard.writeText` with a brief confirmation (a denied clipboard shows none). The **share** icon (below) opens the exported page the host serves.
 
 When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but does nothing. Runtime failures are labeled the same way. A throwing inline script (which previously also killed every later script in the commit chain), an async `error` event, or an unhandled rejection posts a `runtimeError` report through the same bridge, and the card shows the first message beside the summary. Reports cap at three per card, so a resize loop or interval can't flood it.
+
+## Export fanout and share pages
+
+On the web profile the host half runs a second, read-only projection of every `visualizer` stream. The same `assistant/chunk` `tool-call-delta` events the browser card folds also reach the host's `session/event` firehose; the export fanout folds them identically and mirrors the growing document into the exports directory (`exportDir`, default `$DSH_HOME/exports`) while the model is still writing — a `<base>.partial` sidecar grows token by token, then the `tool/call` event that precedes execution carries the authoritative bytes, which land under their final name by an atomic rename: `<base>.html`, or `.svg` for a bare SVG document. A failed render cleans up after itself — an error result, an interrupted step, or a provider retry removes what it streamed — so the directory holds settled documents only. The write path is contained: a fanout failure logs one line and never reaches the conversation, and nothing touches the workspace; exports live under the harness home.
+
+The share icon on a settled card opens that page at a suburl of the harness web UI — `/visualizer/exports/<name>` — served by a route the plugin registers on the harness web server, with the same network-egress CSP the sandboxed shell enforces plus `nosniff` and `no-cache`. The name is derived in one shared module both planes import, so the URL always matches a file the host wrote (the download control saves under the identical name). One config switch gates the whole feature: `exports: false` stops the fanout, unregisters the route, and — through an announcement the host pushes onto the served page's boot table — hides the share control, so a disabled deployment never offers a dead URL. The feature also mounts only where a web server exists, so an export exists exactly when it is shareable — a TUI or headless profile keeps the untouched, filesystem-free tool. Naming is title-keyed, like the widget store: re-rendering the same title overwrites the earlier export, latest wins.
 
 ## Settle-time document check
 

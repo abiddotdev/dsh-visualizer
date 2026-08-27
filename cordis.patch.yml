@@ -15,4 +15,8 @@
       # config:
       #   maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
       #   guideTool: true         # default; set false to use only the render tool
-      #   guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
+      #   guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve
+      #   exports: true           # default; set false to disable the export fanout, serve route,
+      #                           # and the card's share control
+      #   exportDir: ~/.dsh/exports   # default ($DSH_HOME honored); where streamed documents are
+      #                               # mirrored and served from;
