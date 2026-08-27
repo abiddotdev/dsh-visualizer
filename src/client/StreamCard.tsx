@@ -8,10 +8,11 @@
 // live evidence.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
+import { exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
@@ -72,6 +73,8 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   const isLoaderText = card.phase === 'streaming' && messages.length > 0
   // The typing wave runs for the whole streaming phase — composing and
   // writing alike — and stops the moment the document settles.
+  // The share control exists only where the host announced its route.
+  const shareable = exportShareEnabled()
 
   return (
     <div className={css.card} data-tool="visualizer" data-phase={card.phase}>
@@ -131,6 +134,20 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                 >
                   <IconDownloadOutline16 size={14} />
                 </button>
+                {shareable && (
+                  <button
+                    type="button"
+                    className={css.download}
+                    aria-label={t('card.share')}
+                    title={t('card.share')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openExportPage(card.title, card.html)
+                    }}
+                  >
+                    <IconShareOutline16 size={14} />
+                  </button>
+                )}
               </>
             )}
           </>

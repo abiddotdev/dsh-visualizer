@@ -19,6 +19,8 @@ export const inject = ['invariants']
  * call/result relation it produces is already the tools registry's owned event
  * pair — and the cards are pure projections of the logged call arguments they
  * render; the stream Context is folded by the shared conversation-event engine.
+ * The export fanout is likewise a read-only projection: it observes the same
+ * logged events and writes files no other component reads back.
  */
 const install: InvariantInstaller = () => {}
 

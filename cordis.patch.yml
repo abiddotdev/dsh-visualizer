@@ -13,6 +13,10 @@
     - id: dsh-visualizer
       name: 'dsh-visualizer'
       # config:
-      #   maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
-      #   guideTool: true         # default; set false to use only the render tool
-      #   guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
+      #   maxArtifactBytes: 262144      # per-call render size limit, in bytes
+      #   guideTool: true               # false = drop the visualizer_guide recipe tool (render tool stays)
+      #   guideTypes: [chart, diagram, mockup, interactive, art]   # which types to teach and allow
+      #   shareArtifacts: true          # false = no disk mirror, serve route, or Share control
+      #   artifactDir: ~/.dsh/visualizer/artifacts        # $DSH_HOME honored
+      #   artifactRetentionDays: 30     # sweep artifacts older than this at activation; 0 disables
+      #   shareKey: ''                  # pin the link key so links survive restarts

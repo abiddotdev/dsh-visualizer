@@ -24,20 +24,20 @@ describe('downloadDocument', () => {
   it('saves an HTML document under .html with the HTML mime type', () => {
     const s = spies()
     downloadDocument('Q3 dash', '<!DOCTYPE html><html><body><p>x</p></body></html>')
-    expect(lastAnchor(s.click).download).toBe('Q3 dash.html')
+    expect(lastAnchor(s.click).download).toBe('q3-dash.html')
     expect(s.created.mock.calls[0]?.[0].type).toBe('text/html;charset=utf-8')
   })
 
   it('saves a bare SVG document under .svg with the SVG mime type', () => {
     const s = spies()
     downloadDocument('Flow', '   <svg viewBox="0 0 100 40"><rect width="10" height="10"/></svg>')
-    expect(lastAnchor(s.click).download).toBe('Flow.svg')
+    expect(lastAnchor(s.click).download).toBe('flow.svg')
     expect(s.created.mock.calls[0]?.[0].type).toBe('image/svg+xml')
   })
 
   it('keeps an HTML document that merely mentions svg on the html path', () => {
     const s = spies()
     downloadDocument('T', '<!doctype html><body><svg><rect/></svg></body>')
-    expect(lastAnchor(s.click).download).toBe('T.html')
+    expect(lastAnchor(s.click).download).toBe('t.html')
   })
 })

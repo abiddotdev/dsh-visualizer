@@ -7,6 +7,8 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { StreamCard, type StreamCardProps } from '../src/client/StreamCard.tsx'
+import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+
 import type { GenerativeCardData } from '../src/client/stream-node.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
@@ -15,6 +17,7 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -165,7 +168,7 @@ describe('StreamCard', () => {
     vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-1')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
-    expect(anchor.download).toBe('Rev _Q3__dash.html')
+    expect(anchor.download).toBe('rev-q3-dash.html')
   })
 
   it('copies the settled bytes and confirms briefly, reverting on denial', async () => {
@@ -191,6 +194,28 @@ describe('StreamCard', () => {
   it('offers no copy control while the document is still streaming', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
     expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  })
+
+  it('opens the served export page from the complete card, named for the document', () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const SVG_DOC = '<svg><rect/></svg>'
+    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+
+    screen.getByRole('button', { name: 'Open standalone page' }).click()
+    // The URL is the same name the host's export fanout finalized under.
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('hides the share control when the host never announced the route', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('shows one load-failure notice when a CDN script fails inside the frame', () => {

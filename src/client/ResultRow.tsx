@@ -8,11 +8,12 @@
 // definition.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
+import { exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import css from './Card.module.css'
@@ -98,6 +99,8 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   // same scope, and the streaming card derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(view?.title ?? null)), [view?.title])
   const settledOk = settled && !block.isError && view !== null
+  // The share control exists only where the host announced its route.
+  const shareable = exportShareEnabled()
 
   /** Collapsed-row trailing content: char count, then the download control on a settled success. */
   const rowChrome = () => (
@@ -152,6 +155,20 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
           >
             <IconDownloadOutline16 size={14} />
           </button>
+          {shareable && (
+            <button
+              type="button"
+              className={css.download}
+              aria-label={t('row.share')}
+              title={t('row.share')}
+              onClick={(event) => {
+                event.stopPropagation()
+                openExportPage(view.title, view.html)
+              }}
+            >
+              <IconShareOutline16 size={14} />
+            </button>
+          )}
         </>
       )}
     </>

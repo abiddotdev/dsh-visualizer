@@ -8,6 +8,8 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { ResultRow, type ResultRowProps } from '../src/client/ResultRow.tsx'
+import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+
 import { STREAM_SHELL } from '../src/client/shell.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
@@ -16,6 +18,7 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -88,6 +91,28 @@ describe('ResultRow', () => {
     expect(frame?.style.height).toBe('480px')
     expect(screen.getByText('Rendering…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  })
+
+  it('opens the served export page from the settled row, named for the document', () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+
+    screen.getByRole('button', { name: 'Open standalone page' }).click()
+    // The URL is the same name the host's export fanout finalized under,
+    // carrying the boot capability token the route demands.
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('hides the share control when the host never announced the route', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('sweeps the running frame and leaves the settled one plain', () => {
@@ -114,7 +139,7 @@ describe('ResultRow', () => {
     vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-2')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
-    expect(anchor.download).toBe('Q3_ _final_.html')
+    expect(anchor.download).toBe('q3-final.html')
   })
 
   it('names the failure code on an error result and renders no frame', () => {

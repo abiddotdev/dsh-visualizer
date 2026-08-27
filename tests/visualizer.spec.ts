@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { renderPrompt, SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as toolGenerativeUi from '../src/index.ts'
 
 const testToolSignal = new AbortController().signal
 
 /** Partial plugin config one test overrides; defaults fill the rest. */
-type SetupConfig = Partial<{ maxHtmlBytes: number; guideTool: boolean; guideModules: string[] }>
+type SetupConfig = Partial<{ maxArtifactBytes: number; guideTool: boolean; guideTypes: string[] }>
 
 async function setup(config: SetupConfig = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(toolGenerativeUi, { maxHtmlBytes: 262_144, ...config })
+  await ctx.plugin(toolGenerativeUi, { maxArtifactBytes: 262_144, ...config })
   return { ctx }
+}
+
+/** Assemble the system prompt and return its rendered text. */
+async function systemText(ctx: Context): Promise<string> {
+  const assembly = await (ctx.systemPrompt as unknown as { assemble: () => Promise<unknown> }).assemble()
+  return renderPrompt(assembly as Parameters<typeof renderPrompt>[0])
 }
 
 /** Narrowed executor outcome: every assertion reads isError, content, and meta absence. */
@@ -109,7 +115,7 @@ describe('visualizer tool', () => {
     expect(emptyResult.isError).toBe(true)
     expect(firstText(emptyResult)).toContain('html must be a non-empty document')
 
-    const tiny = await setup({ maxHtmlBytes: 5 })
+    const tiny = await setup({ maxArtifactBytes: 5 })
     const bigResult = await call(tiny.ctx, { html: '中文' })
     expect(bigResult.isError).toBe(true)
     expect(firstText(bigResult)).toContain('over the 5-byte render limit')
@@ -187,7 +193,7 @@ describe('visualizer_guide tool', () => {
   })
 
   it('registers the guide tool alone when the render tool stays and config disables nothing', async () => {
-    const { ctx } = await setup({ guideTool: true, guideModules: ['chart', 'art'] })
+    const { ctx } = await setup({ guideTool: true, guideTypes: ['chart', 'art'] })
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer', 'visualizer_guide'])
   })
 
@@ -196,8 +202,20 @@ describe('visualizer_guide tool', () => {
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer'])
   })
 
+  it('tells the model renders are auto-saved while artifact sharing is on', async () => {
+    const { ctx } = await setup()
+    const text = await systemText(ctx)
+    expect(text).toContain('saved automatically as a shareable standalone page')
+  })
+
+  it('keeps the save note out of the prompt while artifact sharing is off', async () => {
+    const { ctx } = await setup({ shareArtifacts: false })
+    const text = await systemText(ctx)
+    expect(text).not.toContain('saved automatically')
+  })
+
   it('narrows the guide tool enum to the configured modules', async () => {
-    const { ctx } = await setup({ guideModules: ['chart'] })
+    const { ctx } = await setup({ guideTypes: ['chart'] })
     const schema = ctx.tools.schemas().find(tool => tool.name === 'visualizer_guide')
     if (schema === undefined) throw new Error('visualizer_guide was not registered')
     expect(schema.parameters).toMatchObject({
@@ -214,9 +232,9 @@ describe('visualizer_guide tool', () => {
   })
 
   it('fails loud at load on an unknown or empty module set', async () => {
-    await expect(setup({ guideModules: ['chart', 'collage'] })).rejects.toThrow(
+    await expect(setup({ guideTypes: ['chart', 'collage'] })).rejects.toThrow(
       /unknown artifact type\(s\) collage; known types: chart, diagram, mockup, interactive, art/,
     )
-    await expect(setup({ guideModules: [] })).rejects.toThrow(/must list at least one artifact type/)
+    await expect(setup({ guideTypes: [] })).rejects.toThrow(/must list at least one artifact type/)
   })
 })

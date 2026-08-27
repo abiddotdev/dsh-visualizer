@@ -11,6 +11,7 @@ export const zh = {
   'card.interrupted': '已中断，内容不完整',
   'card.copy': '复制 HTML',
   'card.copied': '已复制',
+  'card.share': '打开独立页面',
   'card.scriptError': '库加载失败，交互可能不可用',
   'card.runtimeError': '脚本错误：',
   'row.title': 'HTML 预览',
@@ -20,6 +21,7 @@ export const zh = {
   'row.download': '下载 HTML',
   'row.copy': '复制 HTML',
   'row.copied': '已复制',
+  'row.share': '打开独立页面',
   'row.scriptError': '库加载失败，交互可能不可用',
   'row.runtimeError': '脚本错误：',
 } as const
@@ -33,6 +35,7 @@ export const en = {
   'card.interrupted': 'Interrupted; document incomplete',
   'card.copy': 'Copy HTML',
   'card.copied': 'Copied',
+  'card.share': 'Open standalone page',
   'card.scriptError': 'A library failed to load; interactivity may be unavailable',
   'card.runtimeError': 'Script error: ',
   'row.title': 'HTML preview',
@@ -42,6 +45,7 @@ export const en = {
   'row.download': 'Download HTML',
   'row.copy': 'Copy HTML',
   'row.copied': 'Copied',
+  'row.share': 'Open standalone page',
   'row.scriptError': 'A library failed to load; interactivity may be unavailable',
   'row.runtimeError': 'Script error: ',
 } as const
