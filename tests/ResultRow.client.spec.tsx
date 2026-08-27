@@ -95,14 +95,15 @@ describe('ResultRow', () => {
   })
 
   it('opens the served export page from the settled row, named for the document', () => {
-    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', true)
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
 
     screen.getByRole('button', { name: 'Open standalone page' }).click()
-    // The URL is the same name the host's export fanout finalized under.
+    // The URL is the same name the host's export fanout finalized under,
+    // carrying the boot capability token the route demands.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`,
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
       '_blank',
       'noopener,noreferrer',
     )

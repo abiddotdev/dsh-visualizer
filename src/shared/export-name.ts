@@ -13,10 +13,10 @@ export const EXPORTS_ROUTE_PATH = '/visualizer'
 
 /**
  * `globalThis` property the host sets through the web server's index-inject
- * table while the exports feature is active — the one-bit channel that tells
- * the browser half the share control has a live route behind it. Absent (or
- * not `true`) means the deployment disabled the feature, and the card hides
- * the share button instead of opening a dead URL.
+ * table while the exports feature is active — carrying the boot capability
+ * token the share control appends to export URLs. Absent means the deployment
+ * disabled the feature (`exports: false`), and the card hides the share button
+ * instead of opening a dead URL.
  */
 export const EXPORTS_BOOT_GLOBAL = '__DSH_VISUALIZER_EXPORTS__'
 

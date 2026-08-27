@@ -198,7 +198,7 @@ describe('StreamCard', () => {
   })
 
   it('opens the served export page from the complete card, named for the document', () => {
-    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', true)
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const SVG_DOC = '<svg><rect/></svg>'
     renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
@@ -206,7 +206,7 @@ describe('StreamCard', () => {
     screen.getByRole('button', { name: 'Open standalone page' }).click()
     // The URL is the same name the host's export fanout finalized under.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}`,
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
       '_blank',
       'noopener,noreferrer',
     )

@@ -19,6 +19,8 @@
  * @module dsh-visualizer/export-fanout
  */
 
+import { timingSafeEqual } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -126,7 +128,7 @@ export interface ExportFanoutConfig {
   readonly maxExportAgeDays: number
 }
 
-/** One fanout's private mutable bookkeeping. */
+/** All fanout state for one registration. */
 interface FanoutState {
   readonly config: ExportFanoutConfig
   readonly ctx: Context
@@ -140,6 +142,8 @@ interface FanoutState {
   readonly lastPartialAt: Map<string, number>
   /** Which call last finalized each export path, so one call's cleanup never removes a later call's overwrite. */
   readonly finalOwners: Map<string, string>
+  /** Per-boot capability token every serve request must echo as `?k=`. */
+  readonly token: string
 }
 
 /**
@@ -416,7 +420,20 @@ function wrapExportPage(base: string, doc: string): string {
 }
 
 /**
- * Serve one finalized export. HTML documents go out through the sandboxed
+ * The boot capability token gating the serve route: one unguessable value per
+ * process boot, pushed to served pages through the index-inject table and
+ * required as `?k=` on every export request. Links stop being enumerable —
+ * knowing (or guessing) a name alone serves nothing. Holding the token is the
+ * access grant, so a shared link keeps working until the harness restarts.
+ */
+function bootToken(): string {
+  return randomBytes(16).toString('base64url')
+}
+
+/**
+ * Serve one finalized export. Requests carry the boot capability token as
+ * `?k=`; anything else takes the indistinguishable not-found answer — no
+ * token oracle, no enumeration. HTML documents go out through the sandboxed
  * wrapper — an LLM-authored page never runs on the harness origin itself;
  * bare SVG goes out raw under a CSP variant with scripting removed outright,
  * since a diagram has no honest use for script and `<img>`-embedded copies
@@ -435,14 +452,23 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     return
   }
   let name = ''
+  let token = ''
   try {
     const url = new URL(req.url ?? '/', 'http://x')
     const rest = url.pathname.startsWith(`${EXPORTS_ROUTE_PATH}/`) ? url.pathname.slice(EXPORTS_ROUTE_PATH.length + 1) : ''
     name = decodeURIComponent(rest)
+    token = url.searchParams.get('k') ?? ''
   } catch {
     // a malformed escape falls through to the not-found page
   }
   const notFoundHeaders = { ...SERVE_HEADERS, 'content-type': 'text/html; charset=utf-8' }
+  // Constant-time comparison: the token gates every byte this route serves.
+  if (token.length !== state.token.length
+    || !timingSafeEqual(Buffer.from(token), Buffer.from(state.token))) {
+    res.writeHead(404, notFoundHeaders)
+    res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
+    return
+  }
   if (!isServableExportName(name)) {
     res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
@@ -504,6 +530,7 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     chains: new Map(),
     lastPartialAt: new Map(),
     finalOwners: new Map(),
+    token: bootToken(),
   }
 
   const server = (ctx as unknown as { webServer: WebServerLike }).webServer
@@ -534,12 +561,14 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     if (typeof session !== 'object' || session === null) return
     handleEvent(state, session, event as WireEvent)
   })
-  // Announce the feature on the boot table: the served page sets the shared
-  // global, and the card hides its share control when the flag never arrives.
+  // Announce the feature on the boot table, carrying the capability token:
+  // the served page stores it where the card's share control reads it, and
+  // every export request echoes it back as `?k=`. A deployment with the
+  // feature off never sets it, and the cards hide the share control.
   // Rows are read fresh at every emit, so the announcement tracks activation.
   on('webserver/index-inject', (table: unknown) => {
     if (Array.isArray(table)) {
-      table.push({ kind: 'global', name: EXPORTS_BOOT_GLOBAL, value: true })
+      table.push({ kind: 'global', name: EXPORTS_BOOT_GLOBAL, value: state.token })
     }
   })
 }

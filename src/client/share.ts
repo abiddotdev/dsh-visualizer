@@ -21,7 +21,19 @@ import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../sha
  * @returns true only where the route behind the share control exists.
  */
 export function exportShareEnabled(): boolean {
-  return (globalThis as unknown as Record<string, unknown>)[EXPORTS_BOOT_GLOBAL] === true
+  return typeof (globalThis as unknown as Record<string, unknown>)[EXPORTS_BOOT_GLOBAL] === 'string'
+}
+
+/**
+ * The boot capability token the host announced, or null where it did not —
+ * every export URL carries it as `?k=`, and the serve route refuses requests
+ * without it. Holding the token is what makes a link work; a name alone
+ * serves nothing, so links stop being enumerable.
+ * @returns the announced token, or null outside the harness web UI.
+ */
+function capabilityToken(): string | null {
+  const value = (globalThis as unknown as Record<string, unknown>)[EXPORTS_BOOT_GLOBAL]
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 /**
@@ -34,10 +46,11 @@ export function exportShareEnabled(): boolean {
  * routes).
  */
 export function exportPageUrl(title: string | null, html: string): string | null {
-  if (!exportShareEnabled()) return null
+  const token = capabilityToken()
+  if (token === null) return null
   if (!/^https?:$/.test(window.location.protocol)) return null
   const name = exportShareName(title, html)
-  return `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`
+  return `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}?k=${encodeURIComponent(token)}`
 }
 
 /**

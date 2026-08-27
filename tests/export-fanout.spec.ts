@@ -149,6 +149,20 @@ async function request(harness: Harness, method: string, url: string): Promise<R
   return res
 }
 
+/**
+ * The request helper appends the capability token, learned the way the
+ * browser half learns it: off the index-inject announcement the fanout
+ * pushes at every emit.
+ */
+async function requestTokened(harness: Harness, method: string, url: string): Promise<ReturnType<typeof fakeResponse>> {
+  const table: unknown[] = []
+  ;(harness.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
+    .emit('webserver/index-inject', table)
+  const token = (table[0] as { value: string }).value
+  const joiner = url.includes('?') ? '&' : '?'
+  return request(harness, method, `${url}${joiner}k=${encodeURIComponent(token)}`)
+}
+
 const DOC = '<!DOCTYPE html><html><body><h1>Revenue</h1></body></html>'
 
 describe('export fanout', () => {
@@ -298,7 +312,13 @@ describe('export fanout', () => {
     const table: unknown[] = []
     ;(enabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
       .emit('webserver/index-inject', table)
-    expect(table).toContainEqual({ kind: 'global', name: EXPORTS_BOOT_GLOBAL, value: true })
+    // The announcement carries the boot capability token, not a bare flag.
+    expect(table).toHaveLength(1)
+    const row = table[0] as { kind: string; name: string; value: unknown }
+    expect(row.kind).toBe('global')
+    expect(row.name).toBe(EXPORTS_BOOT_GLOBAL)
+    expect(typeof row.value).toBe('string')
+    expect((row.value as string).length).toBeGreaterThan(15)
 
     const disabled = await setup({ exports: false })
     const empty: unknown[] = []
@@ -318,7 +338,7 @@ describe('exports serve route', () => {
 
   it('serves a finalized export with the shell CSP and hardening headers', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
+    const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(200)
     expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     // The wrapper embeds the document verbatim (once-attribute-escaped), and
@@ -341,7 +361,7 @@ describe('exports serve route', () => {
   it('wraps a document whose bytes carry quotes and ampersands, escaping once', async () => {
     const doc = '<!DOCTYPE html><html><body data-x="a&amp;b">42</body></html>'
     const harness = await landed('Tick & Tock', doc)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Tick & Tock', doc))}`)
+    const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Tick & Tock', doc))}`)
     expect(res.status).toBe(200)
     // `&` → `&amp;`, `"` → `&quot;`: attribute-safe exactly one level deep,
     // the srcdoc parser undoes it into the original bytes.
@@ -352,9 +372,9 @@ describe('exports serve route', () => {
   it('keeps the hardening headers on every answer class', async () => {
     const harness = await landed('Dash', DOC)
     const answers = [
-      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`),
-      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
-      await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+      await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`),
+      await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
+      await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`),
     ]
     for (const res of answers) {
       expect(res.headerMap['cache-control']).toBe('no-store')
@@ -381,7 +401,7 @@ describe('exports serve route', () => {
     await symlink(join(harness.dir, 'outside-secret.txt'), join(harness.dir, 'Planted.html'))
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Real', html: DOC })))
     await flush()
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Planted.html`)
+    const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Planted.html`)
     expect(res.status).toBe(404)
     expect(res.body).not.toContain('stolen bytes')
     expect(res.body).toContain('No exported visualizer document')
@@ -389,7 +409,7 @@ describe('exports serve route', () => {
 
   it('serves a unicode title under its encoded name', async () => {
     const harness = await landed('中文 图表', DOC)
-    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', DOC))}`)
+    const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', DOC))}`)
     expect(res.status).toBe(200)
     // HTML answers are the wrapper page; the document rides inside escaped.
     expect(res.body).toContain(`srcdoc="${DOC.replaceAll('&', '&amp;')}`.slice(0, 60))
@@ -401,7 +421,7 @@ describe('exports serve route', () => {
     const harness = await landed('Flow', SVG_DOC)
     const url = `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>'))}`
     // Raw bytes stay hotlinkable as an image; the policy alone drops script.
-    const res = await request(harness, 'GET', url)
+    const res = await requestTokened(harness, 'GET', url)
     expect(res.status).toBe(200)
     expect(res.headerMap['content-type']).toBe('image/svg+xml')
     expect(res.body).toBe(SVG_DOC)
@@ -411,7 +431,7 @@ describe('exports serve route', () => {
     expect(csp).not.toMatch(/script-src[^;]*esm\.sh/)
     expect(csp).toContain("object-src 'none'")
     // HEAD keeps the same headers with an empty body.
-    const head = await request(harness, 'HEAD', url)
+    const head = await requestTokened(harness, 'HEAD', url)
     expect(head.headerMap['content-type']).toBe('image/svg+xml')
     expect(head.body).toBe('')
   })
@@ -427,15 +447,42 @@ describe('exports serve route', () => {
       `${EXPORTS_ROUTE_PATH}/Dash.txt`,
     ]
     for (const url of urls) {
-      const res = await request(harness, 'GET', url)
+      const res = await requestTokened(harness, 'GET', url)
       expect(res.status, url).toBe(404)
       expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     }
   })
 
+  it('refuses requests without or with a wrong capability token', async () => {
+    const harness = await landed('Dash', DOC)
+    const url = `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`
+    for (const bad of [url, `${url}?k=wrong`, `${url}?k=`]) {
+      const res = await request(harness, 'GET', bad)
+      expect(res.status, bad).toBe(404)
+      // The gate never distinguishes a bad token from a missing file.
+      expect(res.body).toContain('No exported visualizer document')
+    }
+    const good = await requestTokened(harness, 'GET', url)
+    expect(good.status).toBe(200)
+  })
+
+  it('announces a fresh token each boot, so old links stop working', async () => {
+    const first = await setup()
+    const second = await setup()
+    const read = (harness: Harness): string => {
+      const table: unknown[] = []
+      ;(harness.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
+        .emit('webserver/index-inject', table)
+      return (table[0] as { value: string }).value
+    }
+    const a = read(first)
+    const b = read(second)
+    expect(a).not.toBe(b)
+  })
+
   it('answers 405 with the method table for anything but GET and HEAD', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
+    const res = await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
     expect(res.headerMap.allow).toBe('GET, HEAD')
   })
