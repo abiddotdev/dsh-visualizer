@@ -19,7 +19,7 @@
  * @module dsh-visualizer/export-fanout
  */
 
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -345,6 +345,25 @@ function finalizeCall(state: FanoutState, session: SessionState, event: ToolCall
   })
 }
 
+/**
+ * Header fields every route answer carries, whatever the status: exports are
+ * never cached (each name's content mutates by overwrite, so a stale copy is
+ * worse than no copy), exported pages are not for framing elsewhere, and the
+ * document must never leak the page address to the public CDNs its scripts
+ * load from. Keeping one table means a 404 and a 200 are indistinguishable
+ * by header shape — an invalid name reveals nothing through presence or
+ * absence of hardening.
+ */
+const SERVE_HEADERS: Record<string, string> = {
+  'cache-control': 'no-store',
+  'content-security-policy': RENDER_CSP_DIRECTIVES,
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), usb=(), interest-cohort=()',
+}
+
 /** The not-found page served for any name the route does not hold. */
 const NOT_FOUND_PAGE = `<!DOCTYPE html>
 <html lang="en">
@@ -359,12 +378,17 @@ const NOT_FOUND_PAGE = `<!DOCTYPE html>
 /**
  * Serve one finalized export. The response carries the same network-egress
  * CSP the sandboxed shell enforces, so the standalone page can fetch nothing
- * the inline preview could not.
+ * the inline preview could not, plus the shared hardening table. Only a
+ * regular file of the exports directory is servable: a symlink planted in
+ * the directory (or any special node) refuses with the indistinguishable
+ * not-found answer instead of leaking another path's bytes. TOCTOU between
+ * lstat and readFile is accepted — the check closes the planted-entry class;
+ * narrowing it further needs O_NOFOLLOW semantics out of scope here.
  */
 async function serveExport(state: FanoutState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET'
   if (method !== 'GET' && method !== 'HEAD') {
-    res.writeHead(405, { allow: 'GET, HEAD' })
+    res.writeHead(405, { allow: 'GET, HEAD', ...SERVE_HEADERS })
     res.end()
     return
   }
@@ -376,23 +400,25 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
   } catch {
     // a malformed escape falls through to the not-found page
   }
+  const notFoundHeaders = { ...SERVE_HEADERS, 'content-type': 'text/html; charset=utf-8' }
   if (!isServableExportName(name)) {
-    res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' })
+    res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
     return
   }
   try {
-    const body = await readFile(join(state.config.dir, name))
+    const path = join(state.config.dir, name)
+    const stats = await lstat(path)
+    if (!stats.isFile()) throw new Error('not a regular file')
+    const body = await readFile(path)
     res.writeHead(200, {
+      ...SERVE_HEADERS,
       'content-type': name.endsWith('.svg') ? 'image/svg+xml' : 'text/html; charset=utf-8',
       'content-length': body.length,
-      'cache-control': 'no-cache',
-      'content-security-policy': RENDER_CSP_DIRECTIVES,
-      'x-content-type-options': 'nosniff',
     })
     res.end(method === 'HEAD' ? undefined : body)
   } catch {
-    res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' })
+    res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
   }
 }

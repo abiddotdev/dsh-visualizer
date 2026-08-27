@@ -321,10 +321,15 @@ describe('exports serve route', () => {
     expect(res.body).toBe(DOC)
     expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     expect(res.headerMap['x-content-type-options']).toBe('nosniff')
-    expect(res.headerMap['cache-control']).toBe('no-cache')
+    // The page content mutates under one name (latest wins), so never cached:
+    expect(res.headerMap['cache-control']).toBe('no-store')
     const csp = String(res.headerMap['content-security-policy'])
     expect(csp).toContain('esm.sh')
     expect(csp).toContain("object-src 'none'")
+    expect(res.headerMap['referrer-policy']).toBe('no-referrer')
+    expect(res.headerMap['x-frame-options']).toBe('DENY')
+    expect(res.headerMap['cross-origin-resource-policy']).toBe('same-origin')
+    expect(String(res.headerMap['permissions-policy'])).toContain('camera=()')
   })
 
   it('answers HEAD with headers only and svg with the svg type', async () => {
@@ -332,7 +337,46 @@ describe('exports serve route', () => {
     const res = await request(harness, 'HEAD', `${EXPORTS_ROUTE_PATH}/Flow.svg`)
     expect(res.status).toBe(200)
     expect(res.headerMap['content-type']).toBe('image/svg+xml')
+    expect(res.headerMap['cache-control']).toBe('no-store')
     expect(res.body).toBe('')
+  })
+
+  it('carries the hardening headers on every answer class', async () => {
+    const harness = await landed('Dash', DOC)
+    const answers = [
+      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+      await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
+      await request(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+    ]
+    for (const res of answers) {
+      expect(res.headerMap['cache-control']).toBe('no-store')
+      expect(res.headerMap['x-content-type-options']).toBe('nosniff')
+      expect(res.headerMap['referrer-policy']).toBe('no-referrer')
+      expect(res.headerMap['x-frame-options']).toBe('DENY')
+      expect(res.headerMap['cross-origin-resource-policy']).toBe('same-origin')
+      expect(res.headerMap['permissions-policy']).toBeDefined()
+      expect(res.headerMap['content-security-policy']).toBeDefined()
+    }
+    // The hardening fields are byte-identical across status classes; only
+    // status, allow, content-type, and length vary.
+    const hardened = (res: ReturnType<typeof fakeResponse>): string =>
+      JSON.stringify({ csp: res.headerMap['content-security-policy'], cc: res.headerMap['cache-control'], nosniff: res.headerMap['x-content-type-options'], rp: res.headerMap['referrer-policy'], xfo: res.headerMap['x-frame-options'], corp: res.headerMap['cross-origin-resource-policy'], pp: res.headerMap['permissions-policy'] })
+    expect(hardened(answers[0]!)).toBe(hardened(answers[1]!))
+    expect(hardened(answers[1]!)).toBe(hardened(answers[2]!))
+    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD')
+  })
+
+  it('refuses a symlink planted in the exports directory like any unknown name', async () => {
+    const harness = await setup()
+    const { symlink, writeFile: writeFileRaw } = await import('node:fs/promises')
+    await writeFileRaw(join(harness.dir, 'outside-secret.txt'), 'stolen bytes')
+    await symlink(join(harness.dir, 'outside-secret.txt'), join(harness.dir, 'Planted.html'))
+    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Real', html: DOC })))
+    await flush()
+    const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Planted.html`)
+    expect(res.status).toBe(404)
+    expect(res.body).not.toContain('stolen bytes')
+    expect(res.body).toContain('No exported visualizer document')
   })
 
   it('serves a unicode title under its encoded name', async () => {
