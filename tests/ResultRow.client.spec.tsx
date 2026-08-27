@@ -16,6 +16,7 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -88,6 +89,27 @@ describe('ResultRow', () => {
     expect(frame?.style.height).toBe('480px')
     expect(screen.getByText('Rendering…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  })
+
+  it('opens the served export page from the settled row, named for the document', () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', true)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+
+    screen.getByRole('button', { name: 'Open standalone page' }).click()
+    // The URL is the same name the host's export fanout finalized under.
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}/visualizer/exports/${encodeURIComponent('Dash.html')}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('hides the share control when the host never announced the route', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('sweeps the running frame and leaves the settled one plain', () => {

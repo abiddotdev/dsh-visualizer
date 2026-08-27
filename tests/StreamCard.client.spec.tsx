@@ -15,6 +15,7 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -191,6 +192,27 @@ describe('StreamCard', () => {
   it('offers no copy control while the document is still streaming', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
     expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  })
+
+  it('opens the served export page from the complete card, named for the document', () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', true)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: '<svg><rect/></svg>' }])
+
+    screen.getByRole('button', { name: 'Open standalone page' }).click()
+    // The URL is the same name the host's export fanout finalized under.
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}/visualizer/exports/${encodeURIComponent('中文 图表.svg')}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('hides the share control when the host never announced the route', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('shows one load-failure notice when a CDN script fails inside the frame', () => {
