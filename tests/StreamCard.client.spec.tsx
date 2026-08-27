@@ -168,7 +168,7 @@ describe('StreamCard', () => {
     vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-1')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
-    expect(anchor.download).toBe('Rev _Q3__dash.html')
+    expect(anchor.download).toBe('rev-q3-dash.html')
   })
 
   it('copies the settled bytes and confirms briefly, reverting on denial', async () => {

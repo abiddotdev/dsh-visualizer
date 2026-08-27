@@ -31,13 +31,13 @@ export const PARTIAL_SUFFIX = '.partial'
 const HTML_EXTENSION = '.html'
 const SVG_EXTENSION = '.svg'
 
-/** Most characters a friendly base name keeps; the digest appends past it. */
-export const MAX_EXPORT_BASE_CHARS = 100
+/** Most characters a slug keeps before the digest appends past it. */
+export const MAX_EXPORT_BASE_CHARS = 60
 
 /** Prefix length examined to tell a bare SVG document from an HTML one. */
 const MODE_SNIFF_CHARS = 80
 
-/** Fallback base when a title is absent or sanitizes away to nothing. */
+/** Fallback slug when a title is absent or slugs away to nothing. */
 const FALLBACK_BASE = 'render'
 
 /**
@@ -52,37 +52,45 @@ export function isSvgDocument(html: string): boolean {
 }
 
 /**
- * Sanitize one title into an export base name: strip path separators and other
- * unfriendly characters, trim, cap, and fall back. No path separator survives,
- * and no form of dot stays, so the result is always one safe path segment.
+ * Slug one title into an ASCII kebab-case base: lowercase, hyphen-separated,
+ * letters and digits only, capped and trimmed of edge hyphens. Unicode stays
+ * out of file names and URLs entirely — the title's full form lives in the
+ * card's display text, not in the artifact name; the digest that follows the
+ * slug keeps distinct originals from aliasing even where their slugs collapse
+ * to the same shape (or to nothing at all, where the fallback takes over).
  * @param title - the call's explicit `title` argument, or null when absent.
- * @returns the base name shared by the partial sidecar and the final file.
+ * @returns the kebab-case base name for files, sidecars, and share URLs.
  */
 export function exportFileBase(title: string | null): string {
-  const sanitized = (title ?? '')
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
-    .trim()
+  const slug = (title ?? '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
     .slice(0, MAX_EXPORT_BASE_CHARS)
-    .trim()
-  return sanitized.length > 0 && sanitized !== '.' && sanitized !== '..' ? sanitized : FALLBACK_BASE
+    .replace(/-+$/g, '')
+  return slug.length > 0 ? slug : FALLBACK_BASE
 }
 
 /**
- * The finalized export's file name for local saves: the sanitized title plus
- * the kind extension, no digest. A download's name stays human-shaped.
+ * The finalized export's file name for local saves: the kebab-case slug plus
+ * the kind extension, no digest. A download's name stays short and ASCII —
+ * display of the title's full form is the card's business, never the name.
  * @param title - the call's explicit `title` argument, or null when absent.
  * @param html - the complete document.
- * @returns `<base>.svg` for a bare SVG document, `<base>.html` otherwise.
+ * @returns `<slug>.svg` for a bare SVG document, `<slug>.html` otherwise.
  */
 export function exportFileName(title: string | null, html: string): string {
   return exportFileBase(title) + (isSvgDocument(html) ? SVG_EXTENSION : HTML_EXTENSION)
 }
 
 /**
- * One 64-bit FNV-1a digest over the document identity, hex-encoded. Pure
- * JavaScript rather than SubtleCrypto: the derivation must stay synchronous
- * and identical in both bundles, and node has no monopoly on TextEncoder.
- * Sixteen hex digits give a collision birthday far beyond any deployment's
+ * One 64-bit FNV-1a digest over the export identity: the original title
+ * (unslugged — two different titles must never share a URL even where their
+ * ASCII slug shapes collide) followed by a separator and the complete document
+ * bytes. Pure JavaScript rather than SubtleCrypto: the derivation must stay
+ * synchronous and identical in both bundles, and node has no monopoly on
+ * TextEncoder. Sixteen hex digits give a collision birthday far beyond any deployment's
  * render count; the point is uniqueness, not secrecy — anyone holding the
  * page can recompute it.
  * @param identity - the string to digest: the base name and the complete
@@ -100,18 +108,19 @@ function digestHex(identity: string): string {
 }
 
 /**
- * The finalized export's served/sidecar name: the friendly base plus a
- * content digest, so one title under different bytes never clobbers an
- * earlier export, and one exact render always shares one stable URL no
- * matter how often it re-renders. Both planes derive this from the same
- * `(title, html)` pair they each hold, so host and card cannot disagree.
+ * The finalized export's served/sidecar name: the kebab-case slug plus a
+ * digest over the original title and the bytes, so one slug under different
+ * content never clobbers an earlier export, distinct originals never alias,
+ * and one exact render always shares one stable URL no matter how often it
+ * re-renders. Both planes derive this from the same `(title, html)` pair
+ * they each hold, so host and card cannot disagree.
  * @param title - the call's explicit `title` argument, or null when absent.
  * @param html - the complete document.
- * @returns `<base>-<16 hex digits>.svg|.html`.
+ * @returns `<slug>-<16 hex digits>.svg|.html`.
  */
 export function exportShareName(title: string | null, html: string): string {
   const base = exportFileBase(title)
-  return `${base}-${digestHex(`${base}\u0000${html}`)}${isSvgDocument(html) ? SVG_EXTENSION : HTML_EXTENSION}`
+  return `${base}-${digestHex(`${String(title ?? '')}\u0000${html}`)}${isSvgDocument(html) ? SVG_EXTENSION : HTML_EXTENSION}`
 }
 
 /**

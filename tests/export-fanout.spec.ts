@@ -9,7 +9,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as visualizer from '../src/index.ts'
 import { PARTIAL_WRITE_INTERVAL_MS } from '../src/export-fanout.ts'
-import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportShareName, partialFileName } from '../src/shared/export-name.ts'
 
 /**
  * Minimal stand-in for the harness web server's route registry: the same
@@ -177,7 +177,7 @@ describe('export fanout', () => {
     // sidecar appears with a partial document.
     emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
     await flush()
-    let sidecar = await readFileOrNull(join(harness.dir, 'Dash.partial'))
+    let sidecar = await readFileOrNull(join(harness.dir, partialFileName('dash')))
     expect(sidecar).not.toBeNull()
     expect(sidecar!.length).toBeGreaterThan(0)
     expect(sidecar!.length).toBeLessThan(DOC.length)
@@ -186,20 +186,20 @@ describe('export fanout', () => {
     // A same-instant delta is coalesced by the throttle: content unchanged.
     emitSession(harness.ctx, delta(mid ?? ''))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).toBe(sidecar)
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBe(sidecar)
 
     // Past the interval the next write grows the sidecar to the full document.
     vi.setSystemTime(Date.now() + PARTIAL_WRITE_INTERVAL_MS + 1)
     emitSession(harness.ctx, delta((last ?? '') + (tail ?? '')))
     await flush()
-    sidecar = await readFileOrNull(join(harness.dir, 'Dash.partial'))
+    sidecar = await readFileOrNull(join(harness.dir, partialFileName('dash')))
     expect(sidecar!.length).toBeGreaterThan(afterFirst)
 
     // The landed call finalizes: exact bytes under the final name, sidecar gone.
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', args))
     await flush()
     expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBe(DOC)
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
   })
 
   it('writes an untitled document under the fallback name', async () => {
@@ -230,10 +230,10 @@ describe('export fanout', () => {
     const [head, first] = argumentDeltas('Bad', DOC, 1)
     emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer', 'c2'))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Bad.partial'))).not.toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('bad')))).not.toBeNull()
     emitSession(harness.ctx, toolResultEvent('c2', { name: 'Error', code: 'E_TOOL' }))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Bad.partial'))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('bad')))).toBeNull()
 
     // A landed call's finalized file is likewise removed by its error result.
     emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
@@ -266,24 +266,24 @@ describe('export fanout', () => {
     // An interrupted step never dispatches: its sidecar is residue and removed.
     emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).not.toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).not.toBeNull()
     emitSession(harness.ctx, {
       type: 'assistant/message',
       data: { turn: 1, step: 1, message: { content: [] }, interrupted: true },
     })
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
 
     // A retried request resets the step; the retry's stream and finalize work.
     emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).not.toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).not.toBeNull()
     emitSession(harness.ctx, {
       type: 'llm/retry',
       data: { turn: 1, step: 1, retryId: 'r1', provider: 'p', mode: 'normal', policyKey: 'k', retry: 1, maxRetries: 3, delayMs: 10, failure: { name: 'Error', code: 'E_LLM' } },
     })
     await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Dash.partial'))).toBeNull()
+    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
 
     emitSession(harness.ctx, toolCallEvent('c9', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
     await flush()

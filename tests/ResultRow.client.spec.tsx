@@ -139,7 +139,7 @@ describe('ResultRow', () => {
     vi.advanceTimersByTime(REVOKE_DELAY_MS)
     expect(revoked).toHaveBeenCalledWith('blob:doc-2')
     const anchor = click.mock.instances[0] as HTMLAnchorElement
-    expect(anchor.download).toBe('Q3_ _final_.html')
+    expect(anchor.download).toBe('q3-final.html')
   })
 
   it('names the failure code on an error result and renders no frame', () => {
