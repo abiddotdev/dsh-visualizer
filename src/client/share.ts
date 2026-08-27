@@ -62,7 +62,11 @@ export function exportPageUrl(title: string | null, html: string): string | null
  */
 export function openExportPage(title: string | null, html: string): boolean {
   const url = exportPageUrl(title, html)
-  if (url === null) return false
+  if (url === null) {
+    // A no-op click is a debugging dead end; say why nothing opened.
+    console.info('visualizer: share is unavailable outside the harness web UI')
+    return false
+  }
   window.open(url, '_blank', 'noopener,noreferrer')
   return true
 }

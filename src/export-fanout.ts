@@ -190,7 +190,8 @@ function exportRecord(session: SessionState, id: string): ExportRecord {
 /**
  * Serialize one file operation onto its call's chain; a rejection is logged
  * and contained — a failing export never reaches the conversation. The map
- * holds one tail per call id, bounded by live renders.
+ * holds one tail per call id and is pruned as calls settle: `cleanupCall`
+ * (error) and `settleCall` (success) both drop the tail once it drains.
  */
 function enqueue(state: FanoutState, id: string, op: () => Promise<void>): void {
   const chained = (state.chains.get(id) ?? Promise.resolve())
@@ -199,6 +200,25 @@ function enqueue(state: FanoutState, id: string, op: () => Promise<void>): void 
       state.ctx.logger.warn(`export fanout: ${error instanceof Error ? error.message : String(error)}`)
     })
   state.chains.set(id, chained)
+}
+
+/**
+ * Like {@link enqueue}, but the tail removes itself once it settles — for the
+ * last operation a call will ever enqueue (finalize and result-time prune).
+ * The identity guard keeps a later `enqueue` onto the same id safe: if one
+ * arrives before this tail drains, the map still holds that newer tail and
+ * the deletion is a no-op.
+ */
+function enqueueFinal(state: FanoutState, id: string, op: () => Promise<void>): void {
+  const tail: Promise<void> = (state.chains.get(id) ?? Promise.resolve())
+    .then(op)
+    .then(() => {
+      if (state.chains.get(id) === tail) state.chains.delete(id)
+    }, (error: unknown) => {
+      state.ctx.logger.warn(`export fanout: ${error instanceof Error ? error.message : String(error)}`)
+      if (state.chains.get(id) === tail) state.chains.delete(id)
+    })
+  state.chains.set(id, tail)
 }
 
 /**
@@ -281,6 +301,31 @@ function streamPrefix(state: FanoutState, session: SessionState, block: WireBloc
 }
 
 /**
+ * Retire one call's fanout bookkeeping on its successful result: the export
+ * stays on disk (until overwritten or swept by retention), but the session
+ * record, the ownership pin, and any streaming leftovers go — the maps hold
+ * only in-flight calls once every call has settled either way.
+ */
+function settleCall(state: FanoutState, session: SessionState, id: string): void {
+  const record = session.exports.get(id)
+  if (record === undefined) return
+  if (record.final !== null && state.finalOwners.get(record.final) === id) {
+    state.finalOwners.delete(record.final)
+  }
+  session.exports.delete(id)
+  state.lastPartialAt.delete(id)
+  // A call that streamed but never finalized (result arrived without a
+  // tool/call) may still own a sidecar; it is residue now.
+  const sidecar = record.sidecar
+  if (sidecar !== null) {
+    enqueueFinal(state, id, async () => {
+      await state.ready
+      await unlinkQuiet(sidecar)
+    })
+  }
+}
+
+/**
  * Remove every file the fanout owns for one call — the failed-render and
  * interruption cleanup. A finalized path is removed only when this call is
  * still its last writer, so one call's cleanup never deletes a later call's
@@ -345,8 +390,16 @@ function finalizeCall(state: FanoutState, session: SessionState, event: ToolCall
   const stale = record.sidecar !== null && record.sidecar !== sidecar ? record.sidecar : null
   record.sidecar = null
   record.final = final
+  // A path has exactly one owner — the latest finalizer — so an overwritten
+  // export never stays pinned to a dead call id (and the older call's later
+  // error cleanup must not delete the newer call's file).
   state.finalOwners.set(final, id)
-  enqueue(state, id, async () => {
+  // Finalize retires the call from streaming: no more sidecar writes, so the
+  // throttle entry goes now. The exports record stays until the tool result
+  // (an error result still needs it to remove what finalized), and the chain
+  // tail removes itself once the rename settles.
+  state.lastPartialAt.delete(id)
+  enqueueFinal(state, id, async () => {
     await state.ready
     await writeFile(sidecar, html, 'utf8')
     await rename(sidecar, final)
@@ -480,6 +533,10 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     return
   }
   try {
+    // The directory must exist before a read can succeed; `ready` never
+    // rejects (its failure path only logs), so a lost race still lands on
+    // the not-found answer below instead of throwing.
+    await state.ready
     const path = join(state.config.dir, name)
     const stats = await lstat(path)
     if (!stats.isFile()) throw new Error('not a regular file')
@@ -618,6 +675,10 @@ function handleEvent(state: FanoutState, session: object, event: WireEvent): voi
           foldFinalBlock(record, event.data.turn, event.data.step, index, call)
         }
       }
+      // A settled step admits no more deltas or retries, so its accumulator
+      // entry is residue; finalize reads only `exports` records, so dropping
+      // the step never affects the later `tool/call`.
+      record.steps.delete(`${event.data.turn}:${event.data.step}`)
       return
     }
     case 'llm/retry':
@@ -627,10 +688,14 @@ function handleEvent(state: FanoutState, session: object, event: WireEvent): voi
       finalizeCall(state, record, event)
       return
     case 'tool/result': {
-      if (event.data.error === undefined) return
       const first = event.data.message.content[0]
       if (first === undefined) return
-      cleanupCall(state, record, callKey(first.toolCallId))
+      const id = callKey(first.toolCallId)
+      if (event.data.error !== undefined) {
+        cleanupCall(state, record, id)
+      } else {
+        settleCall(state, record, id)
+      }
       return
     }
     default:
