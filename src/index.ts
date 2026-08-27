@@ -208,7 +208,7 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
         dir: resolve(artifactDir),
         maxArtifactBytes: config.maxArtifactBytes,
         artifactRetentionDays: config.artifactRetentionDays,
-        shareKey: config.shareKey.trim(),
+        shareKey: config.shareKey,
       })
     })
   }

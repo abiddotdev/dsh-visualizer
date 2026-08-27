@@ -531,7 +531,7 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
   // one turns an unguessable gate into a guessable one and earns a warning.
   const trimmedKey = config.shareKey.trim()
   if (trimmedKey.length > 0 && trimmedKey.length < 16) {
-    ctx.logger.warn(`export fanout: shareKey is shorter than 16 characters — a fixed weak key makes shared pages guessable`) 
+    ctx.logger.warn(`export fanout: shareKey is shorter than 16 characters — a fixed weak key makes shared pages guessable`)
   }
   const state: FanoutState = {
     config,
