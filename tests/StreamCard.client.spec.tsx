@@ -194,7 +194,45 @@ describe('StreamCard', () => {
   it('offers no copy control while the document is still streaming', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
     expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  })
+
+  it('fullscreens the frame wrapper from a control before copy, reverting on the event', async () => {
+    const request = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', { configurable: true, value: request })
+    const stubElement = (value: Element | null): void => {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => value })
+    }
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    const wrapper = document.querySelector('[class*="frameWrap"]')
+    if (wrapper === null) throw new Error('frame wrapper not rendered')
+
+    // The control sits before Copy and fullscreens the frame's wrapper.
+    const copy = screen.getByRole('button', { name: 'Copy HTML' })
+    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
+    await flushClick(() => { screen.getByRole('button', { name: 'Fullscreen' }).click() })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.instances[0]).toBe(wrapper)
+
+    // The event, not the request's promise, flips the label — so an Escape
+    // pressed inside the frame reverts the control without a click.
+    stubElement(wrapper)
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeTruthy()
+    stubElement(null)
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeTruthy()
+  })
+
+  it('hides the fullscreen control on a collapsed card while copy stays', () => {
+    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeTruthy()
+    act(() => { screen.getByText('Dash').click() })
+    // The wrapper unmounts on collapse, so fullscreen has no surface; copy
+    // and download act on the bytes and stay.
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
   })
 
   it('opens the served export page from the complete card, named for the document', () => {

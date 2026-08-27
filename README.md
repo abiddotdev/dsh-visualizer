@@ -86,7 +86,7 @@ The tool declares `html` as its last schema parameter, so logged call arguments 
 
 Rendered documents can talk back through a small bridge: scripts may submit a follow-up chat prompt (`sendPrompt`, validated and rate-limited), open http(s) links (`openLink`, scheme-checked), and persist state across renders (`window.storage`, namespaced by title — a regenerated dashboard finds its previous values). Documents inherit the app's theme tokens, and anchor clicks inside the card never navigate the app: fragments scroll in place, external links pass the same validation gate. A card shows load/runtime script failures inline instead of silently rendering nothing.
 
-A settled card offers three actions — **Download** (self-contained `.html`/`.svg` via Blob, no server round-trip), **Copy HTML**, and **Share** (next section).
+A settled card offers four actions — **Fullscreen** (expands the card to the viewport; Escape or a second click leaves), **Download** (self-contained `.html`/`.svg` via Blob, no server round-trip), **Copy HTML**, and **Share** (next section).
 
 ## Sharing
 

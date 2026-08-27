@@ -8,10 +8,11 @@
 // live evidence.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
+import { useFrameFullscreen } from './fullscreen.ts'
 import { exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
@@ -75,6 +76,9 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // writing alike — and stops the moment the document settles.
   // The share control exists only where the host announced its route.
   const shareable = exportShareEnabled()
+  // Fullscreen rides the frame wrapper; the label follows the document API,
+  // so an Escape pressed inside the frame reverts it without a click.
+  const fullscreen = useFrameFullscreen()
 
   return (
     <div className={css.card} data-tool="visualizer" data-phase={card.phase}>
@@ -104,6 +108,23 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             )}
             {card.phase === 'complete' && (
               <>
+                {/* The frame must be mounted to hold fullscreen, so this
+                 * control rides the expanded row alone; copy, download, and
+                 * share act on the document bytes and need no frame. */}
+                {expanded && (
+                  <button
+                    type="button"
+                    className={css.download}
+                    aria-label={fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
+                    title={fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      fullscreen.toggle()
+                    }}
+                  >
+                    <IconFullscreenOutline16 size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={css.download}
@@ -158,7 +179,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
          * argument — measurements own the height, and a short open feels
          * native. */}
         {card.phase !== 'interrupted' && (
-          <div className={css.frameWrap}>
+          <div className={css.frameWrap} ref={fullscreen.ref}>
             <AutoFrame
               title={title}
               html={card.html}

@@ -109,6 +109,19 @@
   position: relative;
 }
 
+/* Fullscreen: the wrapper is the fullscreen surface. The frame's measured
+ * inline height yields to the viewport (!important beats the inline style,
+ * and the measurement re-lands on exit), and the layer-1 ground keeps
+ * transparent-canvas documents legible against the black backdrop. */
+.frameWrap:fullscreen {
+  background: var(--dsw-alias-bg-layer-1, #fff);
+}
+
+.frameWrap:fullscreen .frame {
+  height: 100% !important;
+  border-radius: 0;
+}
+
 /* Diagonal sheen crossing the whole frame while the document streams: a
  * pale brand band on a slow 3.6s cadence, traveling top-left to bottom-right
  * as one transform-animated pass over the transparent canvas. Pointer
