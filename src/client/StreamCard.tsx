@@ -110,7 +110,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // Loading messages always read as in-progress: append an ellipsis unless
   // the model already ended its message with one.
   const withEllipsis = (text: string): string =>
-    text === '' || /\u2026|(\.\.\.)$/.test(text.trimEnd()) ? text : `${text}…`
+    text === '' || /(?:\u2026|\.\.\.)$/.test(text.trimEnd()) ? text : `${text}…`
   // State follows the document's title: the same title regenerates into the
   // same scope, and the settled row derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(card.title)), [card.title])

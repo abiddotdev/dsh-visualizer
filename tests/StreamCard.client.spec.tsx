@@ -111,6 +111,11 @@ describe('StreamCard', () => {
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
+  it('still appends a trailing ellipsis when the message has one mid-string', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Warming up… almost there'] }])
+    expect(screen.getByText('Warming up… almost there…')).toBeTruthy()
+  })
+
   it('waves the loader message in staggered 3-character bobs, left to right', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
     const wave = document.querySelector('[class*="summaryWave"]')

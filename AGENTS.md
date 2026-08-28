@@ -97,8 +97,13 @@ keep it conditional; covered by tests in `tests/visualizer.spec.ts`.
 5. Open a PR against `main` with a short summary table of behavior changes + trade-offs
    explicitly accepted (e.g., links expiring on restart). CI expectation: full suite green.
 6. Breaking config renames get one line in the release notes ("exports → shareArtifacts…").
-7. When commenting on PRs (review remarks, replies, CI explanations), prefix every
-   comment with `[bot]` so automated-agent remarks stay distinguishable from human ones.
+7. Reviewing a PR: leave one comment per issue, short and concise (what's wrong +
+   where, no essays). After pushing the fixes, reply on that same comment thread stating
+   what changed, e.g. `fixed: <one-line description>`. Suffix every PR comment
+   (review remarks, fix replies, CI explanations) with a trailing `\n~bot_comment`
+   so automated-agent remarks stay distinguishable from human ones.
+8. NEVER push to origin unless the user explicitly asks. Commit locally and wait.
+   This applies to plain pushes, force pushes, and tag pushes alike.
 
 ## Gotchas
 
