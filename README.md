@@ -10,6 +10,8 @@ One package ships both halves: the model-facing tool (`lib/index.js`) and the We
 
 Every generation is downloadable from the card as a self-contained `.html` (or `.svg`) file. No server round-trip.
 
+Settled cards also carry a **comment mode**: toggle the pen control in the row chrome, click any element (or drag a rectangle) inside the frame, and each pick becomes a comment row below the renderer showing the element's selector, markup, and text. Write a note per pick and Send — the picks compose one `[widget]` turn for the model, locator bundle included, so it can edit the exact elements you pointed at. Esc or the toggle exits; the document runs pristine while mode is off.
+
 Full-length demos, one per artifact type:
 
 1. [Pull request flow overview](assets/demos/bitbucket_datacenter_full.webm) — diagram
