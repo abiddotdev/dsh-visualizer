@@ -40,33 +40,53 @@ function messageIndex(tick: number, count: number): number {
  * direction. */
 const WAVE_STAGGER_MS = 70
 
-/** Glyphs per wave unit — pairs bob together, like a two-seat swing. */
-const WAVE_PAIR_SIZE = 2
+/** Glyphs per wave unit — bobs of 2–4 characters ride together, like
+ * seats on a swing. The last bob of a word may be shorter (a remainder):
+ * "Big wave…" splits as [Bi][g] [wav][e…] — never a bob of one char when
+ * four remain, always the remainder at the tail. */
+const WAVE_GROUP_MIN = 2
+const WAVE_GROUP_MAX = 4
 
-/** The loader label as per-word, per-PAIR spans riding the wave. Words are
+/** Split one word's glyphs into bob groups of 2–4 characters. Longer
+ * words prefer fuller bobs; the tail keeps whatever remains (≥1). */
+function waveGroups(chars: readonly string[]): string[] {
+  if (chars.length <= WAVE_GROUP_MAX) return [chars.join('')]
+  const groups: string[] = []
+  let start = 0
+  while (start < chars.length) {
+    const left = chars.length - start
+    // Choose a size in [MIN, MAX] that leaves no impossible remainder
+    // (a remainder of 1 after a MAX group would strand a lone char mid-word
+    // when a fuller group could absorb it).
+    let size = Math.min(WAVE_GROUP_MAX, left)
+    if (left - size === 1 && size < WAVE_GROUP_MAX) size++
+    if (left - size < WAVE_GROUP_MIN && left > WAVE_GROUP_MAX) size = left - WAVE_GROUP_MIN
+    groups.push(chars.slice(start, start + size).join(''))
+    start += size
+  }
+  return groups
+}
+
+/** The loader label as per-word, per-BOB spans riding the wave. Words are
  * unbreakable inline-blocks separated by real spaces, so wrapping stays at
- * word boundaries; the pair stagger rides an inline animation-delay, so no
+ * word boundaries; the bob stagger rides an inline animation-delay, so no
  * per-glyph class explosion. */
 function WaveText({ label }: { label: string }): ReactNode[] {
-  let pairIndex = 0
+  let groupIndex = 0
   return label.split(' ').flatMap((word, wordIndex): ReactNode[] => {
-    const chars = Array.from(word)
-    const pairs: ReactNode[] = []
-    for (let start = 0; start < chars.length; start += WAVE_PAIR_SIZE) {
-      const pair = chars.slice(start, start + WAVE_PAIR_SIZE).join('')
-      pairs.push(
-        <span
-          key={start}
-          className={css.waveGlyph}
-          style={{ animationDelay: `${-pairIndex * WAVE_STAGGER_MS}ms` }}
-        >
-          {pair}
-        </span>,
-      )
-      pairIndex++
-    }
-    pairIndex++ // the space between words also advances the phase
-    const wordSpan = <span key={`w${wordIndex}`} className={css.waveWord}>{pairs}</span>
+    const groups = waveGroups(Array.from(word))
+    const bobs: ReactNode[] = groups.map((text, at) => (
+      <span
+        key={at}
+        className={css.waveGlyph}
+        style={{ animationDelay: `${-(groupIndex + at) * WAVE_STAGGER_MS}ms`}}
+      >
+        {text}
+      </span>
+    ))
+    groupIndex += groups.length // each bob advances the phase…
+    groupIndex++ // …and the space between words advances it too
+    const wordSpan = <span key={`w${wordIndex}`} className={css.waveWord}>{bobs}</span>
     return wordIndex === 0 ? [wordSpan] : [' ', wordSpan]
   })
 }

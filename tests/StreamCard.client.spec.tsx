@@ -111,22 +111,22 @@ describe('StreamCard', () => {
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
-  it('waves the loader message in staggered character pairs, left to right', () => {
+  it('waves the loader message in staggered 2–4 character bobs, left to right', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
     const wave = document.querySelector('[class*="summaryWave"]')
     expect(wave).not.toBeNull()
     // The screen-reader twin carries the whole message...
     expect(wave?.querySelector('[class*="srOnly"]')?.textContent).toBe('Big wave…')
-    // ...and the visual copy splits into PAIRS: two characters bob as one
-    // unit, each pair one stagger behind its left neighbor, so the wave
-    // travels in reading direction. Word boundaries sit between word spans.
-    const pairs = Array.from(wave?.querySelectorAll<HTMLElement>('[style*="animation-delay"]') ?? [])
-    expect(pairs.map(p => p.textContent).join('')).toBe('Bigwave…')
-    expect(pairs.map(p => p.textContent)).toEqual(['Bi', 'g', 'wa', 've', '…'])
-    expect(pairs[0]?.style.animationDelay).toBe('0ms')
-    expect(pairs[1]?.style.animationDelay).toBe('-70ms')
-    // The space before "wa" advances the phase too: -210ms, not -140ms.
-    expect(pairs[2]?.style.animationDelay).toBe('-210ms')
+    // ...and the visual copy splits each word into one bob of ≤4 chars: the
+    // bob lags one stagger behind its left neighbor, so the wave travels in
+    // reading direction. Word boundaries sit between the word spans.
+    const bobs = Array.from(wave?.querySelectorAll<HTMLElement>('[style*="animation-delay"]') ?? [])
+    expect(bobs.map(b => b.textContent).join('')).toBe('Bigwave…')
+    expect(bobs.map(b => b.textContent)).toEqual(['Big', 'wav', 'e…'])
+    expect(bobs[0]?.style.animationDelay).toBe('0ms')
+    // The space after "Big" advances the phase: "wav" starts at -140ms.
+    expect(bobs[1]?.style.animationDelay).toBe('-140ms')
+    expect(bobs[2]?.style.animationDelay).toBe('-210ms')
     // The visual half is hidden from assistive tech; the sr twin reads it.
     expect(wave?.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })

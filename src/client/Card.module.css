@@ -84,7 +84,9 @@
 
 .separator {
   flex: none;
-  width: 8px;
+  /* Breathing room before the loader/summary: 3× the row gap so a waving
+   * loading message sits clear of the title text. */
+  width: 24px;
 }
 
 /* Load-failure notice beside the summary: the warn register over the same
