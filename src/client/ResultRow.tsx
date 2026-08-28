@@ -8,7 +8,7 @@
 // definition.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconListPenOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -17,6 +17,8 @@ import { useFrameFullscreen } from './fullscreen.ts'
 import { exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
+import { composeAnnotationPrompt, type AnnotationPick } from './annotate.ts'
+import { CommentBar } from './CommentBar.tsx'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
@@ -100,6 +102,31 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   // same scope, and the streaming card derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(view?.title ?? null)), [view?.title])
   const settledOk = settled && !block.isError && view !== null
+  // Comment mode: picks are card state, marks sync to the frame, and Send
+  // composes one widget prompt from every pick's note and locator.
+  const [annotate, setAnnotate] = useState(false)
+  const [picks, setPicks] = useState<AnnotationPick[]>([])
+  const onAnnotation = useCallback((pick: unknown): void => {
+    setPicks(current => [...current, pick as AnnotationPick])
+  }, [])
+  const onAnnotateExited = useCallback((): void => { setAnnotate(false) }, [])
+  const onComment = useCallback((id: string, comment: string): void => {
+    setPicks(current => current.map(pick => pick.id === id ? { ...pick, comment } : pick))
+  }, [])
+  const onRemovePick = useCallback((id: string): void => {
+    setPicks(current => current.filter(pick => pick.id !== id))
+  }, [])
+  const onClearPicks = useCallback((): void => { setPicks([]) }, [])
+  const sendAnnotations = useCallback((): void => {
+    const text = composeAnnotationPrompt(picks)
+    if (text === null) return
+    submitWidgetPrompt(inputActions, text)
+    setPicks([])
+  }, [picks, inputActions])
+  const toggleAnnotate = useCallback((): void => {
+    setAnnotate(current => !current)
+  }, [])
+  const annotateMarks = useMemo(() => picks.map(pick => pick.id), [picks])
   // The share control exists only where the host announced its route.
   const shareable = exportShareEnabled()
   // Fullscreen rides the frame wrapper; the label follows the document API,
@@ -144,6 +171,21 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               }}
             >
               <IconFullscreenOutline16 size={14} />
+            </button>
+          )}
+          {expanded && (
+            <button
+              type="button"
+              className={annotate ? css.downloadActive : css.download}
+              aria-pressed={annotate}
+              aria-label={t('row.commentMode')}
+              title={t('row.commentModeHint')}
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleAnnotate()
+              }}
+            >
+              <IconListPenOutline16 size={14} />
             </button>
           )}
           <button
@@ -235,11 +277,25 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
                 onScriptError={setFailedSrc}
                 onRuntimeError={onRuntimeError}
                 storage={storage}
+                annotate={annotate}
+                onAnnotation={onAnnotation}
+                onAnnotateExited={onAnnotateExited}
+                annotateMarks={annotateMarks}
               />
               {/* Same live-phase sheen as the streaming card, over the
                * running row's already-visible document. */}
               {!settled && <div className={css.streamSweep} aria-hidden />}
             </div>
+          )}
+          {settledOk && (
+            <CommentBar
+              picks={picks}
+              onComment={onComment}
+              onRemove={onRemovePick}
+              onSend={sendAnnotations}
+              onClear={onClearPicks}
+              t={t}
+            />
           )}
         </DisclosureRow>
       </div>

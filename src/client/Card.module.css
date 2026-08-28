@@ -204,3 +204,93 @@
   outline: none;
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
 }
+
+/* Comment-mode toggle in the row chrome: the quiet inline action, pressed
+ * state tinted so the active mode is obvious at a glance. */
+.downloadActive {
+  composes: download;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Comment strip below a settled frame: one compact row per pick plus a
+ * footer of actions; the host's own DOM, so inputs never cross the bridge. */
+.commentBar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.commentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.commentKind {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+}
+
+.commentTag {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-mono-xs, var(--dsw-font-xs-13));
+}
+
+.commentText {
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+}
+
+.commentInput {
+  flex: 1 1 40%;
+  min-width: 120px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+}
+
+.commentInput:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.commentRemove {
+  composes: download;
+  flex: none;
+}
+
+.commentFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.commentSend {
+  composes: download;
+  color: var(--dsw-alias-label-primary);
+}
+
+.commentClear {
+  composes: download;
+}

@@ -171,6 +171,12 @@ const BRIDGE_SCRIPT = `
       report();
     } else if (d.type === 'theme') {
       applyTheme(d.vars && typeof d.vars === 'object' ? d.vars : {});
+    } else if (d.type === 'annotate') {
+      if (d.on === true) annotateEnter();
+      else annotateExit();
+    } else if (d.type === 'annotate-marks') {
+      if (!annotating) return;
+      repaintMarks(Array.isArray(d.ids) ? d.ids : []);
     } else if (d.type === 'storage-response') {
       var entry = pendingOps[d.id];
       if (!entry) return;
@@ -216,6 +222,262 @@ const BRIDGE_SCRIPT = `
   window.openLink = function (url) {
     try { parent.postMessage({ __dshGui: true, type: 'openLink', url: String(url) }, '*'); } catch (err) {}
   };
+  // Comment mode: the host toggles it from the card's row chrome. While on,
+  // capture-phase pointer handlers intercept the document — clicks pick the
+  // deepest element, drags mark a rectangle — and an overlay layer (outside
+  // the document's own DOM, so measurements and layout stay untouched)
+  // outlines the hover and the marks. Listeners are installed on mode-on and
+  // removed on mode-off: an interactive page runs pristine until the user
+  // asks to comment.
+  var annotating = false;
+  var overlay = null;
+  var hoverBox = null;
+  var markBoxes = {};
+  var pickRects = {};
+  var dragBox = null;
+  var dragStart = null;
+  var pickSeq = 0;
+  function ensureOverlay() {
+    if (overlay || !document.body) return;
+    overlay = document.createElement('div');
+    overlay.setAttribute('data-dsh-annotate-overlay', '');
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.width = '0';
+    overlay.style.height = '0';
+    overlay.style.overflow = 'visible';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.zIndex = '2147483647';
+    document.body.appendChild(overlay);
+  }
+  function boxFor(entry, x, y, w, h, cls) {
+    var box = entry;
+    if (!box) {
+      box = document.createElement('div');
+      box.setAttribute('data-dsh-annotate-box', cls);
+      var s = box.style;
+      s.position = 'absolute';
+      s.pointerEvents = 'none';
+      s.borderRadius = '3px';
+      if (cls === 'hover') {
+        s.border = '1px dashed rgba(125, 145, 245, 0.9)';
+        s.background = 'rgba(125, 145, 245, 0.08)';
+      } else if (cls === 'drag') {
+        s.border = '1px dashed rgba(125, 145, 245, 0.7)';
+        s.background = 'rgba(125, 145, 245, 0.12)';
+      } else {
+        s.border = '1.5px solid rgba(245, 92, 60, 0.95)';
+        s.background = 'rgba(245, 92, 60, 0.10)';
+      }
+      overlay.appendChild(box);
+    }
+    box.style.left = Math.round(x) + 'px';
+    box.style.top = Math.round(y) + 'px';
+    box.style.width = Math.max(0, Math.round(w)) + 'px';
+    box.style.height = Math.max(0, Math.round(h)) + 'px';
+    return box;
+  }
+  // Viewport-fixed rects painted into the absolutely-positioned overlay; a
+  // scroll listener repaints marks so they stay glued to content.
+  function pageRect(el) {
+    var r = el.getBoundingClientRect();
+    var left = window.scrollX || 0;
+    var top = window.scrollY || 0;
+    return { x: r.left + left, y: r.top + top, w: r.width, h: r.height };
+  }
+  function paintMark(id, rect) {
+    pickRects[id] = rect;
+    if (!overlay) return;
+    markBoxes[id] = boxFor(markBoxes[id], rect.x, rect.y, rect.w, rect.h, 'mark');
+  }
+  function clearTransient() {
+    if (hoverBox && hoverBox.parentNode) hoverBox.parentNode.removeChild(hoverBox);
+    hoverBox = null;
+    if (dragBox && dragBox.parentNode) dragBox.parentNode.removeChild(dragBox);
+    dragBox = null;
+  }
+  // Sync the mark set to the host's live ids: prune retained rects, then
+  // rebuild the painted boxes to exactly that set (a no-op mid-mode, a full
+  // repaint right after mode-enter).
+  function repaintMarks(ids) {
+    var live = {};
+    for (var i = 0; i < ids.length; i++) live[ids[i]] = true;
+    for (var id in pickRects) {
+      if (!live[id]) delete pickRects[id];
+    }
+    if (!overlay) return;
+    for (var box in markBoxes) {
+      if (markBoxes[box].parentNode) markBoxes[box].parentNode.removeChild(markBoxes[box]);
+      delete markBoxes[box];
+    }
+    for (var keep in pickRects) {
+      var r = pickRects[keep];
+      markBoxes[keep] = boxFor(null, r.x, r.y, r.w, r.h, 'mark');
+    }
+  }
+  function annotateExit() {
+    annotating = false;
+    clearTransient();
+    // Destroy the painted layer; pickRects survives so a later mode-on
+    // repaints the picks the host still holds.
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = null;
+    markBoxes = {};
+    document.removeEventListener('mouseover', onAnnotateOver, true);
+    document.removeEventListener('mousedown', onAnnotateDown, true);
+    document.removeEventListener('mousemove', onAnnotateMove, true);
+    document.removeEventListener('mouseup', onAnnotateUp, true);
+    document.removeEventListener('keydown', onAnnotateKey, true);
+    if (repaintOnScroll) {
+      window.removeEventListener('scroll', repaintOnScroll, true);
+      repaintOnScroll = null;
+    }
+  }
+  // Selector derivation, frame-side: an id anchors the chain, else an
+  // nth-of-type chain up to four levels. Deliberately short — the snippet
+  // carries the ground truth for the model.
+  function selectorFor(el) {
+    var parts = [];
+    var node = el;
+    var depth = 0;
+    while (node && node.nodeType === 1 && depth < 4) {
+      var seg = node.tagName.toLowerCase();
+      var id = node.getAttribute('id');
+      if (id) {
+        // An id anchors the chain; ancestors sit left of descendants.
+        var anchor = seg + '[id="' + id.replace(/"/g, '\\"') + '"]';
+        return parts.length > 0 ? anchor + ' > ' + parts.join(' > ') : anchor;
+      }
+      var sameTag = 0;
+      var sib = node.parentNode ? node.parentNode.firstElementChild : null;
+      while (sib) {
+        if (sib.tagName === node.tagName) sameTag++;
+        sib = sib.nextElementSibling;
+      }
+      if (sameTag > 1) {
+        var at = 1;
+        var scan = node;
+        while (scan.previousElementSibling) {
+          scan = scan.previousElementSibling;
+          if (scan.tagName === node.tagName) at++;
+        }
+        seg += ':nth-of-type(' + at + ')';
+      }
+      parts.unshift(seg);
+      node = node.parentNode;
+      depth++;
+    }
+    return parts.join(' > ');
+  }
+  function snippetFor(el) {
+    var html = (el.outerHTML || '').replace(/\s+/g, ' ').trim();
+    return html.length > 360 ? html.slice(0, 360) + '…' : html;
+  }
+  function textFor(el) {
+    var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    return text.length > 160 ? text.slice(0, 160) + '…' : text;
+  }
+  function inViewport(el) {
+    var view = viewport();
+    return !!view && (el === view || (view.contains ? view.contains(el) : false));
+  }
+  function postPick(kind, el, rect) {
+    if (!el || el.nodeType !== 1 || !inViewport(el)) return;
+    var id = 'a' + (++pickSeq);
+    paintMark(id, rect || pageRect(el));
+    try {
+      parent.postMessage({
+        __dshGui: true, type: 'annotation', pick: {
+          id: id, kind: kind,
+          selector: selectorFor(el).slice(0, 300),
+          tag: el.tagName.toLowerCase(),
+          snippet: snippetFor(el),
+          text: textFor(el)
+        }
+      }, '*');
+    } catch (err) {}
+  }
+  function onAnnotateOver(e) {
+    if (!annotating || dragStart) return;
+    var el = e.target;
+    if (!el || el.nodeType !== 1 || !inViewport(el) || overlay && (el === overlay || overlay.contains(el))) return;
+    if (!hoverBox) ensureOverlay();
+    if (!overlay) return;
+    var r = pageRect(el);
+    hoverBox = boxFor(hoverBox, r.x, r.y, r.w, r.h, 'hover');
+  }
+  function onAnnotateDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ensureOverlay();
+    dragStart = { cx: e.clientX, cy: e.clientY };
+    if (hoverBox && hoverBox.parentNode) hoverBox.parentNode.removeChild(hoverBox);
+    hoverBox = null;
+  }
+  function onAnnotateMove(e) {
+    if (!dragStart || !overlay) return;
+    var r = dragRect(e.clientX, e.clientY);
+    if (r.w < 4 && r.h < 4) return;
+    dragBox = boxFor(dragBox, r.x, r.y, r.w, r.h, 'drag');
+  }
+  /** Page-coordinate rect of the current drag, from the fixed client point. */
+  function dragRect(cx, cy) {
+    var left = Math.min(dragStart.cx, cx), right = Math.max(dragStart.cx, cx);
+    var top = Math.min(dragStart.cy, cy), bottom = Math.max(dragStart.cy, cy);
+    return {
+      x: left + (window.scrollX || 0), y: top + (window.scrollY || 0),
+      w: right - left, h: bottom - top
+    };
+  }
+  function onAnnotateUp(e) {
+    if (!dragStart) return;
+    // Compute the rect before clearing the drag state it reads.
+    var r = dragRect(e.clientX, e.clientY);
+    var start = dragStart;
+    dragStart = null;
+    if (dragBox && dragBox.parentNode) dragBox.parentNode.removeChild(dragBox);
+    dragBox = null;
+    if (r.w < 5 && r.h < 5) {
+      // A click: pick the deepest element under the point.
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      postPick('element', el);
+      return;
+    }
+    // A drag: mark the area, named by the element holding its center. A
+    // null center (outside the viewport) leaves the area unnamed; skip.
+    var center = document.elementFromPoint(
+      (start.cx + e.clientX) / 2,
+      (start.cy + e.clientY) / 2
+    );
+    postPick('area', center, r);
+  }
+  function onAnnotateKey(e) {
+    if (e.key === 'Escape' && annotating) {
+      try { parent.postMessage({ __dshGui: true, type: 'annotateExited' }, '*'); } catch (err) {}
+      annotateExit();
+    }
+  }
+  var repaintOnScroll = null;
+  function annotateEnter() {
+    if (annotating) return;
+    annotating = true;
+    ensureOverlay();
+    // Repaint every retained pick; the host's marks sync prunes to its
+    // live list right after, so removed picks never flash back.
+    for (var id in pickRects) {
+      var r = pickRects[id];
+      markBoxes[id] = boxFor(markBoxes[id], r.x, r.y, r.w, r.h, 'mark');
+    }
+    document.addEventListener('mouseover', onAnnotateOver, true);
+    document.addEventListener('mousedown', onAnnotateDown, true);
+    document.addEventListener('mousemove', onAnnotateMove, true);
+    document.addEventListener('mouseup', onAnnotateUp, true);
+    document.addEventListener('keydown', onAnnotateKey, true);
+    repaintOnScroll = function () { clearTransient(); };
+    window.addEventListener('scroll', repaintOnScroll, true);
+  }
   // Widget-facing key-value store: request/response over postMessage, one
   // pending entry per call with its own timeout. get() rejects on a missing
   // key — absence is an error the widget catches, never a silent null.
