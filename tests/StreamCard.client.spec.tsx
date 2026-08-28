@@ -111,20 +111,22 @@ describe('StreamCard', () => {
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
-  it('waves the loader message per glyph with a left-to-right stagger', () => {
+  it('waves the loader message in staggered character pairs, left to right', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
     const wave = document.querySelector('[class*="summaryWave"]')
     expect(wave).not.toBeNull()
     // The screen-reader twin carries the whole message...
     expect(wave?.querySelector('[class*="srOnly"]')?.textContent).toBe('Big wave…')
-    // ...and the visual copy splits into staggered glyphs: each glyph delays
-    // one stagger behind its left neighbor, so the bob travels in reading
-    // direction. Word boundaries sit between the word spans.
-    const glyphs = Array.from(wave?.querySelectorAll<HTMLElement>('[style*="animation-delay"]') ?? [])
-    expect(glyphs.map(g => g.textContent).join('')).toBe('Bigwave…')
-    expect(glyphs[0]?.style.animationDelay).toBe('0ms')
-    expect(glyphs[1]?.style.animationDelay).toBe('-70ms')
-    expect(glyphs[3]?.style.animationDelay).toBe('-280ms')
+    // ...and the visual copy splits into PAIRS: two characters bob as one
+    // unit, each pair one stagger behind its left neighbor, so the wave
+    // travels in reading direction. Word boundaries sit between word spans.
+    const pairs = Array.from(wave?.querySelectorAll<HTMLElement>('[style*="animation-delay"]') ?? [])
+    expect(pairs.map(p => p.textContent).join('')).toBe('Bigwave…')
+    expect(pairs.map(p => p.textContent)).toEqual(['Bi', 'g', 'wa', 've', '…'])
+    expect(pairs[0]?.style.animationDelay).toBe('0ms')
+    expect(pairs[1]?.style.animationDelay).toBe('-70ms')
+    // The space before "wa" advances the phase too: -210ms, not -140ms.
+    expect(pairs[2]?.style.animationDelay).toBe('-210ms')
     // The visual half is hidden from assistive tech; the sr twin reads it.
     expect(wave?.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })

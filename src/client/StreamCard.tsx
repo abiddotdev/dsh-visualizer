@@ -8,6 +8,7 @@
 // live evidence.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
@@ -33,29 +34,39 @@ function messageIndex(tick: number, count: number): number {
   return count === 0 ? 0 : tick % count
 }
 
-/** Stagger between neighboring glyphs of the loader wave: each glyph peaks
- * this long after its left neighbor, giving the label one small wave
- * traveling in reading direction. */
+/** Stagger between neighboring glyph PAIRS of the loader wave: each pair
+ * of characters rises and falls as one unit, this long after its left
+ * neighbor, giving the label one small wave traveling in reading
+ * direction. */
 const WAVE_STAGGER_MS = 70
 
-/** The loader label as per-word, per-glyph spans riding the wave. Words are
+/** Glyphs per wave unit — pairs bob together, like a two-seat swing. */
+const WAVE_PAIR_SIZE = 2
+
+/** The loader label as per-word, per-PAIR spans riding the wave. Words are
  * unbreakable inline-blocks separated by real spaces, so wrapping stays at
- * word boundaries; the glyph stagger rides an inline animation-delay, so no
+ * word boundaries; the pair stagger rides an inline animation-delay, so no
  * per-glyph class explosion. */
-function WaveText({ label }: { label: string }) {
-  let index = 0
-  return label.split(' ').flatMap((word, wordIndex) => {
-    const glyphs = Array.from(word).map((char, charIndex) => (
-      <span
-        key={charIndex}
-        className={css.waveGlyph}
-        style={{ animationDelay: `${-(index + charIndex) * WAVE_STAGGER_MS}ms` }}
-      >
-        {char}
-      </span>
-    ))
-    index += Array.from(word).length + 1
-    const wordSpan = <span key={`w${wordIndex}`} className={css.waveWord}>{glyphs}</span>
+function WaveText({ label }: { label: string }): ReactNode[] {
+  let pairIndex = 0
+  return label.split(' ').flatMap((word, wordIndex): ReactNode[] => {
+    const chars = Array.from(word)
+    const pairs: ReactNode[] = []
+    for (let start = 0; start < chars.length; start += WAVE_PAIR_SIZE) {
+      const pair = chars.slice(start, start + WAVE_PAIR_SIZE).join('')
+      pairs.push(
+        <span
+          key={start}
+          className={css.waveGlyph}
+          style={{ animationDelay: `${-pairIndex * WAVE_STAGGER_MS}ms` }}
+        >
+          {pair}
+        </span>,
+      )
+      pairIndex++
+    }
+    pairIndex++ // the space between words also advances the phase
+    const wordSpan = <span key={`w${wordIndex}`} className={css.waveWord}>{pairs}</span>
     return wordIndex === 0 ? [wordSpan] : [' ', wordSpan]
   })
 }
