@@ -63,25 +63,25 @@ describe('composeAnnotationPrompt', () => {
     expect(composeAnnotationPrompt([])).toBeNull()
   })
 
-  it('composes one block per pick with locator lines', () => {
+  it('composes numbered items separated by blank lines with locator lines', () => {
     const picks = [
       pick({ id: 'a1' }, 'make this red'),
       pick({ id: 'a2', kind: 'area', tag: 'div', selector: '.hero', snippet: '<div class="hero">', text: '' }),
     ]
     const text = composeAnnotationPrompt(picks)!
-    expect(text).toContain('Comments on marked elements')
-    expect(text).toContain('- make this red')
-    expect(text).toContain('(no note)')
-    expect(text).toContain('element: <section> section:nth-of-type(2)')
-    expect(text).toContain('text: "revenue"')
-    expect(text).toContain('markup: <section>revenue</section>')
+    expect(text).toContain('Comments on marked elements:')
+    expect(text).toContain('\n\n1. make this red\n')
+    expect(text).toContain('\n\n2. (no note)\n')
+    expect(text).toContain('  element: <section> section:nth-of-type(2)')
+    expect(text).toContain('  text: "revenue"')
+    expect(text).toContain('  markup: <section>revenue</section>')
     expect(text.length).toBeLessThanOrEqual(WIDGET_PROMPT_MAX_CHARS)
   })
 
-  it('omits the bullet for a single pick', () => {
+  it('numbers a single pick too', () => {
     const text = composeAnnotationPrompt([pick(undefined, 'bigger')])!
-    expect(text).toContain('\nbigger\n')
-    expect(text).not.toContain('- bigger')
+    expect(text).toContain('\n\n1. bigger\n')
+    expect(text).not.toContain('2.')
   })
 
   it('degrades to selector-only under the prompt cap', () => {
@@ -95,8 +95,8 @@ describe('composeAnnotationPrompt', () => {
     }, `note ${i} for the element`))
     const text = composeAnnotationPrompt(picks)!
     expect(text.length).toBeLessThanOrEqual(WIDGET_PROMPT_MAX_CHARS)
-    expect(text).toContain('note 0 for the element')
-    expect(text).toContain('note 19 for the element')
+    expect(text).toContain('1. note 0 for the element')
+    expect(text).toContain('20. note 19 for the element')
     expect(text).not.toContain('markup:')
   })
 })

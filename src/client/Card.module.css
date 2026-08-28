@@ -279,18 +279,24 @@
   flex: none;
 }
 
+/* Comment footer actions: the design-system Button carries their look;
+ * these only tighten the gap so the pair reads as one toolbar. */
 .commentFooter {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   margin-top: 2px;
 }
 
 .commentSend {
-  composes: download;
-  color: var(--dsw-alias-label-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .commentClear {
-  composes: download;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

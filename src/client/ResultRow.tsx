@@ -122,6 +122,9 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
     if (text === null) return
     submitWidgetPrompt(inputActions, text)
     setPicks([])
+    // Sending ends the commenting session: the frame disarms and the marks
+    // are gone with the picks.
+    setAnnotate(false)
   }, [picks, inputActions])
   const toggleAnnotate = useCallback((): void => {
     setAnnotate(current => !current)
@@ -179,7 +182,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               className={annotate ? css.downloadActive : css.download}
               aria-pressed={annotate}
               aria-label={t('row.commentMode')}
-              title={t('row.commentModeHint')}
+              title={`Annotate — ${t('row.commentModeHint')}`}
               onClick={(event) => {
                 event.stopPropagation()
                 toggleAnnotate()
