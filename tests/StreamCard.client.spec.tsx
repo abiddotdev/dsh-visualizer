@@ -87,33 +87,51 @@ describe('StreamCard', () => {
   it('shows the model-authored loading messages, rotating on a dwell', () => {
     vi.useFakeTimers()
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Bribing bars', 'Asking Q4'] }])
-    expect(screen.getByText('Bribing bars')).toBeTruthy()
+    expect(screen.getByText('Bribing bars…')).toBeTruthy()
     expect(screen.queryByText('Streaming...')).toBeNull()
-    // The loader text gets the sweep class while messages are cycling.
-    expect(document.querySelector('[class*="summarySweep"]')).not.toBeNull()
+    // The loader text waves while messages are cycling.
+    expect(document.querySelector('[class*="summaryWave"]')).not.toBeNull()
 
     elapse(4_800)
-    expect(screen.getByText('Asking Q4')).toBeTruthy()
+    expect(screen.getByText('Asking Q4…')).toBeTruthy()
     elapse(4_800)
-    expect(screen.getByText('Bribing bars')).toBeTruthy()
+    expect(screen.getByText('Bribing bars…')).toBeTruthy()
 
     // A settled card drops the sweep class and messages for the char count.
     cleanup()
     renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>', loadingMessages: ['Bribing bars'] }])
     expect(screen.queryByText('Bribing bars')).toBeNull()
     expect(screen.getByText('11 chars')).toBeTruthy()
-    expect(document.querySelector('[class*="summarySweep"]')).toBeNull()
+    expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
-  it('does not apply the sweep class when messages are absent', () => {
+  it('does not apply the wave class when messages are absent', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
-    expect(screen.getByText('Composing the document')).toBeTruthy()
-    expect(document.querySelector('[class*="summarySweep"]')).toBeNull()
+    expect(screen.getByText('Composing the document…')).toBeTruthy()
+    expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
+  })
+
+  it('waves the loader message per glyph with a left-to-right stagger', () => {
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
+    const wave = document.querySelector('[class*="summaryWave"]')
+    expect(wave).not.toBeNull()
+    // The screen-reader twin carries the whole message...
+    expect(wave?.querySelector('[class*="srOnly"]')?.textContent).toBe('Big wave…')
+    // ...and the visual copy splits into staggered glyphs: each glyph delays
+    // one stagger behind its left neighbor, so the bob travels in reading
+    // direction. Word boundaries sit between the word spans.
+    const glyphs = Array.from(wave?.querySelectorAll<HTMLElement>('[style*="animation-delay"]') ?? [])
+    expect(glyphs.map(g => g.textContent).join('')).toBe('Bigwave…')
+    expect(glyphs[0]?.style.animationDelay).toBe('0ms')
+    expect(glyphs[1]?.style.animationDelay).toBe('-70ms')
+    expect(glyphs[3]?.style.animationDelay).toBe('-280ms')
+    // The visual half is hidden from assistive tech; the sr twin reads it.
+    expect(wave?.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })
 
   it('keeps the composing label plain; the frame sweep carries the live phase', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
-    expect(screen.getByText('Composing the document')).toBeTruthy()
+    expect(screen.getByText('Composing the document…')).toBeTruthy()
     expect(document.querySelector('[class*="summaryLive"]')).toBeNull()
     expect(document.querySelector('[class*="streamSweep"]')).not.toBeNull()
   })

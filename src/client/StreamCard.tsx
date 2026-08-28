@@ -33,6 +33,33 @@ function messageIndex(tick: number, count: number): number {
   return count === 0 ? 0 : tick % count
 }
 
+/** Stagger between neighboring glyphs of the loader wave: each glyph peaks
+ * this long after its left neighbor, giving the label one small wave
+ * traveling in reading direction. */
+const WAVE_STAGGER_MS = 70
+
+/** The loader label as per-word, per-glyph spans riding the wave. Words are
+ * unbreakable inline-blocks separated by real spaces, so wrapping stays at
+ * word boundaries; the glyph stagger rides an inline animation-delay, so no
+ * per-glyph class explosion. */
+function WaveText({ label }: { label: string }) {
+  let index = 0
+  return label.split(' ').flatMap((word, wordIndex) => {
+    const glyphs = Array.from(word).map((char, charIndex) => (
+      <span
+        key={charIndex}
+        className={css.waveGlyph}
+        style={{ animationDelay: `${-(index + charIndex) * WAVE_STAGGER_MS}ms` }}
+      >
+        {char}
+      </span>
+    ))
+    index += Array.from(word).length + 1
+    const wordSpan = <span key={`w${wordIndex}`} className={css.waveWord}>{glyphs}</span>
+    return wordIndex === 0 ? [wordSpan] : [' ', wordSpan]
+  })
+}
+
 /** One live document card and its shell frame. */
 function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
@@ -61,16 +88,20 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   const streamingLabel = messages.length > 0
     ? (messages[messageIndex(tick, messages.length)] ?? '')
     : card.html.length === 0 ? t('card.thinking') : t('card.streaming')
+  // Loading messages always read as in-progress: append an ellipsis unless
+  // the model already ended its message with one.
+  const withEllipsis = (text: string): string =>
+    text === '' || /\u2026|(\.\.\.)$/.test(text.trimEnd()) ? text : `${text}…`
   // State follows the document's title: the same title regenerates into the
   // same scope, and the settled row derives the identical one.
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(card.title)), [card.title])
   const summary = card.phase === 'streaming'
-    ? streamingLabel
+    ? withEllipsis(streamingLabel)
     : card.phase === 'interrupted'
       ? t('card.interrupted')
       : t('card.chars', { chars: card.html.length })
-  // The loader text sweep runs only while model-authored messages are
-  // cycling; composing/streaming fallbacks show no sweep.
+  // The loader text wave runs only while model-authored messages are
+  // cycling; composing/streaming fallbacks show no wave.
   const isLoaderText = card.phase === 'streaming' && messages.length > 0
   // The typing wave runs for the whole streaming phase — composing and
   // writing alike — and stops the moment the document settles.
@@ -96,8 +127,17 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={`${css.summary}${isLoaderText ? ` ${css.summarySweep}` : ''}`}>
-              {summary}
+            <span className={`${css.summary}${isLoaderText ? ` ${css.summaryWave}` : ''}`}>
+              {isLoaderText && summary !== ''
+                ? (
+                    <>
+                      {/* The screen-reader twin carries the whole message;
+                       * the visual copy splits into waved glyphs. */}
+                      <span className={css.srOnly}>{summary}</span>
+                      <span aria-hidden><WaveText label={summary} /></span>
+                    </>
+                  )
+                : summary}
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
             {runtimeError !== null && (
