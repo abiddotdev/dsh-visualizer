@@ -40,29 +40,17 @@ function messageIndex(tick: number, count: number): number {
  * direction. */
 const WAVE_STAGGER_MS = 70
 
-/** Glyphs per wave unit — bobs of 2–4 characters ride together, like
- * seats on a swing. The last bob of a word may be shorter (a remainder):
- * "Big wave…" splits as [Bi][g] [wav][e…] — never a bob of one char when
- * four remain, always the remainder at the tail. */
-const WAVE_GROUP_MIN = 2
-const WAVE_GROUP_MAX = 4
+/** Glyphs per wave unit — every bob carries exactly this many characters
+ * when the word allows it; the tail bob keeps the remainder. "Big wave…"
+ * splits as [Big] [wav][e…]. */
+const WAVE_GROUP_SIZE = 3
 
-/** Split one word's glyphs into bob groups of 2–4 characters. Longer
- * words prefer fuller bobs; the tail keeps whatever remains (≥1). */
+/** Split one word's glyphs into fixed-size bobs of {@link WAVE_GROUP_SIZE}
+ * characters; the last bob may be shorter (a remainder). */
 function waveGroups(chars: readonly string[]): string[] {
-  if (chars.length <= WAVE_GROUP_MAX) return [chars.join('')]
   const groups: string[] = []
-  let start = 0
-  while (start < chars.length) {
-    const left = chars.length - start
-    // Choose a size in [MIN, MAX] that leaves no impossible remainder
-    // (a remainder of 1 after a MAX group would strand a lone char mid-word
-    // when a fuller group could absorb it).
-    let size = Math.min(WAVE_GROUP_MAX, left)
-    if (left - size === 1 && size < WAVE_GROUP_MAX) size++
-    if (left - size < WAVE_GROUP_MIN && left > WAVE_GROUP_MAX) size = left - WAVE_GROUP_MIN
-    groups.push(chars.slice(start, start + size).join(''))
-    start += size
+  for (let start = 0; start < chars.length; start += WAVE_GROUP_SIZE) {
+    groups.push(chars.slice(start, start + WAVE_GROUP_SIZE).join(''))
   }
   return groups
 }

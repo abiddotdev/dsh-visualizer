@@ -111,7 +111,7 @@ describe('StreamCard', () => {
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
-  it('waves the loader message in staggered 2–4 character bobs, left to right', () => {
+  it('waves the loader message in staggered 3-character bobs, left to right', () => {
     renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
     const wave = document.querySelector('[class*="summaryWave"]')
     expect(wave).not.toBeNull()
