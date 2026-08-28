@@ -100,7 +100,7 @@ keep it conditional; covered by tests in `tests/visualizer.spec.ts`.
 7. Reviewing a PR: leave one comment per issue, short and concise (what's wrong +
    where, no essays). After pushing the fixes, reply on that same comment thread stating
    what changed, e.g. `fixed: <one-line description>`. Suffix every PR comment
-   (review remarks, fix replies, CI explanations) with a trailing `\n~bot_comment`
+   (review remarks, fix replies, CI explanations) with a trailing `\n\n~bot`
    so automated-agent remarks stay distinguishable from human ones.
 8. NEVER push to origin unless the user explicitly asks. Commit locally and wait.
    This applies to plain pushes, force pushes, and tag pushes alike.
