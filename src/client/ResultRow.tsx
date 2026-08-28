@@ -8,11 +8,12 @@
 // definition.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AutoFrame } from './AutoFrame.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
+import { useFrameFullscreen } from './fullscreen.ts'
 import { exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
@@ -101,6 +102,9 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const settledOk = settled && !block.isError && view !== null
   // The share control exists only where the host announced its route.
   const shareable = exportShareEnabled()
+  // Fullscreen rides the frame wrapper; the label follows the document API,
+  // so an Escape pressed inside the frame reverts it without a click.
+  const fullscreen = useFrameFullscreen()
 
   /** Collapsed-row trailing content: char count, then the download control on a settled success. */
   const rowChrome = () => (
@@ -125,6 +129,23 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
       )}
       {settledOk && (
         <>
+          {/* The frame must be mounted to hold fullscreen, so this control
+           * rides the expanded row alone; copy, download, and share act on
+           * the document bytes and need no frame. */}
+          {expanded && (
+            <button
+              type="button"
+              className={css.download}
+              aria-label={fullscreen.active ? t('row.exitFullscreen') : t('row.fullscreen')}
+              title={fullscreen.active ? t('row.exitFullscreen') : t('row.fullscreen')}
+              onClick={(event) => {
+                event.stopPropagation()
+                fullscreen.toggle()
+              }}
+            >
+              <IconFullscreenOutline16 size={14} />
+            </button>
+          )}
           <button
             type="button"
             className={css.download}
@@ -202,7 +223,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
           collapsedContent={rowChrome()}
         >
           {view !== null && (
-            <div className={css.frameWrap}>
+            <div className={css.frameWrap} ref={fullscreen.ref}>
               <AutoFrame
                 title={title}
                 html={view.html}

@@ -1,7 +1,7 @@
 {
   "name": "dsh-visualizer",
   "description": "Visualizer plugin for DeepSeek Harness: the `visualizer` tool streams a self-contained HTML document into the chat as it is written, live-previewed by a sandboxed inline frame. One package ships both halves: the model-facing tool and the Web GUI preview card.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
