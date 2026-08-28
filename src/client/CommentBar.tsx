@@ -9,7 +9,7 @@
  */
 
 import type { ChangeEvent } from 'react'
-import { IconSendOutline16, IconTrashOutline16, IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconTrashOutline16, IconCloseFill14, IconSendOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { ANNOTATION_COMMENT_MAX_CHARS, type AnnotationPick } from './annotate.ts'
 import css from './Card.module.css'
@@ -84,14 +84,14 @@ export function CommentBar({ picks, onComment, onRemove, onSend, onClear, t }: C
         <PickRow key={pick.id} pick={pick} onComment={onComment} onRemove={onRemove} t={t} />
       ))}
       <div className={css.commentFooter}>
-        <button type="button" className={css.commentSend} onClick={onSend}>
-          <IconSendOutline16 size={14} />
-          {t('row.commentSend')}
-        </button>
-        <button type="button" className={css.commentClear} onClick={onClear}>
+        <Button variant="ghost" size="sm" className={css.commentClear} onClick={onClear}>
           <IconTrashOutline16 size={14} />
           {t('row.commentClear')}
-        </button>
+        </Button>
+        <Button variant="primary" size="sm" className={css.commentSend} onClick={onSend}>
+          <IconSendOutline16 size={14} />
+          {t('row.commentSend')}
+        </Button>
       </div>
     </div>
   )

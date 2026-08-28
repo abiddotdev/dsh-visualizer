@@ -343,11 +343,12 @@ describe('ResultRow', () => {
     expect(submit).toHaveBeenCalledTimes(1)
     const draft = setDraft.mock.calls[0]![0] as string
     expect(draft).toContain('[widget] ')
-    expect(draft).toContain('make this bold')
+    expect(draft).toContain('\n\n1. make this bold\n')
     expect(draft).toContain('element: <p> p')
     expect(draft).toContain('markup: <p>revenue</p>')
-    // Send clears the bar.
+    // Send clears the bar and exits comment mode.
     expect(screen.queryByTestId('comment-bar')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('removes one pick from the bar and clears all', () => {

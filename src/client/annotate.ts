@@ -63,50 +63,45 @@ export function parseAnnotation(raw: unknown): AnnotationPick | null {
   }
 }
 
+/** Header line of every composed prompt; the count lands below it. */
+const PROMPT_HEADER = 'Please update the rendered document. Comments on marked elements:'
+
 /**
- * Compose the picks into one prompt block for the model. Each pick reads as
- * its note plus the locator bundle (selector, snippet, text); the whole
- * block stays within the widget prompt cap so it rides the existing
- * sendPrompt channel unchanged.
+ * Compose the picks into one prompt block for the model. Items are numbered
+ * and separated by blank lines, each carrying its note plus the locator
+ * bundle (selector, snippet, text); the whole block stays within the widget
+ * prompt cap so it rides the existing sendPrompt channel unchanged.
  * @param picks - the card's current annotations, in pick order.
  * @returns the composed text, or null when there is nothing to send.
  */
 export function composeAnnotationPrompt(picks: readonly AnnotationPick[]): string | null {
   if (picks.length === 0) return null
-  const lines: string[] = ['Please update the rendered document. Comments on marked elements:']
-  for (const pick of picks) {
-    const note = pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'
-    lines.push(`${picks.length > 1 ? '- ' : ''}${note}`)
-    lines.push(`  element: <${pick.tag}> ${pick.selector}`)
-    if (pick.text.length > 0) lines.push(`  text: ${JSON.stringify(pick.text)}`)
-    if (pick.snippet.length > 0) lines.push(`  markup: ${pick.snippet}`)
-  }
-  const joined = lines.join('\n')
+  const items = picks.map((pick, index) => itemLines(pick, index + 1, true))
+  let joined = `${PROMPT_HEADER}\n\n${items.join('\n\n')}`
   if (joined.length <= WIDGET_PROMPT_MAX_CHARS) return joined
   // Over cap: drop the deepest locator lines first, notes last.
-  const reduced = composeWithoutMarkup(picks)
-  if (reduced !== null && reduced.length <= WIDGET_PROMPT_MAX_CHARS) return reduced
+  const reduced = `${PROMPT_HEADER}\n\n${picks.map((pick, index) => itemLines(pick, index + 1, false)).join('\n\n')}`
+  if (reduced.length <= WIDGET_PROMPT_MAX_CHARS) return reduced
   return noteOnlyPrompt(picks).slice(0, WIDGET_PROMPT_MAX_CHARS)
 }
 
-/** Same bundle without the markup line; null when no picks remain. */
-function composeWithoutMarkup(picks: readonly AnnotationPick[]): string | null {
-  if (picks.length === 0) return null
-  const lines: string[] = ['Please update the rendered document. Comments on marked elements:']
-  for (const pick of picks) {
-    const note = pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'
-    lines.push(`${picks.length > 1 ? '- ' : ''}${note}`)
-    lines.push(`  element: <${pick.tag}> ${pick.selector}`)
-    if (pick.text.length > 0) lines.push(`  text: ${JSON.stringify(pick.text)}`)
-  }
+/** One numbered item's lines; `withMarkup` drops the deepest locator first. */
+function itemLines(pick: AnnotationPick, number: number, withMarkup: boolean): string {
+  const note = pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'
+  const lines = [
+    `${number}. ${note}`,
+    `  element: <${pick.tag}> ${pick.selector}`,
+  ]
+  if (pick.text.length > 0) lines.push(`  text: ${JSON.stringify(pick.text)}`)
+  if (withMarkup && pick.snippet.length > 0) lines.push(`  markup: ${pick.snippet}`)
   return lines.join('\n')
 }
 
 /** Notes and selectors only; the last resort keeps the user's words. */
 function noteOnlyPrompt(picks: readonly AnnotationPick[]): string {
   return picks
-    .map(pick => `- ${pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'} (${pick.selector})`)
-    .join('\n')
+    .map((pick, index) => `${index + 1}. ${pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'} (${pick.selector})`)
+    .join('\n\n')
 }
 
 /** Longest comment accepted into one pick's note input. */
