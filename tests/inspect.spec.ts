@@ -64,6 +64,24 @@ describe('document inspection', () => {
     expect(found[0]).toMatch(/^1: inline onclick handler does not parse: /)
   })
 
+  it('ignores markup-looking comparisons inside script bodies', () => {
+    // `i <cfg.rows` parses as a <cfg.rows> tag whose "attributes" collide —
+    // the false positive that once sent the model into re-render loops.
+    const html = [
+      '<canvas id="c"></canvas>',
+      '<script>',
+      'for (let i = 0; i <cfg.rows; i++) { const x = cfg.rows[i].x; total += x; }',
+      'const f = a <b && b> 2;',
+      '</script>',
+    ].join('\n')
+    expect(findings(html)).toEqual([])
+  })
+
+  it('still syntax-checks script bodies while masking them from the tag scan', () => {
+    const html = ['<div></div>', '<script>', 'broken here((', '</script>'].join('\n')
+    expect(findings(html)).toEqual(['2: script does not parse: Unexpected identifier \'here\''])
+  })
+
   it('declines to judge a module whose import could not be lifted cleanly', () => {
     const html = '<script type="module">import {\n  select,\n} from "https://esm.sh/d3";\nselect("svg");</script>'
     expect(findings(html)).toEqual([])
