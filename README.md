@@ -47,6 +47,8 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 
 That branch is the last state of the plugin built against the pre-`0.1.2-alpha.3` client API. It is frozen — new features land on the default branch only — so upgrading the harness is the way forward.
 
+**Known issue — Compact transcript view hides settled cards.** `0.1.2-alpha.3` added a "Transcript view" setting (Normal/Compact) that defaults to **Compact**: once a turn closes, the harness folds every tool call in it — including a settled visualizer card — behind a "N tool calls" disclosure line, alongside every other tool. There's currently no extension point for a plugin to opt a call out of that fold. Workaround: switch **Settings → Transcript view → Normal** to keep rendered cards always visible. Tracked upstream for a real fix.
+
 ### Or Install from a local checkout
 
 To hack on the plugin (or install a version not yet pushed), check it out, build, and add it by local path:
