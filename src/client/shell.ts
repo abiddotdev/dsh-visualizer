@@ -11,33 +11,7 @@
  * exactly once by cloning each `<script>` node.
  */
 
-/**
- * Network-egress allowlist the shell CSP enforces on every rendered
- * document. The node half validates sizes, not origins, so this list is the
- * only origin policy a document meets: the tool's public-CDN promise is
- * kept here and nowhere else. src/guide/contract.ts names the same four
- * hosts in the prompt prose — the client bundle cannot import the node
- * half, so a change to one list must land on the other. Widening it widens
- * what a rendered document may fetch and execute inside the frame.
- */
-const CDN_LIST = [
-  'https://esm.sh',
-  'https://cdnjs.cloudflare.com',
-  'https://cdn.jsdelivr.net',
-  'https://unpkg.com',
-].join(' ')
-
-const CSP_DIRECTIVES = [
-  "default-src 'unsafe-inline' data:",
-  `script-src 'unsafe-inline' ${CDN_LIST}`,
-  `style-src 'unsafe-inline' ${CDN_LIST}`,
-  `img-src 'self' data: ${CDN_LIST}`,
-  `font-src ${CDN_LIST}`,
-  `connect-src ${CDN_LIST}`,
-  "form-action 'none'",
-  "base-uri 'none'",
-  "object-src 'none'",
-].join('; ')
+import { RENDER_CSP_DIRECTIVES } from '../shared/export-csp.ts'
 
 /**
  * Bridge injected into the shell. `render` replaces the viewport with the
@@ -293,7 +267,7 @@ export const STREAM_SHELL = `<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="${CSP_DIRECTIVES}">
+<meta http-equiv="Content-Security-Policy" content="${RENDER_CSP_DIRECTIVES}">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Transparent canvas: the chat background shows through the frame, so an

@@ -76,49 +76,43 @@ The package declares a `dsh.bundle` manifest (`dsh.bundle.patch` → `./cordis.p
 
 ## Configuration
 
-The bundle layer already inserts the loader row, so overriding config takes a flat id-targeted patch entry in the profile's own patch layer (`~/.dsh/profiles/<your-profile>/cordis.patch.yml`). Don't wrap it in `insert:` — that appends a second row instead of overriding the installed one. Values validate against the schema at load, and a mistake fails the mount loudly. Every option has a schema default, so an override block only lists the fields being changed. The complete option list, at current defaults:
+The bundle layer already inserts the loader row, so overriding config takes a flat id-targeted patch entry in the profile's own patch layer (`~/.dsh/profiles/<your-profile>/cordis.patch.yml`). Don't wrap it in `insert:` — that appends a second row instead of overriding the installed one. The complete option list, at current defaults:
 
 ```yaml
 - id: dsh-visualizer
   config:
-    maxHtmlBytes: 262144    # default; per-call render limit, in UTF-8 bytes
-    guideTool: true         # default; set false to use only the render tool
-    guideModules: [chart, diagram, mockup, interactive, art]   # default; subset to teach and serve;
+    maxArtifactBytes: 262144      # per-call render size limit, in bytes
+    guideTool: true               # false = drop the visualizer_guide recipe tool (render tool stays)
+    guideTypes: [chart, diagram, mockup, interactive, art]   # which types to teach and allow
+    shareArtifacts: true          # false = no disk mirror, serve route, or Share control
+    artifactDir: ~/.dsh/visualizer/artifacts        # $DSH_HOME honored
+    artifactRetentionDays: 30     # sweep artifacts older than this at activation; 0 disables
+    shareKey: ''                  # pin the link key so links survive restarts
 ```
 
-`guideModules` narrows both guide surfaces at once. The standing system-prompt roster lists only those types' one-liners, and the JIT tool's argument enum accepts only those ids, so a disabled type is rejected at the argument boundary before any code runs. `guideTool: false` skips the second tool registration; the render tool and the standing prompt section are unaffected. Unknown module ids or an empty `guideModules` fail the plugin load. Defaults are on, all five types (`chart`, `diagram`, `mockup`, `interactive`, `art`).
+`guideTypes` narrows both guide surfaces at once: a disabled type is rejected at the tool's argument boundary, and unknown ids or an empty list fail the plugin load.
 
 ## How it works
 
-The tool declares `html` as its last schema parameter, so the logged tool-call arguments carry a growing document prefix while the model streams. The card decodes that prefix and paints a live preview inside a null-origin sandboxed iframe with a transparent canvas; at dispatch the final DOM is reconciled and scripts run once, in document order. While the document streams, a pale brand band sweeps diagonally across the whole frame (top-left to bottom-right) on a slow 3.6s cadence. It's transform-animated, disabled under reduced motion. It makes the live phase readable at a glance, and it stops the moment the document settles.
+The tool declares `html` as its last schema parameter, so logged call arguments carry a growing document prefix while the model streams. The card paints that prefix live inside a null-origin sandboxed iframe; at dispatch the final DOM reconciles and scripts run once. An authoring guide teaches the model when to reach for each artifact type (`chart`, `diagram`, `mockup`, `interactive`, `art`) and how to author it — a one-line roster in the system prompt, with deeper per-type recipes on demand through a `visualizer_guide` tool so the standing prompt stays small. A settle-time static check inspects the finished document (compiled, never executed) and reports defects back to the model for an in-turn fix.
 
-The model-facing authoring guide lives in `src/guide/`: gate rules (when a visual belongs in the conversation), the universal streaming contract (style-first ordering, the CDN allowlist, animation limits, theme tokens, height-reporting pitfalls), and a per-artifact-type roster under `src/guide/modules/`, one file per type so each kind of visual is tuned without touching the others. The CDN hosts named there are the same four the shell CSP enforces; change both lists together.
+Rendered documents can talk back through a small bridge: scripts may submit a follow-up chat prompt (`sendPrompt`, validated and rate-limited), open http(s) links (`openLink`, scheme-checked), and persist state across renders (`window.storage`, namespaced by title — a regenerated dashboard finds its previous values). Documents inherit the app's theme tokens, and anchor clicks inside the card never navigate the app: fragments scroll in place, external links pass the same validation gate. A card shows load/runtime script failures inline instead of silently rendering nothing.
 
-The roster stays one line per type to keep the system prompt small; the deeper per-type recipe lives in each module's `detail`. The `visualizer_guide` tool returns it on demand. Once the model has chosen an artifact type it calls `visualizer_guide(modules: [...])` and gets that type's recipe as the tool result — a just-in-time spec injection that grows the guide without growing the standing prompt. The roster closes with an ambient nudge ("before your first render of a type in a conversation, pull its recipe"), so the ordering holds even if the model never opens the guide tool's description. That line renders only when `guideTool` is enabled.
+A settled card offers four actions — **Fullscreen** (expands the card to the viewport; Escape or a second click leaves), **Download** (self-contained `.html`/`.svg` via Blob, no server round-trip), **Copy HTML**, and **Share** (next section).
 
-Every `detail` follows one skeleton: **Mental model** (the thinking order before code — encoding table, renderer choice, layout strategy), domain sections (measurements, composition, controls, color), **Failure modes** (symptom first, then cause and fix), and a closing **Quick reference** checklist. Rules are never-conditions with exact measurements, not approximations, because the recipe is read at the moment of authoring. The guide spec pins the skeleton; module content stays in its own file.
+## Sharing
 
-## The widget bridge
+Every successful render is mirrored into the artifacts folder (`artifactDir`, default `~/.dsh/visualizer/artifacts`, private perms) the moment it finishes — a failed or interrupted render leaves nothing behind. Clicking **Share** on a settled card opens that copy in a new tab at `/artifacts/visualizer/<name>?k=<key>`; copy the address from the browser bar to send it to someone.
 
-A rendered document's scripts may call `sendPrompt(text)`. The shell bridge posts it to the host, which submits it as a `[widget]`-prefixed user turn — a dashboard can ask the agent a follow-up about what it shows. The host validates the payload (string, non-blank, ≤ 4000 chars) and rate-limits to one accepted prompt per 3 seconds per widget, so a misbehaving script can't loop the agent. Scripts only run after a document completes, so the bridge can never fire mid-stream.
+- **Names** carry a kebab-case slug of the title plus a digest of the exact content — `<slug>-<16 hex>.html|.svg` (`hex-chart-performance-metrics-3531….html`). Same render, same link forever; changed content gets a fresh link beside the old one. Downloads keep just the slug.
+- **Links embed a capability key.** By default each harness start issues a random one, so links expire on restart (click share again to reissue); set `shareKey` in config to pin one and links survive restarts. Anyone holding a working link can open it — treat it like a secret; this is unguessability, not per-user auth.
+- **Safe by construction.** Shared HTML runs inside a sandboxed frame (no access to your session, cookies, or workspace) under the same CDN allowlist as the inline card; shared SVG behaves like a plain image with scripting stripped. Responses carry no-store and hardening headers, and only regular export files are servable — anything else gets an identical not-found page.
+- **Layers of access control.** Shared links ride behind the harness's own authentication — no valid harness session, no route — and on top of that each link carries the boot-time capability key described above. One without the other fails closed.
+- **Housekeeping.** Artifacts older than `artifactRetentionDays` (default 30, `0` = never) sweep when the plugin activates. On profiles without a web server (TUI/headless) sharing simply doesn't appear.
 
-Scripts may also call `openLink(url)`. The host does the scheme check itself (http(s) only, opened with `noopener,noreferrer`), so widget code can't reach `javascript:`, `data:`, or `file:` targets.
+**Production hardening tip:** for stronger isolation, serve the artifacts from a different domain than the main web UI in production (e.g., pointing `artifactDir` at a path a CDN or static host publishes, with the main app linking out to it). Generated pages then never share an origin with your authenticated surface at all — the strongest defense-in-depth available for LLM-authored content. A static publisher can't check the per-boot key (`?k=`), so pair this setup with a pinned `shareKey` — stable across restarts and easy to carry into whatever gating the publishing layer applies.
 
-Widgets keep state across renders through `await window.storage.get/set/delete(key)`. Requests travel over postMessage with a per-call id and a 10s timeout; the host answers from a store namespaced by the document's `title` argument, so a regenerated document under the same title (streaming card or settled row) finds the values it wrote. Keys are ≤200 units without whitespace, values ≤64k units, and one scope holds ≤256k units together. `get` rejects on a missing key rather than returning null. Storage is durable through localStorage when reachable, per-mount memory otherwise (private modes).
-
-Anchor clicks inside the document never navigate. The frame is a null-origin `srcdoc` that inherits its base URL from the host, so even a `#fragment` link would reload the whole app inside the card. A capture-phase guard in the shell blocks every anchor's default action and converts it instead: fragment links scroll to their target in place (`scrollIntoView`, instant under reduced motion), absolute `http(s)` links go through the same validated `openLink` gate as explicit calls, anything else is dropped.
-
-The frame's permission policy delegates exactly one capability: `fullscreen *`. A chart or dashboard document may expand, and Escape reverses it. Clipboard, popups, camera, and payment stay undelegated.
-
-## Theme tokens
-
-At boot the shell asks the host for its design tokens. AutoFrame collects every `--dsw-*` custom property from the document root's computed style and posts them in; the shell applies them to its own root element. A `MutationObserver` on the host's `class`/`style`/`data-theme` attributes re-pushes the set when the theme flips, and the shell drops variables the new theme no longer defines. So `color: var(--dsw-alias-label-primary)` inside a document tracks the app theme — no hardcoded palette.
-
-## Card controls and failure notices
-
-A settled card offers two client-side actions over the same bytes. **Download** uses a Blob URL; a bare `<svg>` document saves as `.svg` with the SVG mime type, everything else as `.html`. **Copy HTML** uses `navigator.clipboard.writeText` with a brief confirmation (a denied clipboard shows none).
-
-When an external script inside the document fails to load, the card shows a load-failure notice — the alternative is a document that renders but does nothing. Runtime failures are labeled the same way. A throwing inline script (which previously also killed every later script in the commit chain), an async `error` event, or an unhandled rejection posts a `runtimeError` report through the same bridge, and the card shows the first message beside the summary. Reports cap at three per card, so a resize loop or interval can't flood it.
+A "not found" answer means one of: the harness restarted while using the default per-boot key (re-open the document from chat and share fresh), the live `shareKey` no longer matches the one baked into the link, or the artifact passed its retention window.
 
 ## Settle-time document check
 

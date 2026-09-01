@@ -44,6 +44,19 @@ function maskComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, comment => comment.replace(/[^\n]/g, ' '))
 }
 
+/** Blank script bodies, keeping the tags themselves: JavaScript routinely
+ * contains `<`-comparisons whose right side reads as a tag name (`i <cfg.rows`
+ * parses as `<cfg.rows>`), so an unmasked body feeds the markup scan fake
+ * tags — the source of duplicate-attribute false positives that sent the
+ * model into pointless re-render loops. Line numbers stay identical. */
+function maskScriptBodies(html: string): string {
+  return html.replace(
+    /(<script\b[^>]*>)([\s\S]*?)(<\/script\s*>)/gi,
+    (_all, open: string, body: string, close: string) =>
+      open + body.replace(/[^\n]/g, ' ') + close,
+  )
+}
+
 /** 1-based line of one character index. */
 function lineAt(html: string, index: number): number {
   let line = 1
@@ -89,7 +102,9 @@ function checkScriptSyntax(body: string, isModule: boolean): string | null {
  * @returns the found defects, ascending by line.
  */
 export function inspectDocument(html: string): InspectionResult {
-  const masked = maskComments(html)
+  // Comments first, then script bodies: a comment may wrap a script tag, and
+  // the body mask must not repair what the comment mask already blanked.
+  const masked = maskScriptBodies(maskComments(html))
   const issues: DocumentIssue[] = []
   /** id value to the line of its first definition. */
   const idFirstLine = new Map<string, number>()
@@ -142,7 +157,9 @@ export function inspectDocument(html: string): InspectionResult {
     if (SCRIPT_SKIP_TYPES.has(type)) continue
     const bodyStart = (match.index ?? 0) + raw.length
     const close = masked.indexOf('</script', bodyStart)
-    const body = masked.slice(bodyStart, close === -1 ? masked.length : close)
+    // Syntax comes from the ORIGINAL body — masked blanks it. Line numbers
+    // agree between the two views, so `line` still points at the tag.
+    const body = html.slice(bodyStart, close === -1 ? html.length : close)
     const failure = checkScriptSyntax(body, type === 'module')
     if (failure !== null) issues.push({ line, message: `script does not parse: ${failure}` })
   }

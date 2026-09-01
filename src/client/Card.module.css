@@ -32,48 +32,61 @@
   font: var(--dsw-font-xs-13);
 }
 
-/* Diagonal sheen on the loader text while the document streams: the same
- * brand band as the frame sweep, scaled down to the text line. Overlay
- * blend keeps the text readable; the band is translucent and passes
- * through on a slow 4.8s cadence, gated under reduced-motion. */
-.summarySweep {
-  position: relative;
-  overflow: hidden;
+/* Small wave on the loader text while the document streams: each glyph bobs
+ * ~1.5px with a per-glyph stagger, one gentle wave traveling left to right
+ * in reading direction. Per-word inline blocks keep wrapping at word
+ * boundaries; the bob is a transform-only keyframe, gated under
+ * reduced-motion. */
+.summaryWave {
+  display: inline-block;
 }
 
-.summarySweep::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    transparent 30%,
-    var(--dsw-static-deepseek-200) 50%,
-    transparent 70%
-  );
-  opacity: 0.40;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-  transform: translate3d(-110%, 0, 0);
-  animation: text-sweep 2.4s linear infinite;
+.waveWord {
+  display: inline-block;
+  white-space: nowrap;
 }
 
-@keyframes text-sweep {
-  to {
-    transform: translate3d(200%, 0, 0);
+.waveGlyph {
+  display: inline-block;
+  animation: glyph-wave 1.4s ease-in-out infinite;
+}
+
+@keyframes glyph-wave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-1.5px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .summarySweep::after {
+  .waveGlyph {
     animation: none;
-    opacity: 0;
   }
+}
+
+/* Screen-reader-only twin of the waved label: visually hidden, still read
+ * as one whole message. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .separator {
   flex: none;
-  width: 8px;
+  /* Breathing room before the loader/summary: 3× the row gap so a waving
+   * loading message sits clear of the title text. */
+  width: 24px;
 }
 
 /* Load-failure notice beside the summary: the warn register over the same
@@ -107,6 +120,19 @@
 /* Anchors the sweep overlay over the frame without affecting its layout. */
 .frameWrap {
   position: relative;
+}
+
+/* Fullscreen: the wrapper is the fullscreen surface. The frame's measured
+ * inline height yields to the viewport (!important beats the inline style,
+ * and the measurement re-lands on exit), and the layer-1 ground keeps
+ * transparent-canvas documents legible against the black backdrop. */
+.frameWrap:fullscreen {
+  background: var(--dsw-alias-bg-layer-1, #fff);
+}
+
+.frameWrap:fullscreen .frame {
+  height: 100% !important;
+  border-radius: 0;
 }
 
 /* Diagonal sheen crossing the whole frame while the document streams: a
