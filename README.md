@@ -21,7 +21,7 @@ Full-length demos, one per artifact type:
 
 ## Install
 
-Requires Node ^22.19 or >=24 and a DeepSeek Harness installation:
+Requires Node ^22.19 or >=24 and a DeepSeek Harness installation on `0.1.2-alpha.3` or newer (older builds: see [Harness version](#harness-version) below):
 
 ```sh
 # install into the default web profile
@@ -32,6 +32,18 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 ```
 
 The first run fails with an "Add the package to allowBuilds" hint. That's pnpm's supply-chain gate blocking the `prepare` build until it's allowlisted; the hint carries the exact key, keyed on the codeload URL and the resolved commit. Paste that block under `allowBuilds:` in `~/.dsh/profiles/<your-profile>/pnpm-workspace.yaml` and re-run. Keys pin the commit, so after a new upstream push, reinstalling prints a fresh hint to paste.
+
+### Harness version
+
+The default branch tracks the **latest DeepSeek Harness alpha** (`0.1.2-alpha.3` or newer). That release renamed the client `conversationEvents` service to `uiConversation` and moved the Chat Node out of `dsh-client-ui-conversation` into the new `dsh-client-ui-chat` package, so the card cannot mount on builds older than that — the tool parks at `pending (waiting for service: conversationEvents)`.
+
+On an older harness (`0.1.1-rc.2` and earlier pre-alpha builds), install the pre-alpha compatibility branch instead, with a ref fragment:
+
+```sh
+dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-visualizer.git#pre-harness-0.1.2-alpha3-compat'
+```
+
+That branch is the last state of the plugin built against the pre-`0.1.2-alpha.3` client API. It is frozen — new features land on the default branch only — so upgrading the harness is the way forward.
 
 ### Or Install from a local checkout
 
