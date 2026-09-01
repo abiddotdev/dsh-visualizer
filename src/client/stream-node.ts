@@ -11,7 +11,7 @@
 
 import type {
   ConversationLocation, ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { extractStreamArgs } from './partial-args.ts'
 
 /** Wire Tool name this package's cards key on. */
@@ -61,7 +61,7 @@ interface StreamState {
   readonly finalized: boolean
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     /** Live visualizer streaming cards of one Assistant step. */
     'visualizer-stream': GenerativeStreamChatData
