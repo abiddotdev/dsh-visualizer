@@ -11,6 +11,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls each plugin's Context / SlotMap merges into the program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { StreamCard } from './StreamCard.tsx'
 import { ResultRow } from './ResultRow.tsx'
@@ -33,7 +34,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'visualizer'
 
 /** Required services: the slot registry, the card's copy, and the conversation-event engine. */
-export const inject = ['slots', 'locale', 'conversationEvents']
+export const inject = ['slots', 'locale', 'uiConversation']
 
 /**
  * Client plugin body: register the `visualizer` dictionaries, the live
@@ -45,7 +46,7 @@ export const inject = ['slots', 'locale', 'conversationEvents']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-visualizer: dictionaries')
 
-  ctx.conversationEvents.register(generativeStreamDefinition)
+  ctx.uiConversation.events.register(generativeStreamDefinition)
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,
