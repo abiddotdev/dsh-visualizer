@@ -1,52 +1,32 @@
 /**
- * Live-preview Conversation Node for the `visualizer` tool — and, once the
- * host announces `chatPreview`, the settled half too. While the model
- * writes the call, `assistant/chunk` `tool-call-delta` events grow the raw
- * arguments string in this Turn's State; this Definition decodes each
- * prefix into card data the streaming renderer paints. Deltas, `block-end`,
- * and `assistant/message` all feed the same accumulator, so the document is
- * complete and known here well before `tool/call` ever fires — unlike that
- * event's own `arguments`, which is not a "surface" event and can be windowed
- * out of older history, this Node's own accumulated bytes are never at risk
- * of going missing.
+ * Live-and-settled preview Conversation Node for the `visualizer` tool.
+ * While the model writes the call, `assistant/chunk` `tool-call-delta`
+ * events grow the raw arguments string in this Turn's State; this
+ * Definition decodes each prefix into card data the streaming renderer
+ * paints. Deltas, `block-end`, and `assistant/message` all feed the same
+ * accumulator, so the document is complete and known here well before
+ * `tool/call` ever fires — unlike that event's own `arguments`, which is
+ * not a "surface" event and can be windowed out of older loaded history,
+ * this Node's own accumulated bytes are never at risk of going missing.
  *
- * When `tool/call` dispatches, the card does not hide: with `chatPreview`
- * live it keeps rendering through execution, gaining the settled controls
- * the moment `phase` flips to `complete`, and re-anchors past the turn's
- * latest `assistant/message` so it survives compact-mode folding — the
- * keyed `tool.call.toolview` row ({@link ./preview-coverage.ts}) drops to a
- * bare summary line for exactly the calls this card covers. A call that
- * settles with an error is dropped from this card entirely; the row alone
- * shows the failure, as it always has. With `chatPreview` off, dispatch
- * still hides the card outright, ceding to the row exactly as before that
- * feature existed. Replaying the log reproduces the same sequence
- * deterministically.
+ * When `tool/call` dispatches, the card does not hide: it keeps rendering
+ * through execution, gaining the settled controls the moment `phase` flips
+ * to `complete`, and re-anchors past the turn's latest `assistant/message`
+ * so it survives compact-mode folding once the turn's process (including
+ * the keyed `tool.call.toolview` row) collapses — the row
+ * ({@link ./preview-coverage.ts}) drops to a bare summary line for exactly
+ * the calls this card covers. A call that settles with an error is dropped
+ * from this card entirely; the row alone shows the failure. Replaying the
+ * log reproduces the same sequence deterministically.
  */
 
 import type {
   ConversationLocation, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { extractStreamArgs } from './partial-args.ts'
-import { CHAT_PREVIEW_BOOT_GLOBAL } from '../shared/chat-preview.ts'
 
 /** Wire Tool name this package's cards key on. */
 export const TOOL_NAME = 'visualizer'
-
-/**
- * Whether the host announced the settled-preview feature: the served page
- * carries a `globalThis` flag the boot table pushes only while `chatPreview`
- * is live ({@link ./boot-table.ts}). Read fresh on every
- * {@link generativeStreamDefinition.buildViewNode} call — same as the share
- * control's `exportShareEnabled` — rather than cached once at plugin
- * `apply()`: the boot script that sets the flag is not guaranteed to have
- * run yet at that early, synchronous point, so a one-time check there can
- * permanently latch "disabled" for the rest of the page's life even though
- * the flag is set moments later.
- * @returns true only where the host announced the feature.
- */
-export function chatPreviewEnabled(): boolean {
-  return typeof (globalThis as unknown as Record<string, unknown>)[CHAT_PREVIEW_BOOT_GLOBAL] === 'string'
-}
 
 /** Fractional anchor offset past the turn's latest assistant message. The
  * harness's own synthetic offsets end at 0.1 (`finalizedFollowup`, the
@@ -110,7 +90,7 @@ interface StreamState {
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
-    /** Live (and, once settled with chatPreview live, complete) visualizer cards of one turn. */
+    /** Live and settled visualizer cards of one turn. */
     'visualizer-stream': GenerativeStreamChatData
   }
 }
@@ -211,7 +191,7 @@ function closedBoundary(location: ConversationLocation | undefined): boolean {
   return (location.kind === 'step' || location.kind === 'turn') && location.turn.status === 'closed'
 }
 
-/** The streaming (and settled-preview) live-card Conversation Node Definition. */
+/** The streaming (and settled) live-card Conversation Node Definition. */
 export const generativeStreamDefinition: ConversationNodeDefinition<StreamState> = {
   kind: 'visualizer-stream',
   target: 'chat',
@@ -303,7 +283,6 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
   buildViewNode: (context) => {
     const state = context.state
     if (state === undefined) return null
-    const enhanced = chatPreviewEnabled()
     const interrupted = closedBoundary(context.matches.at(-1)?.location ?? context.start?.location)
     // Every block whose arguments decode at all, dispatched or not — used
     // only to tell "nothing ever decoded" (ambiguous, might be a retry in
@@ -325,19 +304,15 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
       }
       decoded.push(card)
       // A call the executor rejected never gets a card here: the row alone
-      // shows the failure, exactly as it always has. Without the
-      // enhancement, dispatch still cedes the flow to the row — the
-      // pre-chatPreview behavior, unchanged.
+      // shows the failure, exactly as it always has.
       if (block.dispatched && block.settled && block.isError) continue
-      if (block.dispatched && !enhanced) continue
       cards.push(card)
     }
     // Past an answer, park the card where compact-mode folding cannot reach
-    // it; before one, its natural position tracks where the call is
-    // happening. Only once the enhancement engages — disabled deployments
-    // never carry a dispatched card past this point, so their anchor stays
-    // exactly as it always was.
-    const anchorSeq = enhanced && state.lastMessageSeq !== null
+    // it — the row it covers folds away with the rest of the turn's
+    // process, so the card must not share its anchor; before one, its
+    // natural position tracks where the call is happening.
+    const anchorSeq = state.lastMessageSeq !== null
       ? state.lastMessageSeq + ANSWER_ANCHOR_OFFSET
       : (state.anchorSeq || context.matches[0]?.event.seq || 0)
     const base = {
@@ -355,9 +330,8 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
         ? null
         : { ...base, visibility: 'hidden', data: { cards: [] } }
     }
-    // Something decoded, but every one of it is currently owned elsewhere
-    // (dispatched-without-enhancement, or settled with an error): hiding is
-    // unconditional and safe here, a one-way transition rather than a
+    // Something decoded, but every one of it settled with an error: hiding
+    // is unconditional and safe here, a one-way transition rather than a
     // retry's ambiguous "nothing yet."
     return cards.length > 0
       ? { ...base, visibility: 'visible', data: { cards } }

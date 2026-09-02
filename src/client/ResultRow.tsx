@@ -6,8 +6,8 @@
 // control materializes the same bytes client-side as a Blob; it appears only
 // on a settled successful call, because a partial download is corrupt by
 // definition. When the streaming chat node covers the call — from dispatch
-// through settlement, while chatPreview is live — the row drops to a bare
-// summary line and hands it back the moment that card stops covering it.
+// through settlement — the row drops to a bare summary line and hands it
+// back the moment that card stops covering it.
 
 import { useState } from 'react'
 import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconListPenOutline16, IconShareOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -55,8 +55,8 @@ export function ResultRow({ callId, block, t, inputActions }: ResultRowProps) {
   // exactly while the row owns the document: settled, clean, and uncovered.
   const ownsSurface = settledOk && !covered
   // A running row owns its frame only while nothing else is covering the
-  // call; once the streaming card retains coverage (chatPreview live, right
-  // from dispatch), the row goes quiet until that card releases it.
+  // call; once the streaming card retains coverage, right from dispatch,
+  // the row goes quiet until that card releases it.
   const runningOwnsSurface = !settled && !covered
   const controls = useSettledDocument({ title: view?.title ?? null, html: view?.html ?? '', inputActions })
 

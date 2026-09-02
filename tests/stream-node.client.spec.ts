@@ -1,15 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type {
   ChatConversationViewNode, ConversationEventInput, ConversationNodeDefinition,
   ConversationViewBuilder, ConversationViewDefinition,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
 import { generativeStreamDefinition, type GenerativeStreamChatData } from '../src/client/stream-node.ts'
-import { CHAT_PREVIEW_BOOT_GLOBAL } from '../src/shared/chat-preview.ts'
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 class TestEventDefinitions {
   entries(): readonly ConversationNodeDefinition[] {
@@ -125,7 +120,7 @@ describe('visualizer-stream node', () => {
     expect(node(value)?.key).toBe(streaming?.key)
   })
 
-  it('hides the card when the tool/call dispatches, ceding the flow to the keyed toolview row', () => {
+  it('keeps rendering once the tool/call dispatches, pending settlement', () => {
     const value = assembler([
       ...streamPrefix(1),
       at(5, 'assistant/message', {
@@ -134,8 +129,10 @@ describe('visualizer-stream node', () => {
       }),
       at(6, 'tool/call', { callId: 'call-1', name: 'visualizer', turn: 1, step: 1, arguments: CALL_ARGS }),
     ])
-    expect(node(value)?.visibility).toBe('hidden')
-    expect(data(value)?.cards).toEqual([])
+    expect(node(value)?.visibility).toBe('visible')
+    expect(data(value)?.cards).toEqual([
+      { phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html, loadingMessages: [], callId: 'call-1' },
+    ])
   })
 
   it('marks an unterminated stream interrupted when the step closes without a final message', () => {
@@ -179,12 +176,6 @@ describe('visualizer-stream node', () => {
     const replayed = data(assembler(events))
     expect(replayed?.cards).toEqual([{ phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html, loadingMessages: [], callId: 'call-1' }])
   })
-})
-
-describe('visualizer-stream node with chatPreview live', () => {
-  function enable(): void {
-    vi.stubGlobal(CHAT_PREVIEW_BOOT_GLOBAL, '1')
-  }
 
   const dispatchEvent = (seq: number, callId = 'call-1'): ConversationEventInput =>
     at(seq, 'tool/call', { callId, name: 'visualizer', turn: 1, step: 1, arguments: CALL_ARGS })
@@ -197,17 +188,7 @@ describe('visualizer-stream node with chatPreview live', () => {
     message: { id: 'm1', role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'visualizer', arguments: JSON.stringify(CALL_ARGS) }] },
   })
 
-  it('keeps rendering once dispatched, pending settlement', () => {
-    enable()
-    const value = assembler([...streamPrefix(1), finalMessage(5), dispatchEvent(6)])
-    expect(node(value)?.visibility).toBe('visible')
-    expect(data(value)?.cards).toEqual([
-      { phase: 'complete', title: 'Dash', height: 320, html: CALL_ARGS.html, loadingMessages: [], callId: 'call-1' },
-    ])
-  })
-
   it('keeps rendering with settled controls once tool/result lands clean', () => {
-    enable()
     const value = assembler([...streamPrefix(1), finalMessage(5), dispatchEvent(6), settleEvent(7)])
     expect(node(value)?.visibility).toBe('visible')
     expect(data(value)?.cards).toEqual([
@@ -216,27 +197,18 @@ describe('visualizer-stream node with chatPreview live', () => {
   })
 
   it('withdraws the card once the call settles with an error, leaving the row to show it', () => {
-    enable()
     const value = assembler([...streamPrefix(1), finalMessage(5), dispatchEvent(6), settleEvent(7, 'call-1', true)])
     expect(node(value)?.visibility).toBe('hidden')
     expect(data(value)?.cards).toEqual([])
   })
 
   it('anchors past the turn\'s latest assistant message once dispatched', () => {
-    enable()
     const value = assembler([...streamPrefix(1), finalMessage(5), dispatchEvent(6)])
     expect(node(value)?.anchorSeq).toBe(5.05)
   })
 
   it('keeps the natural anchor while still streaming, before any answer', () => {
-    enable()
     const value = assembler(streamPrefix(1))
     expect(node(value)?.anchorSeq).toBe(4)
-  })
-
-  it('still hides on dispatch when the host never announced the feature', () => {
-    const value = assembler([...streamPrefix(1), finalMessage(5), dispatchEvent(6)])
-    expect(node(value)?.visibility).toBe('hidden')
-    expect(data(value)?.cards).toEqual([])
   })
 })

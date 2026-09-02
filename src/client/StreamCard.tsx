@@ -4,11 +4,10 @@
 // postMessage replaces, the frame grows with the measured content, scripts
 // run exactly once at the phase-complete commit, and an interrupted stream
 // keeps its last painted partial without ever running scripts. Once
-// `tool/call` dispatches, the card either keeps rendering right through
-// settlement (chatPreview live: it retains coverage so the keyed
-// tool.call.toolview row drops to a bare summary) or hides outright, ceding
-// to the row exactly as before that feature existed — the two surfaces never
-// double-render either way.
+// `tool/call` dispatches, the card keeps rendering right through
+// settlement, retaining coverage so the keyed tool.call.toolview row drops
+// to a bare summary for exactly the calls this card covers — the two
+// surfaces never double-render.
 
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -128,9 +127,9 @@ function LiveDoc({ card, t, inputActions }: {
   // cycling; composing/streaming fallbacks show no wave.
   const isLoaderText = card.phase === 'streaming' && messages.length > 0
   // The document is settled and controllable once the phase flips to
-  // complete — dispatch alone (chatPreview live) does not gate this: the
-  // html is already final and safe to copy/download/share the moment it
-  // decodes clean, whether or not the executor has confirmed it yet.
+  // complete — dispatch alone does not gate this: the html is already final
+  // and safe to copy/download/share the moment it decodes clean, whether or
+  // not the executor has confirmed it yet.
   const settledOk = card.phase === 'complete'
 
   return (

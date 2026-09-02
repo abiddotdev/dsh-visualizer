@@ -1,12 +1,12 @@
 /**
  * Streaming inline HTML card, browser half: the `visualizer` dictionaries,
  * the `visualizer-stream` Chat Node fed by streamed `visualizer` call
- * arguments — which, once the host announces `chatPreview`, keeps rendering
- * right through settlement instead of handing off — and the keyed
- * `visualizer` Tool row that otherwise takes over once the call dispatches.
- * The surfaces are inert until their tool exists: sessions whose presets do
- * not mount this package's host half never produce such calls, and this
- * half composes no host behavior at all.
+ * arguments — which keeps rendering right through settlement rather than
+ * handing off — and the keyed `visualizer` Tool row, which shows only a bare
+ * summary for exactly the calls that node covers. The surfaces are inert
+ * until their tool exists: sessions whose presets do not mount this
+ * package's host half never produce such calls, and this half composes no
+ * host behavior at all.
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
