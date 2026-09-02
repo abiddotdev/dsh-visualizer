@@ -85,7 +85,7 @@ type ToolCallEvent = Extract<WireEvent, { type: 'tool/call' }>
  * The mixed accessor still registers the listener on this plugin's fiber —
  * the one property an untyped call must keep.
  */
-type LooseOn = (name: string, listener: (...args: unknown[]) => void) => () => boolean
+export type LooseOn = (name: string, listener: (...args: unknown[]) => void) => () => boolean
 
 /** One streamed tool-call block's accumulating state; the host mirror of the client's fold. */
 interface WireBlock {

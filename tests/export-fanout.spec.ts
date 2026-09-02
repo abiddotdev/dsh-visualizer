@@ -308,7 +308,9 @@ describe('export fanout', () => {
   })
 
   it('announces the share page on the boot injection table, only while enabled', async () => {
-    const enabled = await setup()
+    // chatPreview is off in both setups: this test's subject is the exports
+    // row alone, and the chat-preview announcement has its own spec.
+    const enabled = await setup({ chatPreview: false })
     const table: unknown[] = []
     ;(enabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
       .emit('webserver/index-inject', table)
@@ -320,7 +322,7 @@ describe('export fanout', () => {
     expect(typeof row.value).toBe('string')
     expect((row.value as string).length).toBeGreaterThan(15)
 
-    const disabled = await setup({ shareArtifacts: false })
+    const disabled = await setup({ shareArtifacts: false, chatPreview: false })
     const empty: unknown[] = []
     ;(disabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
       .emit('webserver/index-inject', empty)

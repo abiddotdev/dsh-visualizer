@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { composeGuideText, composeModuleDetail, GUIDE_MODULE_IDS } from './guide/index.ts'
 import type { GuideModule } from './guide/index.ts'
 import { registerExportFanout } from './export-fanout.ts'
+import { announceChatPreview } from './boot-table.ts'
 import { inspectDocument } from './inspect.ts'
 
 export const name = 'visualizer'
@@ -33,13 +34,14 @@ export const inject = ['tools', 'systemPrompt']
 
 /* jscpd:ignore-start — the frame bounds and Config surface are duplicated by
    design across the package's two planes; see the mirrored copies in
-   src/client/ResultRow.tsx. */
+   src/client/settled-document.ts. */
 /** Byte length of one rendered document; bounds session-log growth per call. */
 const DEFAULT_MAX_HTML_BYTES = 262_144
 /**
  * Frame viewport bounds and default, in pixels; presentation invariants, not
- * deployment choices. Mirrored by src/client/ResultRow.tsx — the client
- * bundle cannot import this half, so a change here must land there too.
+ * deployment choices. Mirrored by src/client/settled-document.ts — the
+ * client bundle cannot import this half, so a change here must land there
+ * too.
  */
 const MIN_FRAME_HEIGHT_PX = 50
 const MAX_FRAME_HEIGHT_PX = 2_000
@@ -74,6 +76,15 @@ export interface Config {
    * it like a password (long and unguessable).
    */
   shareKey: string
+  /**
+   * Whether a settled call's document renders as its own chat node in the
+   * flow — visible even in compact transcript mode, where the tool row folds
+   * away with the turn's process — while the covered row keeps a bare
+   * summary line. `false` restores the row-owned settled frame. Announced to
+   * the client half through the boot table, so changes apply on the next
+   * page load.
+   */
+  chatPreview: boolean
 }
 
 /**
@@ -110,6 +121,7 @@ export const Config: z<Config> = z.object({
   artifactDir: z.string().default(defaultArtifactDir()),
   artifactRetentionDays: z.number().default(30),
   shareKey: z.string().default(''),
+  chatPreview: z.boolean().default(true),
 })
 
 /** The shape after schemastery applied the defaults. */
@@ -212,6 +224,12 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
       })
     })
   }
+
+  // Settled previews in the chat flow: the boot-table announcement reaches
+  // only profiles with a web server — elsewhere (TUI, headless) no chat UI
+  // exists and the announcement would be dead weight. Independent of the
+  // fanout above: the preview needs no serve route.
+  if (config.chatPreview) announceChatPreview(ctx)
 
   // Only when sharing is mounted: the fanout already writes every render to
   // disk under a shareable name, so an extra file-writing tool call after a
