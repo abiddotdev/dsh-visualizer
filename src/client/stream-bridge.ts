@@ -119,6 +119,20 @@ export class StreamFrameController {
     this.frame.removeEventListener('load', this.onLoad)
   }
 
+  /** Toggle the frame's comment mode; ignored while the stream runs.
+   * @param on - true to arm picking, false to disarm. */
+  setAnnotate(on: boolean): void {
+    if (!this.done) return
+    this.post({ __dshGui: true, type: 'annotate', on })
+  }
+
+  /** Sync the frame's mark set to the card's live annotations.
+   * @param ids - ids of picks that keep their overlay mark. */
+  setAnnotationMarks(ids: readonly string[]): void {
+    if (!this.done) return
+    this.post({ __dshGui: true, type: 'annotate-marks', ids: [...ids] })
+  }
+
   private flush(ts: number): void {
     if (this.done || this.pending === null) return
     const html = this.pending

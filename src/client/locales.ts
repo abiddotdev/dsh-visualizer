@@ -28,6 +28,15 @@ export const zh = {
   'row.share': '打开独立页面',
   'row.scriptError': '库加载失败，交互可能不可用',
   'row.runtimeError': '脚本错误：',
+  'row.commentMode': '批注模式',
+  'row.commentModeTitle': '批注模式 — 点击元素或框选区域添加批注，按 Esc 退出',
+  'row.commentElement': '元素',
+  'row.commentArea': '区域',
+  'row.commentPlaceholder': '写点意见…',
+  'row.commentInputLabel': '批注内容',
+  'row.commentRemove': '删除批注',
+  'row.commentSend': '发送',
+  'row.commentClear': '清空',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -56,6 +65,15 @@ export const en = {
   'row.share': 'Open standalone page',
   'row.scriptError': 'A library failed to load; interactivity may be unavailable',
   'row.runtimeError': 'Script error: ',
+  'row.commentMode': 'Comment mode',
+  'row.commentModeTitle': 'Comment mode — Click an element or drag an area to comment; Esc exits',
+  'row.commentElement': 'Element',
+  'row.commentArea': 'Area',
+  'row.commentPlaceholder': 'Write a note…',
+  'row.commentInputLabel': 'Comment note',
+  'row.commentRemove': 'Remove comment',
+  'row.commentSend': 'Send',
+  'row.commentClear': 'Clear',
 } as const
 
 /** Dictionary keys of this namespace. */

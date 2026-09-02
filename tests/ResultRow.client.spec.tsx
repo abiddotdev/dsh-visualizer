@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -14,7 +14,6 @@ import { STREAM_SHELL } from '../src/client/shell.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
 import { en } from '../src/client/locales.ts'
-
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -237,9 +236,11 @@ describe('ResultRow', () => {
     const wrapper = document.querySelector('[class*="frameWrap"]')
     if (wrapper === null) throw new Error('frame wrapper not rendered')
 
-    // The control sits before Copy and fullscreens the frame's wrapper.
+    // The control sits before Copy (Comment mode between them) and
+    // fullscreens the frame's wrapper.
     const copy = screen.getByRole('button', { name: 'Copy HTML' })
-    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
+    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Comment mode')
+    expect(copy.previousElementSibling?.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
     await act(async () => { screen.getByRole('button', { name: 'Fullscreen' }).click() })
     expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.instances[0]).toBe(wrapper)
@@ -299,5 +300,107 @@ describe('ResultRow', () => {
       source: frame.contentWindow,
     }))
     expect(submit).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows no comment controls until the call settles expanded', () => {
+    render(<ResultRow {...props(runningBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(screen.queryByRole('button', { name: 'Comment mode' })).toBeNull()
+
+    cleanup()
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(screen.getByRole('button', { name: 'Comment mode' })).toBeTruthy()
+    act(() => { screen.getByText('Dash').click() })
+    expect(screen.queryByRole('button', { name: 'Comment mode' })).toBeNull()
+  })
+
+  it('collects picks as comment rows and sends one composed widget prompt', async () => {
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    render(<ResultRow {...{ ...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC }))), inputActions: { setDraft, submit } }} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    // No bar before any pick.
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          __dshGui: true, type: 'annotation',
+          pick: { id: 'a1', kind: 'element', selector: 'p', tag: 'p', snippet: '<p>revenue</p>', text: 'revenue' },
+        },
+        source: frame.contentWindow,
+      }))
+    })
+    const bar = screen.getByTestId('comment-bar')
+    expect(bar).toBeTruthy()
+    expect(screen.getByText('revenue')).toBeTruthy()
+
+    // Write a note, then Send.
+    const note = screen.getByRole('textbox', { name: 'Comment note' })
+    await act(async () => { fireEvent.change(note, { target: { value: 'make this bold' } }) })
+    await act(async () => { screen.getByRole('button', { name: 'Send' }).click() })
+    expect(submit).toHaveBeenCalledTimes(1)
+    const draft = setDraft.mock.calls[0]![0] as string
+    expect(draft).toContain('[widget] ')
+    expect(draft).toContain('\n\n1. make this bold\n')
+    expect(draft).toContain('element: <p> p')
+    expect(draft).toContain('markup: <p>revenue</p>')
+    // Send clears the bar and exits comment mode.
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('removes one pick from the bar and clears all', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const pick = (id: string): void => {
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { __dshGui: true, type: 'annotation', pick: { id, kind: 'element', selector: 'p', tag: 'p', snippet: '<p>x</p>', text: 'x' } },
+          source: frame.contentWindow,
+        }))
+      })
+    }
+    pick('a1')
+    pick('a2')
+    expect(screen.getAllByRole('textbox', { name: 'Comment note' })).toHaveLength(2)
+
+    act(() => { screen.getAllByRole('button', { name: 'Remove comment' })[0]!.click() })
+    expect(screen.getAllByRole('textbox', { name: 'Comment note' })).toHaveLength(1)
+
+    act(() => { screen.getByRole('button', { name: 'Clear' }).click() })
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+  })
+
+  it('drops malformed annotation posts silently', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'annotation', pick: { id: '', kind: 'weird' } },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+  })
+
+  it('reverts the mode button when the frame exits on Escape', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => { screen.getByRole('button', { name: 'Comment mode' }).click() })
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('true')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'annotateExited' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('false')
   })
 })

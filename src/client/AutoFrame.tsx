@@ -9,7 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StreamFrameController } from './stream-bridge.ts'
 import { STREAM_SHELL } from './shell.ts'
+import { parseAnnotation, WIDGET_PROMPT_MAX_CHARS } from './annotate.ts'
 import type { WidgetStorage } from './widget-storage.ts'
+
+// Re-exported so every existing `WIDGET_PROMPT_MAX_CHARS` import keeps
+// working; the value's home is annotate.ts, which also needs it for its own
+// prompt-length budget and cannot import it back from here without a cycle.
+export { WIDGET_PROMPT_MAX_CHARS }
 
 /** Live phase of the document this frame renders. */
 export type AutoFramePhase = 'streaming' | 'complete'
@@ -27,8 +33,6 @@ export const START_FRAME_HEIGHT_PX = 32
 
 /** Minimum gap between accepted widget prompts; bounds agent self-looping. */
 export const WIDGET_PROMPT_MIN_INTERVAL_MS = 3_000
-/** Longest prompt text accepted from a widget. */
-export const WIDGET_PROMPT_MAX_CHARS = 4_000
 /** Longest link URL accepted from a widget. */
 export const WIDGET_URL_MAX_CHARS = 2_048
 /** Longest script source URL accepted from a load-failure report. */
@@ -37,6 +41,8 @@ export const SCRIPT_ERROR_SRC_MAX_CHARS = 512
 export const RUNTIME_ERROR_MAX_CHARS = 300
 /** Most runtime-error reports a card keeps; bursts beyond it add nothing. */
 export const RUNTIME_ERROR_MAX_REPORTS = 3
+/** Most picks one card keeps; further frame posts are dropped host-side. */
+export const ANNOTATION_MAX_PER_CARD = 20
 
 /** Prefix of the host design tokens forwarded into the frame. */
 const THEME_TOKEN_PREFIX = '--dsw-'
@@ -81,13 +87,21 @@ export interface AutoFrameProps {
   readonly onRuntimeError?: ((message: string, line: number | null) => void) | undefined
   /** Session-scoped store answering `window.storage`; absent disables it. */
   readonly storage?: WidgetStorage | undefined
+  /** Comment-mode state pushed into the frame; false/undefined leaves it off. */
+  readonly annotate?: boolean | undefined
+  /** A pick completed in the frame; payload validated by the dispatcher. */
+  readonly onAnnotation?: ((pick: unknown) => void) | undefined
+  /** The frame left comment mode on its own (Escape key). */
+  readonly onAnnotateExited?: (() => void) | undefined
+  /** Ids of picks that keep their overlay mark in the frame. */
+  readonly annotateMarks?: readonly string[] | undefined
 }
 
 /**
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, onRuntimeError, storage }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, onRuntimeError, storage, annotate, onAnnotation, onAnnotateExited, annotateMarks }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
@@ -96,15 +110,34 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   const onOpenLinkRef = useRef(onOpenLink)
   const onScriptErrorRef = useRef(onScriptError)
   const onRuntimeErrorRef = useRef(onRuntimeError)
+  const onAnnotationRef = useRef(onAnnotation)
+  const onAnnotateExitedRef = useRef(onAnnotateExited)
   const storageRef = useRef(storage)
   const lastPromptAtRef = useRef(0)
   const runtimeErrorCountRef = useRef(0)
+  const annotationCountRef = useRef(0)
 
   useEffect(() => { onPromptRef.current = onPrompt }, [onPrompt])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
   useEffect(() => { onScriptErrorRef.current = onScriptError }, [onScriptError])
   useEffect(() => { onRuntimeErrorRef.current = onRuntimeError }, [onRuntimeError])
+  useEffect(() => { onAnnotationRef.current = onAnnotation }, [onAnnotation])
+  useEffect(() => { onAnnotateExitedRef.current = onAnnotateExited }, [onAnnotateExited])
   useEffect(() => { storageRef.current = storage }, [storage])
+
+  // Comment mode rides the settled bridge only: setAnnotate posts nothing
+  // while the stream runs, and the buffered queue drains once the frame
+  // settles, so a toggle before settle still lands after commit. Turning
+  // the mode back on re-syncs marks for picks kept from earlier.
+  const annotateMarksRef = useRef(annotateMarks)
+  useEffect(() => {
+    controller.current?.setAnnotate(annotate === true)
+    if (annotate === true) controller.current?.setAnnotationMarks(annotateMarksRef.current ?? [])
+  }, [annotate])
+  useEffect(() => {
+    annotateMarksRef.current = annotateMarks
+    controller.current?.setAnnotationMarks(annotateMarks ?? [])
+  }, [annotateMarks])
 
   const attach = useCallback((frame: HTMLIFrameElement | null): void => {
     controller.current?.destroy()
@@ -145,6 +178,7 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
           id?: unknown
           key?: unknown
           value?: unknown
+          pick?: unknown
         }
         | null
       if (data === null || typeof data !== 'object' || data.__dshGui !== true) return
@@ -191,6 +225,19 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
         if (runtimeErrorCountRef.current > RUNTIME_ERROR_MAX_REPORTS) return
         const line = typeof data.line === 'number' && Number.isFinite(data.line) && data.line > 0 ? data.line : null
         onRuntimeErrorRef.current?.(data.message, line)
+        return
+      }
+      if (data.type === 'annotation') {
+        // Frame content is model-derived; bound every field again here.
+        if (annotationCountRef.current >= ANNOTATION_MAX_PER_CARD) return
+        const pick = parseAnnotation(data.pick)
+        if (pick === null) return
+        annotationCountRef.current += 1
+        onAnnotationRef.current?.(pick)
+        return
+      }
+      if (data.type === 'annotateExited') {
+        onAnnotateExitedRef.current?.()
         return
       }
       if (data.type === 'storage-request') {

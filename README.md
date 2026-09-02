@@ -10,6 +10,8 @@ One package ships both halves: the model-facing tool (`lib/index.js`) and the We
 
 Every generation is downloadable from the card as a self-contained `.html` (or `.svg`) file. No server round-trip.
 
+Settled cards also carry a **comment mode**: toggle the pen control in the row chrome, click any element (or drag a rectangle) inside the frame, and each pick becomes a comment row below the renderer showing the element's selector, markup, and text. Write a note per pick and Send — the picks compose one `[widget]` turn for the model, locator bundle included, so it can edit the exact elements you pointed at. Esc or the toggle exits; the document runs pristine while mode is off.
+
 Full-length demos, one per artifact type:
 
 1. [Pull request flow overview](assets/demos/bitbucket_datacenter_full.webm) — diagram
@@ -44,6 +46,8 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 ```
 
 That branch is the last state of the plugin built against the pre-`0.1.2-alpha.3` client API. It is frozen — new features land on the default branch only — so upgrading the harness is the way forward.
+
+**Known issue — Compact transcript view hides settled cards.** `0.1.2-alpha.3` added a "Transcript view" setting (Normal/Compact) that defaults to **Compact**: once a turn closes, the harness folds every tool call in it — including a settled visualizer card — behind a "N tool calls" disclosure line, alongside every other tool. There's currently no extension point for a plugin to opt a call out of that fold. Workaround: switch **Settings → Transcript view → Normal** to keep rendered cards always visible. Tracked upstream for a real fix.
 
 ### Or Install from a local checkout
 
