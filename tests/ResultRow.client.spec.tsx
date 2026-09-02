@@ -93,6 +93,17 @@ describe('ResultRow', () => {
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
   })
 
+  it('hides its frame while the streaming card covers the call, and shows it once released', async () => {
+    const { retainCoverage, releaseCoverage } = await import('../src/client/preview-coverage.ts')
+    retainCoverage('c1')
+    render(<ResultRow {...props(runningBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(document.querySelector('iframe')).toBeNull()
+    expect(screen.getByText('Rendering…')).toBeTruthy()
+
+    act(() => { releaseCoverage('c1') })
+    expect(document.querySelector('iframe')).not.toBeNull()
+  })
+
   it('opens the served export page from the settled row, named for the document', () => {
     vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)

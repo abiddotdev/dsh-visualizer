@@ -175,24 +175,6 @@
   }
 }
 
-/* Settled-preview node header: the tool row's inline cluster without the
- * disclosure chrome — same pieces, plain flex — because the chat flow owns
- * this card's visibility and nothing here collapses. */
-.previewHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-}
-
-.previewHeader .summary,
-.previewHeader .separator,
-.previewHeader .scriptError,
-.previewHeader .alertIcon,
-.previewHeader .download {
-  flex: none;
-}
-
 /* Quiet inline action, the deliverables-row pattern: tertiary label over
  * transparent ground, interactive hover fill, inset focus ring. */
 .download {

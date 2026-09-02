@@ -1,23 +1,26 @@
-// visualizer-stream chat node: the live half of the visualizer
-// presentation. Each card drives one content-sized shell frame (AutoFrame) —
-// markup arrives as coalesced postMessage replaces, the frame grows with the
-// measured content, scripts run exactly once at the phase-complete commit,
-// and an interrupted stream keeps its last painted partial without ever
-// running scripts. The card hides itself from the flow once the keyed
-// tool.call.toolview row takes over, so this component only ever renders
-// live evidence.
+// visualizer-stream chat node: the one surface that carries a visualizer
+// call from its first streamed byte through settlement. Each card drives one
+// content-sized shell frame (AutoFrame) — markup arrives as coalesced
+// postMessage replaces, the frame grows with the measured content, scripts
+// run exactly once at the phase-complete commit, and an interrupted stream
+// keeps its last painted partial without ever running scripts. Once
+// `tool/call` dispatches, the card either keeps rendering right through
+// settlement (chatPreview live: it retains coverage so the keyed
+// tool.call.toolview row drops to a bare summary) or hides outright, ceding
+// to the row exactly as before that feature existed — the two surfaces never
+// double-render either way.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
-import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
-import { useFrameFullscreen } from './fullscreen.ts'
-import { exportShareEnabled, openExportPage } from './share.ts'
-import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
-import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
+import { downloadDocument } from './download.ts'
+import { openWidgetLink } from './bridge-actions.ts'
+import { useSettledDocument } from './settled-document.ts'
+import { retainCoverage, releaseCoverage } from './preview-coverage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
+import { CommentBar } from './CommentBar.tsx'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Chat Node slot. */
@@ -80,19 +83,24 @@ function WaveText({ label }: { label: string }): ReactNode[] {
 }
 
 /** One live document card and its shell frame. */
-function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
+function LiveDoc({ card, t, inputActions }: {
+  card: GenerativeCardData
+  t: Translate
+  inputActions: StreamCardProps['inputActions']
+}) {
   const [expanded, setExpanded] = useState(true)
-  const [copied, setCopied] = useState(false)
-  // First failed external script wins: one notice per card, later failures
-  // add nothing.
-  const [failedSrc, setFailedSrc] = useState<string | null>(null)
-  // First runtime error message wins; the first is the defect, the rest
-  // repeat it.
-  const [runtimeError, setRuntimeError] = useState<string | null>(null)
-  const onRuntimeError = useCallback((message: string): void => {
-    setRuntimeError(current => current ?? message)
-  }, [])
   const title = card.title ?? t('card.title')
+  const controls = useSettledDocument({ title: card.title, html: card.html, inputActions })
+  // A card whose call dispatched is this callId's frame's primary home; the
+  // keyed row drops to a bare summary for exactly this window, and hands the
+  // frame back the moment this card unmounts (settle-with-error excludes it
+  // upstream, or the feature is disabled and it never mounts at all).
+  useEffect(() => {
+    const callId = card.callId
+    if (callId === undefined) return
+    retainCoverage(callId)
+    return () => { releaseCoverage(callId) }
+  }, [card.callId])
   // Model-authored loading messages rotate on a fixed dwell while the
   // document streams; the generic phase label is the fallback when the
   // model passed none.
@@ -110,10 +118,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // Loading messages always read as in-progress: append an ellipsis unless
   // the model already ended its message with one.
   const withEllipsis = (text: string): string =>
-    text === '' || /(?:\u2026|\.\.\.)$/.test(text.trimEnd()) ? text : `${text}…`
-  // State follows the document's title: the same title regenerates into the
-  // same scope, and the settled row derives the identical one.
-  const storage = useMemo(() => createWidgetStorage(widgetStorageScope(card.title)), [card.title])
+    text === '' || /(?:…|\.\.\.)$/.test(text.trimEnd()) ? text : `${text}…`
   const summary = card.phase === 'streaming'
     ? withEllipsis(streamingLabel)
     : card.phase === 'interrupted'
@@ -122,13 +127,11 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   // The loader text wave runs only while model-authored messages are
   // cycling; composing/streaming fallbacks show no wave.
   const isLoaderText = card.phase === 'streaming' && messages.length > 0
-  // The typing wave runs for the whole streaming phase — composing and
-  // writing alike — and stops the moment the document settles.
-  // The share control exists only where the host announced its route.
-  const shareable = exportShareEnabled()
-  // Fullscreen rides the frame wrapper; the label follows the document API,
-  // so an Escape pressed inside the frame reverts it without a click.
-  const fullscreen = useFrameFullscreen()
+  // The document is settled and controllable once the phase flips to
+  // complete — dispatch alone (chatPreview live) does not gate this: the
+  // html is already final and safe to copy/download/share the moment it
+  // decodes clean, whether or not the executor has confirmed it yet.
+  const settledOk = card.phase === 'complete'
 
   return (
     <div className={css.card} data-tool="visualizer" data-phase={card.phase}>
@@ -158,14 +161,14 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                   )
                 : summary}
             </span>
-            {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
-            {runtimeError !== null && (
+            {controls.failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
+            {controls.runtimeError !== null && (
               <span className={css.scriptError}>
                 {t('card.runtimeError')}
-                {runtimeError}
+                {controls.runtimeError}
               </span>
             )}
-            {card.phase === 'complete' && (
+            {settledOk && (
               <>
                 {/* The frame must be mounted to hold fullscreen, so this
                  * control rides the expanded row alone; copy, download, and
@@ -174,33 +177,44 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                   <button
                     type="button"
                     className={css.download}
-                    aria-label={fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
-                    title={fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
+                    aria-label={controls.fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
+                    title={controls.fullscreen.active ? t('card.exitFullscreen') : t('card.fullscreen')}
                     onClick={(event) => {
                       event.stopPropagation()
-                      fullscreen.toggle()
+                      controls.fullscreen.toggle()
                     }}
                   >
                     <IconFullscreenOutline16 size={14} />
                   </button>
                 )}
+                {expanded && (
+                  <button
+                    type="button"
+                    className={controls.annotate ? css.downloadActive : css.download}
+                    aria-pressed={controls.annotate}
+                    aria-label={t('row.commentMode')}
+                    title={t('row.commentModeTitle')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      controls.toggleAnnotate()
+                    }}
+                  >
+                    <IconListPenOutline16 size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={css.download}
-                  aria-label={copied ? t('card.copied') : t('card.copy')}
-                  title={copied ? t('card.copied') : t('card.copy')}
+                  aria-label={controls.copied ? t('card.copied') : t('card.copy')}
+                  title={controls.copied ? t('card.copied') : t('card.copy')}
                   onClick={(event) => {
                     event.stopPropagation()
-                    void copyDocument(card.html).then((ok) => {
-                      if (!ok) return
-                      setCopied(true)
-                      window.setTimeout(() => { setCopied(false) }, COPY_FEEDBACK_MS)
-                    })
+                    controls.onCopy()
                   }}
                 >
                   {/* The check mark is the copied confirmation; the accessible
                    * name carries the state change. */}
-                  {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+                  {controls.copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
                 </button>
                 <button
                   type="button"
@@ -214,7 +228,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                 >
                   <IconDownloadOutline16 size={14} />
                 </button>
-                {shareable && (
+                {controls.shareable && (
                   <button
                     type="button"
                     className={css.download}
@@ -222,7 +236,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                     title={t('card.share')}
                     onClick={(event) => {
                       event.stopPropagation()
-                      openExportPage(card.title, card.html)
+                      controls.onShare()
                     }}
                   >
                     <IconShareOutline16 size={14} />
@@ -236,37 +250,52 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
         {/* An interrupted stream keeps its last painted partial; scripts never
          * run. The frame opens at chat-line height regardless of any height
          * argument — measurements own the height, and a short open feels
-         * native. */}
+         * native, for this card's whole life through settlement. */}
         {card.phase !== 'interrupted' && (
-          <div className={css.frameWrap} ref={fullscreen.ref}>
+          <div className={css.frameWrap} ref={controls.fullscreen.ref}>
             <AutoFrame
               title={title}
               html={card.html}
               phase={card.phase === 'complete' ? 'complete' : 'streaming'}
               initialHeight={START_FRAME_HEIGHT_PX}
               className={css.frame}
-              onPrompt={onPrompt}
+              onPrompt={controls.onPrompt}
               onOpenLink={openWidgetLink}
-              onScriptError={setFailedSrc}
-              onRuntimeError={onRuntimeError}
-              storage={storage}
+              onScriptError={controls.onScriptError}
+              onRuntimeError={controls.onRuntimeError}
+              storage={controls.storage}
+              annotate={controls.annotate}
+              onAnnotation={controls.onAnnotation}
+              onAnnotateExited={controls.onAnnotateExited}
+              annotateMarks={controls.annotateMarks}
             />
             {/* The sheen rides only the live phase; a settled or interrupted
              * frame renders plain. */}
             {live && <div className={css.streamSweep} aria-hidden />}
           </div>
         )}
+        {settledOk && (
+          <CommentBar
+            picks={controls.picks}
+            onComment={controls.onComment}
+            onRemove={controls.onRemovePick}
+            onSend={controls.sendAnnotations}
+            onClear={controls.onClearPicks}
+            t={t}
+          />
+        )}
       </DisclosureRow>
     </div>
   )
 }
 
-/** Render this step's live visualizer streaming cards. */
+/** Render this turn's live (and settled-preview) visualizer cards. */
 export function StreamCard({ node, t, inputActions }: StreamCardProps) {
-  const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   return (
     <div className={css.stack}>
-      {node.data.cards.map((card, index) => <LiveDoc key={index} card={card} t={t} onPrompt={onPrompt} />)}
+      {node.data.cards.map((card, index) => (
+        <LiveDoc key={card.callId ?? index} card={card} t={t} inputActions={inputActions} />
+      ))}
     </div>
   )
 }

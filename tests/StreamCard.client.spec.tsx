@@ -235,7 +235,8 @@ describe('StreamCard', () => {
 
     // The control sits before Copy and fullscreens the frame's wrapper.
     const copy = screen.getByRole('button', { name: 'Copy HTML' })
-    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
+    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Comment mode')
+    expect(copy.previousElementSibling?.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
     await flushClick(() => { screen.getByRole('button', { name: 'Fullscreen' }).click() })
     expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.instances[0]).toBe(wrapper)
@@ -488,5 +489,22 @@ describe('StreamCard', () => {
     ])
     expect(document.querySelectorAll('iframe')).toHaveLength(2)
     expect(document.querySelectorAll('[data-tool="visualizer"]')).toHaveLength(2)
+  })
+
+  it('retains coverage for a dispatched call while mounted and releases it on unmount', async () => {
+    const { isPreviewCovered } = await import('../src/client/preview-coverage.ts')
+    const view = render(<StreamCard node={nodeOf([
+      { phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>', callId: 'call-1' },
+    ])} t={t} {...kit} />)
+    expect(isPreviewCovered('call-1')).toBe(true)
+
+    view.unmount()
+    expect(isPreviewCovered('call-1')).toBe(false)
+  })
+
+  it('never retains coverage for a card without a dispatched callId', async () => {
+    const { isPreviewCovered } = await import('../src/client/preview-coverage.ts')
+    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
+    expect(isPreviewCovered('call-1')).toBe(false)
   })
 })
