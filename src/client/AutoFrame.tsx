@@ -9,8 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StreamFrameController } from './stream-bridge.ts'
 import { STREAM_SHELL } from './shell.ts'
-import { parseAnnotation } from './annotate.ts'
+import { parseAnnotation, WIDGET_PROMPT_MAX_CHARS } from './annotate.ts'
 import type { WidgetStorage } from './widget-storage.ts'
+
+// Re-exported so every existing `WIDGET_PROMPT_MAX_CHARS` import keeps
+// working; the value's home is annotate.ts, which also needs it for its own
+// prompt-length budget and cannot import it back from here without a cycle.
+export { WIDGET_PROMPT_MAX_CHARS }
 
 /** Live phase of the document this frame renders. */
 export type AutoFramePhase = 'streaming' | 'complete'
@@ -28,8 +33,6 @@ export const START_FRAME_HEIGHT_PX = 32
 
 /** Minimum gap between accepted widget prompts; bounds agent self-looping. */
 export const WIDGET_PROMPT_MIN_INTERVAL_MS = 3_000
-/** Longest prompt text accepted from a widget. */
-export const WIDGET_PROMPT_MAX_CHARS = 4_000
 /** Longest link URL accepted from a widget. */
 export const WIDGET_URL_MAX_CHARS = 2_048
 /** Longest script source URL accepted from a load-failure report. */

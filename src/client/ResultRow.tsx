@@ -182,7 +182,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
               className={annotate ? css.downloadActive : css.download}
               aria-pressed={annotate}
               aria-label={t('row.commentMode')}
-              title={`Annotate — ${t('row.commentModeHint')}`}
+              title={t('row.commentModeTitle')}
               onClick={(event) => {
                 event.stopPropagation()
                 toggleAnnotate()

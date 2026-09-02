@@ -84,9 +84,10 @@ describe('composeAnnotationPrompt', () => {
     expect(text).not.toContain('2.')
   })
 
-  it('degrades to selector-only under the prompt cap', () => {
+  it('drops markup lines when the full form overflows the prompt cap', () => {
     // Snippets land at the 400-char host bound, so 20 picks force the
-    // degrade path honestly (20 × ~500 > the 4000-char prompt cap).
+    // markup-dropping tier honestly (20 × ~500 > the 4000-char prompt cap),
+    // but each item still stays short enough that this reduced form fits.
     const picks = Array.from({ length: 20 }, (_, i) => pick({
       id: `a${i}`,
       selector: `div:nth-of-type(${i + 1}) > span.marked-item-${i}`,
@@ -95,9 +96,33 @@ describe('composeAnnotationPrompt', () => {
     }, `note ${i} for the element`))
     const text = composeAnnotationPrompt(picks)!
     expect(text.length).toBeLessThanOrEqual(WIDGET_PROMPT_MAX_CHARS)
+    expect(text).toContain('Comments on marked elements:')
     expect(text).toContain('1. note 0 for the element')
     expect(text).toContain('20. note 19 for the element')
     expect(text).not.toContain('markup:')
+  })
+
+  it('keeps the header and only whole items when even the reduced form overflows', () => {
+    // Every field at its host bound: even markup-free items (~800 chars
+    // each with a 500-char note and a 300-char selector) blow well past the
+    // 4000-char cap across 20 picks, forcing the notes-only tier.
+    const picks = Array.from({ length: 20 }, (_, i) => pick({
+      id: `a${i}`,
+      selector: 'div.some-really-long-selector-chain-'.repeat(10).slice(0, 300),
+      snippet: 'x'.repeat(400),
+      text: 'y'.repeat(200),
+    }, 'z'.repeat(500)))
+    const text = composeAnnotationPrompt(picks)!
+    expect(text.length).toBeLessThanOrEqual(WIDGET_PROMPT_MAX_CHARS)
+    // The header survives even though most picks do not.
+    expect(text.startsWith('Please update the rendered document.')).toBe(true)
+    expect(text).toContain(`1. ${'z'.repeat(500)}`)
+    // Every kept item is whole — numbered, with a closed selector
+    // parenthesis — never a mid-line slice ending in a truncated fragment.
+    const items = text.split('\n\n').slice(1)
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.length).toBeLessThan(20)
+    for (const item of items) expect(item).toMatch(/^\d+\. .*\([^()]*\)$/)
   })
 })
 

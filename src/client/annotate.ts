@@ -10,7 +10,13 @@
  * @module dsh-visualizer/annotate
  */
 
-import { WIDGET_PROMPT_MAX_CHARS } from './AutoFrame.tsx'
+/**
+ * Longest prompt text accepted from a widget; also the composed annotation
+ * prompt's own budget, since it rides the same `sendPrompt` channel. Owned
+ * here rather than in AutoFrame.tsx (which re-exports it) so this module
+ * never imports back from its own caller.
+ */
+export const WIDGET_PROMPT_MAX_CHARS = 4_000
 
 /** One pick as accepted into host state; all strings already bounded. */
 export interface AnnotationPick {
@@ -82,7 +88,7 @@ export function composeAnnotationPrompt(picks: readonly AnnotationPick[]): strin
   // Over cap: drop the deepest locator lines first, notes last.
   const reduced = `${PROMPT_HEADER}\n\n${picks.map((pick, index) => itemLines(pick, index + 1, false)).join('\n\n')}`
   if (reduced.length <= WIDGET_PROMPT_MAX_CHARS) return reduced
-  return noteOnlyPrompt(picks).slice(0, WIDGET_PROMPT_MAX_CHARS)
+  return notesOnlyPrompt(picks)
 }
 
 /** One numbered item's lines; `withMarkup` drops the deepest locator first. */
@@ -97,11 +103,27 @@ function itemLines(pick: AnnotationPick, number: number, withMarkup: boolean): s
   return lines.join('\n')
 }
 
-/** Notes and selectors only; the last resort keeps the user's words. */
-function noteOnlyPrompt(picks: readonly AnnotationPick[]): string {
-  return picks
-    .map((pick, index) => `${index + 1}. ${pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'} (${pick.selector})`)
-    .join('\n\n')
+/** One pick's line in the notes-only tier: number, note, and a bare selector. */
+function noteOnlyLine(pick: AnnotationPick, number: number): string {
+  const note = pick.comment.trim().length > 0 ? pick.comment.trim() : '(no note)'
+  return `${number}. ${note} (${pick.selector})`
+}
+
+/**
+ * Last-resort tier: the header plus as many whole notes-only lines as fit
+ * under the cap, earliest picks first. Appends a whole line or not at all —
+ * never a mid-line slice — so a still-over-cap pick set drops its tail
+ * cleanly instead of ending in a truncated fragment, and the header always
+ * survives even when no pick does.
+ */
+function notesOnlyPrompt(picks: readonly AnnotationPick[]): string {
+  let text = PROMPT_HEADER
+  for (let index = 0; index < picks.length; index++) {
+    const candidate = `${text}\n\n${noteOnlyLine(picks[index]!, index + 1)}`
+    if (candidate.length > WIDGET_PROMPT_MAX_CHARS) break
+    text = candidate
+  }
+  return text
 }
 
 /** Longest comment accepted into one pick's note input. */
