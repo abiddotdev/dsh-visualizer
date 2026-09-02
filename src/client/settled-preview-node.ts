@@ -11,7 +11,9 @@
  * call happened. The keyed tool row suppresses its own frame for exactly the
  * calls a mounted preview covers ({@link ./preview-coverage.ts}), and the
  * two surfaces never double-render. Replaying the log reproduces the same
- * sequence deterministically.
+ * sequence deterministically. The Definition itself always registers; a
+ * deployment with `chatPreview` disabled never contributes a preview, since
+ * {@link chatPreviewEnabled} gates `buildViewNode`'s output instead.
  */
 
 import type {
@@ -25,9 +27,12 @@ import { CHAT_PREVIEW_BOOT_GLOBAL } from '../shared/chat-preview.ts'
  * Whether the host announced the settled-preview feature: the served page
  * carries a `globalThis` flag the boot table pushes only while `chatPreview`
  * is live ({@link ./boot-table.ts}), so a deployment that disabled it never
- * sets the flag. The caller checks this once, at plugin `apply()`, and skips
- * registering the node and its slot entirely when it is false — the row then
- * keeps the settled frame outright, with no coverage bookkeeping to pay for.
+ * sets the flag. Read fresh on every {@link settledPreviewDefinition.buildViewNode}
+ * call — same as the share control's {@link exportShareEnabled} — rather than
+ * cached once at plugin `apply()`: the boot script that sets the flag is not
+ * guaranteed to have run yet at that early, synchronous point, so a one-time
+ * check there can permanently latch "disabled" for the rest of the page's
+ * life even though the flag is set moments later.
  * @returns true only where the host announced the feature.
  */
 export function chatPreviewEnabled(): boolean {
@@ -145,11 +150,16 @@ export const settledPreviewDefinition: ConversationNodeDefinition<PreviewState> 
     const state = context.state
     if (state === undefined) return null
     const previews: GenerativePreviewData[] = []
-    for (const call of state.calls.values()) {
-      if (!call.settled || call.isError) continue
-      const view = argsView(call.argsRaw)
-      if (view === null) continue
-      previews.push({ callId: call.callId, title: view.title, height: view.height, html: view.html })
+    // Checked fresh, not at registration time: see chatPreviewEnabled's doc.
+    // A disabled deployment never contributes a preview, so the row below
+    // keeps its settled frame outright.
+    if (chatPreviewEnabled()) {
+      for (const call of state.calls.values()) {
+        if (!call.settled || call.isError) continue
+        const view = argsView(call.argsRaw)
+        if (view === null) continue
+        previews.push({ callId: call.callId, title: view.title, height: view.height, html: view.html })
+      }
     }
     const anchorSeq = (state.lastMessageSeq ?? state.anchorSeq) + ANSWER_ANCHOR_OFFSET
     const base = {

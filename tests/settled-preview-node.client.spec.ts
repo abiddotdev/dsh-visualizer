@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ChatConversationViewNode, ConversationEventInput, ConversationNodeDefinition,
   ConversationViewBuilder, ConversationViewDefinition,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
 import { settledPreviewDefinition, type GenerativePreviewChatData } from '../src/client/settled-preview-node.ts'
+import { CHAT_PREVIEW_BOOT_GLOBAL } from '../src/shared/chat-preview.ts'
+
+// buildViewNode reads the boot flag fresh on every call (see
+// chatPreviewEnabled's doc): stub it enabled by default, as the host does
+// whenever chatPreview is live, and let the one disabled-path test override it.
+beforeEach(() => {
+  vi.stubGlobal(CHAT_PREVIEW_BOOT_GLOBAL, '1')
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 class TestEventDefinitions {
   entries(): readonly ConversationNodeDefinition[] {
@@ -105,6 +117,16 @@ describe('visualizer-preview node', () => {
     expect(data(value)?.previews).toEqual([
       { callId: 'call-1', title: 'Dash', height: 320, html: CALL_ARGS.html },
     ])
+  })
+
+  it('never mounts anything while the host has not announced the feature', () => {
+    vi.unstubAllGlobals()
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      toolCall(2, 'call-1', CALL_ARGS),
+      toolResult(3, 'call-1'),
+    ])
+    expect(node(value)).toBeUndefined()
   })
 
   it('never mounts a call that settled with an error', () => {

@@ -20,7 +20,7 @@ import { ResultRow } from './ResultRow.tsx'
 import { SettledPreviewNodeView } from './SettledPreviewNodeView.tsx'
 import { en, zh, type GenerativeUiKey } from './locales.ts'
 import { generativeStreamDefinition } from './stream-node.ts'
-import { chatPreviewEnabled, settledPreviewDefinition } from './settled-preview-node.ts'
+import { settledPreviewDefinition } from './settled-preview-node.ts'
 
 export type { StreamCardProps } from './StreamCard.tsx'
 export type { ResultRowProps } from './ResultRow.tsx'
@@ -44,31 +44,29 @@ export const inject = ['slots', 'locale', 'uiConversation']
 
 /**
  * Client plugin body: register the `visualizer` dictionaries, the live
- * streaming node, the `visualizer` row, and — only where the host announced
- * the feature on the boot table — the settled-preview node. The boot flag is
- * read once here, at apply time, matching the host's own `if (config.
- * chatPreview)` gate: a disabled feature registers no event-tracking or slot
- * at all, rather than mounting inert machinery. All key domains are open, so
- * the contributions render only for this tool's calls and stay inert
- * everywhere else.
+ * streaming node, the `visualizer` row, and the settled-preview node. All
+ * key domains are open, so the contributions render only for this tool's
+ * calls and stay inert everywhere else. The settled-preview node registers
+ * unconditionally — whether the host actually announced the `chatPreview`
+ * boot flag is checked fresh inside its own `buildViewNode`
+ * ({@link chatPreviewEnabled}), not here: this function runs once,
+ * synchronously, at plugin apply, too early to trust the boot script has
+ * already set the flag.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-visualizer: dictionaries')
 
   ctx.uiConversation.events.register(generativeStreamDefinition)
+  ctx.uiConversation.events.register(settledPreviewDefinition)
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,
   }, StreamCard))
 
-  if (chatPreviewEnabled()) {
-    ctx.uiConversation.events.register(settledPreviewDefinition)
-
-    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-      name: 'conversation.chat.node', key: 'visualizer-preview', locale: NS,
-    }, SettledPreviewNodeView))
-  }
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'visualizer-preview', locale: NS,
+  }, SettledPreviewNodeView))
 
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview', key: 'visualizer', locale: NS,
