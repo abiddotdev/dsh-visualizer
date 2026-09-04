@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Inspect control on the settled/running card: jumps to the call's raw arguments and result in the harness's trajectory view. Only available on the in-place card (`ResultRow`) — the turn-tail chain's owner currency carries no per-call inspect capability, so the republished copy there shows no such control.
+
 ## [0.7.0] - 2026-09-04
 
 ### Fixed

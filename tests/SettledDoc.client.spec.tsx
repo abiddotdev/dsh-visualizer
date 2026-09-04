@@ -67,6 +67,23 @@ describe('SettledDoc', () => {
     expect(document.querySelector('[class*="streamSweep"]')).toBeNull()
   })
 
+  it('shows no inspect control when the owner supplies none', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Inspect' })).toBeNull()
+  })
+
+  it('jumps to the trajectory view from the inspect control, in both running and ok states', () => {
+    const inspect = vi.fn()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} inspect={inspect} state="running" />)
+    screen.getByRole('button', { name: 'Inspect' }).click()
+    expect(inspect).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} inspect={inspect} />)
+    screen.getByRole('button', { name: 'Inspect' }).click()
+    expect(inspect).toHaveBeenCalledTimes(2)
+  })
+
   it('opens the served export page, named for the document', () => {
     vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)

@@ -96,4 +96,17 @@ describe('ResultRow', () => {
     expect(document.querySelector('iframe')).toBeNull()
     expect(screen.getByText('Call arguments carry no renderable HTML')).toBeTruthy()
   })
+
+  it('forwards the framework inspect callback to the trajectory-jump control', () => {
+    const inspect = vi.fn()
+    render(<ResultRow {...{ ...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC }))), inspect }} />)
+
+    screen.getByRole('button', { name: 'Inspect' }).click()
+    expect(inspect).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no inspect control when the framework offers no callback', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
+    expect(screen.queryByRole('button', { name: 'Inspect' })).toBeNull()
+  })
 })

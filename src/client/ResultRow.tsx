@@ -28,7 +28,7 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
 }
 
 /** Render one `visualizer` call: the live frame while running or settled-ok, else a status-only row. */
-export function ResultRow({ block, t, inputActions }: ResultRowProps) {
+export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
   const settled = 'kind' in block
   const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   const argsRaw = argsRawOf(block)
@@ -42,7 +42,7 @@ export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   )
 
   if (view !== null) {
-    return <SettledDoc argsRaw={argsRaw} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} />
+    return <SettledDoc argsRaw={argsRaw} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} inspect={inspect} />
   }
 
   // No renderable document: either an error result (the alert icon carries
