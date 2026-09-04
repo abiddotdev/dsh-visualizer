@@ -5,6 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { TurnTailCard, type TurnTailCardProps } from '../src/client/TurnTailCard.tsx'
+import type { ChatSettingsSection } from '../src/client/transcript-view.ts'
 import type { VisualizerTurnCard } from '../src/client/turn-tail.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -27,22 +28,43 @@ function noopActions(): TurnTailCardProps['inputActions'] {
   return { setDraft: () => { throw new Error('unused') }, submit: () => { throw new Error('unused') } }
 }
 
+/** Test stub for the synthesized `useTranscriptView` selector Hook, fixed to one mode. */
+function transcriptViewStub(transcriptView: ChatSettingsSection['transcriptView']): TurnTailCardProps['useTranscriptView'] {
+  return selector => selector({ value: { transcriptView } })
+}
+
 describe('TurnTailCard', () => {
-  it('renders one document per settled call, in order', () => {
+  it('renders one document per settled call, in order, when transcript view is compact', () => {
     render(<TurnTailCard matched={[
       card(JSON.stringify({ title: 'First', html: DOC }), 'c1'),
       card(JSON.stringify({ title: 'Second', html: DOC }), 'c2'),
-    ]} t={t} inputActions={noopActions()} />)
+    ]} t={t} inputActions={noopActions()} useTranscriptView={transcriptViewStub('compact')} />)
 
     const titles = [...document.querySelectorAll('[class*="_title_"]')].map(el => el.textContent)
     expect(titles).toEqual(['First', 'Second'])
     expect(document.querySelectorAll('iframe')).toHaveLength(2)
   })
 
+  it('renders nothing when transcript view is normal — the in-place row already shows it', () => {
+    const { container } = render(<TurnTailCard matched={[
+      card(JSON.stringify({ title: 'Dash', html: DOC })),
+    ]} t={t} inputActions={noopActions()} useTranscriptView={transcriptViewStub('normal')} />)
+
+    expect(container.firstChild).toBeNull()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('renders as compact (the fail-safe default) when the setting has not loaded yet', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()}
+      useTranscriptView={selector => selector({ value: undefined })} />)
+    expect(document.querySelector('iframe')).not.toBeNull()
+  })
+
   it('forwards a submitted widget prompt as one tagged turn', () => {
     const setDraft = vi.fn()
     const submit = vi.fn()
-    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={{ setDraft, submit }} />)
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t}
+      inputActions={{ setDraft, submit }} useTranscriptView={transcriptViewStub('compact')} />)
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
 
@@ -55,7 +77,7 @@ describe('TurnTailCard', () => {
   })
 
   it('renders nothing for an empty turn', () => {
-    const { container } = render(<TurnTailCard matched={[]} t={t} inputActions={noopActions()} />)
+    const { container } = render(<TurnTailCard matched={[]} t={t} inputActions={noopActions()} useTranscriptView={transcriptViewStub('compact')} />)
     expect(container.querySelector('[class*="card"]')).toBeNull()
   })
 
@@ -63,7 +85,7 @@ describe('TurnTailCard', () => {
     render(<TurnTailCard matched={[
       card('{}', 'c1'),
       card(JSON.stringify({ title: 'Second', html: DOC }), 'c2'),
-    ]} t={t} inputActions={noopActions()} />)
+    ]} t={t} inputActions={noopActions()} useTranscriptView={transcriptViewStub('compact')} />)
     expect(screen.getByText('Second')).toBeTruthy()
     expect(document.querySelectorAll('iframe')).toHaveLength(1)
   })
