@@ -10,7 +10,7 @@
 // rides the alert icon here instead, where it already settles before any
 // turn can close.
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -31,10 +31,18 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
 export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const settled = 'kind' in block
   const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
-  const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
+  const argsRaw = argsRawOf(block)
+  // SettledDoc re-derives the same view from argsRaw itself (and memoizes it
+  // there); this copy exists only to route between the frame and the
+  // status-only row below, so it's memoized too rather than re-parsing a
+  // possibly near-byte-cap document on every unrelated re-render.
+  const view = useMemo(
+    () => !settled || !block.isError ? argsView(argsRaw) : null,
+    [settled, block, argsRaw],
+  )
 
   if (view !== null) {
-    return <SettledDoc argsRaw={argsRawOf(block)} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} />
+    return <SettledDoc argsRaw={argsRaw} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} />
   }
 
   // No renderable document: either an error result (the alert icon carries
