@@ -1,0 +1,322 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+// Pulls this package's LocaleNamespaceMap merge into the program so the
+// composed props type carries the `t` seat (the merge lives in the entry).
+import type {} from '../src/client/index.ts'
+import { TurnTailCard, type TurnTailCardProps } from '../src/client/TurnTailCard.tsx'
+import type { VisualizerTurnCard } from '../src/client/turn-tail.ts'
+import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
+
+import { STREAM_SHELL } from '../src/client/shell.ts'
+import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
+import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
+import { en } from '../src/client/locales.ts'
+
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+/** Locale seat over the package dictionary; interpolates the single numeric param. */
+const t = ((key: keyof typeof en, params?: Record<string, string | number>) =>
+  en[key].replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? ''))) as TurnTailCardProps['t']
+
+const DOC = '<!DOCTYPE html><html><body><p>revenue</p></body></html>'
+
+function card(argsRaw: string, callId = 'c1'): VisualizerTurnCard {
+  return { callId, seq: 2, argsRaw }
+}
+
+function noopActions(): TurnTailCardProps['inputActions'] {
+  return { setDraft: () => { throw new Error('unused') }, submit: () => { throw new Error('unused') } }
+}
+
+describe('TurnTailCard', () => {
+  it('renders each settled document from its call arguments in a null-origin frame', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', height: 360, html: DOC }))]} t={t} inputActions={noopActions()} />)
+
+    const frame = document.querySelector('iframe')
+    expect(frame?.getAttribute('srcDoc')).toBe(STREAM_SHELL)
+    expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame?.getAttribute('allow')).toBe('fullscreen *')
+    expect(frame?.style.height).toBe('360px')
+    expect(screen.getByText('55 chars')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
+  })
+
+  it('renders one row per settled call, in order', () => {
+    render(<TurnTailCard matched={[
+      card(JSON.stringify({ title: 'First', html: DOC }), 'c1'),
+      card(JSON.stringify({ title: 'Second', html: DOC }), 'c2'),
+    ]} t={t} inputActions={noopActions()} />)
+
+    const titles = [...document.querySelectorAll('[class*="_title_"]')].map(el => el.textContent)
+    expect(titles).toEqual(['First', 'Second'])
+  })
+
+  it('opens the served export page, named for the document', () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+
+    screen.getByRole('button', { name: 'Open standalone page' }).click()
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('hides the share control when the host never announced the route', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
+  })
+
+  it('downloads the bytes client-side under a sanitized file name', () => {
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:doc-2')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Q3: "final"', html: DOC }))]} t={t} inputActions={noopActions()} />)
+
+    vi.useFakeTimers()
+    screen.getByRole('button', { name: 'Download HTML' }).click()
+    expect(created).toHaveBeenCalledTimes(1)
+    expect(revoked).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(REVOKE_DELAY_MS)
+    expect(revoked).toHaveBeenCalledWith('blob:doc-2')
+    const anchor = click.mock.instances[0] as HTMLAnchorElement
+    expect(anchor.download).toBe('q3-final.html')
+  })
+
+  it('shows the load-failure notice once a frame script fails', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: 'https://unpkg.com/chart.js' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText('A library failed to load; interactivity may be unavailable')).toBeTruthy()
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: '' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getAllByText('A library failed to load; interactivity may be unavailable')).toHaveLength(1)
+  })
+
+  it('labels a runtime error with its message beside the summary', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'ReferenceError: cloud is not defined', line: 41 },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'TypeError: later', line: null },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
+    expect(screen.queryByText(/TypeError: later/)).toBeNull()
+  })
+
+  it('copies the bytes and confirms briefly on the row', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.useFakeTimers()
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
+    expect(writeText).toHaveBeenCalledWith(DOC)
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(COPY_FEEDBACK_MS) })
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
+  })
+
+  it('uses the dictionary title when the arguments supply none', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ html: '<p>x</p>' }))]} t={t} inputActions={noopActions()} />)
+    expect(screen.getByText('HTML preview')).toBeTruthy()
+  })
+
+  it('fullscreens the frame wrapper from a control before copy, reverting on the event', async () => {
+    const request = vi.fn().mockResolvedValue(undefined)
+    const exit = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(HTMLDivElement.prototype, 'requestFullscreen', { configurable: true, value: request })
+    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit })
+    const stubElement = (value: Element | null): void => {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => value })
+    }
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const wrapper = document.querySelector('[class*="frameWrap"]')
+    if (wrapper === null) throw new Error('frame wrapper not rendered')
+
+    const copy = screen.getByRole('button', { name: 'Copy HTML' })
+    expect(copy.previousElementSibling?.getAttribute('aria-label')).toBe('Comment mode')
+    expect(copy.previousElementSibling?.previousElementSibling?.getAttribute('aria-label')).toBe('Fullscreen')
+    await act(async () => { screen.getByRole('button', { name: 'Fullscreen' }).click() })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.instances[0]).toBe(wrapper)
+
+    stubElement(wrapper)
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeTruthy()
+
+    await act(async () => { screen.getByRole('button', { name: 'Exit fullscreen' }).click() })
+    expect(exit).toHaveBeenCalledTimes(1)
+    stubElement(null)
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeTruthy()
+  })
+
+  it('hides the fullscreen control once collapsed; byte actions stay', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeTruthy()
+    act(() => { screen.getByText('Dash').click() })
+    // The wrapper unmounts on collapse, so fullscreen has no surface; copy
+    // and download act on the bytes and stay.
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
+  })
+
+  it('forwards a widget prompt as one tagged turn per interval', () => {
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={{ setDraft, submit }} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'break down Q3 by region' },
+      source: frame.contentWindow,
+    }))
+    expect(setDraft).toHaveBeenCalledWith('[widget] break down Q3 by region')
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'too soon' },
+      source: frame.contentWindow,
+    }))
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(WIDGET_PROMPT_MIN_INTERVAL_MS + 1)
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { __dshGui: true, type: 'sendPrompt', text: 'and by product' },
+      source: frame.contentWindow,
+    }))
+    expect(submit).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows comment controls while expanded and hides them on collapse', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    expect(screen.getByRole('button', { name: 'Comment mode' })).toBeTruthy()
+    act(() => { screen.getByText('Dash').click() })
+    expect(screen.queryByRole('button', { name: 'Comment mode' })).toBeNull()
+  })
+
+  it('collects picks as comment rows and sends one composed widget prompt', async () => {
+    const setDraft = vi.fn()
+    const submit = vi.fn()
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={{ setDraft, submit }} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          __dshGui: true, type: 'annotation',
+          pick: { id: 'a1', kind: 'element', selector: 'p', tag: 'p', snippet: '<p>revenue</p>', text: 'revenue' },
+        },
+        source: frame.contentWindow,
+      }))
+    })
+    const bar = screen.getByTestId('comment-bar')
+    expect(bar).toBeTruthy()
+    expect(screen.getByText('revenue')).toBeTruthy()
+
+    const note = screen.getByRole('textbox', { name: 'Comment note' })
+    await act(async () => { fireEvent.change(note, { target: { value: 'make this bold' } }) })
+    await act(async () => { screen.getByRole('button', { name: 'Send' }).click() })
+    expect(submit).toHaveBeenCalledTimes(1)
+    const draft = setDraft.mock.calls[0]![0] as string
+    expect(draft).toContain('[widget] ')
+    expect(draft).toContain('\n\n1. make this bold\n')
+    expect(draft).toContain('element: <p> p')
+    expect(draft).toContain('markup: <p>revenue</p>')
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('removes one pick from the bar and clears all', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const pick = (id: string): void => {
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { __dshGui: true, type: 'annotation', pick: { id, kind: 'element', selector: 'p', tag: 'p', snippet: '<p>x</p>', text: 'x' } },
+          source: frame.contentWindow,
+        }))
+      })
+    }
+    pick('a1')
+    pick('a2')
+    expect(screen.getAllByRole('textbox', { name: 'Comment note' })).toHaveLength(2)
+
+    act(() => { screen.getAllByRole('button', { name: 'Remove comment' })[0]!.click() })
+    expect(screen.getAllByRole('textbox', { name: 'Comment note' })).toHaveLength(1)
+
+    act(() => { screen.getByRole('button', { name: 'Clear' }).click() })
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+  })
+
+  it('drops malformed annotation posts silently', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'annotation', pick: { id: '', kind: 'weird' } },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.queryByTestId('comment-bar')).toBeNull()
+  })
+
+  it('reverts the mode button when the frame exits on Escape', () => {
+    render(<TurnTailCard matched={[card(JSON.stringify({ title: 'Dash', html: DOC }))]} t={t} inputActions={noopActions()} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+
+    act(() => { screen.getByRole('button', { name: 'Comment mode' }).click() })
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('true')
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'annotateExited' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByRole('button', { name: 'Comment mode' }).getAttribute('aria-pressed')).toBe('false')
+  })
+})
