@@ -8,7 +8,7 @@
 // in-place copy alive until then means it is the only transition that happens.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AutoFrame } from './AutoFrame.tsx'
 import { argsView, DEFAULT_FRAME_HEIGHT_PX } from './args-view.ts'
@@ -30,10 +30,16 @@ export interface SettledDocProps {
   onPrompt: (text: string) => void
   /** 'running' shows the sweep sheen and no chrome; 'ok' is the full settled experience. */
   state?: 'running' | 'ok'
+  /**
+   * Jump to this call in the trajectory view. Only `ResultRow` can supply
+   * this — the turn-tail chain's owner currency carries no per-call inspect
+   * capability, so a card rendered there shows no such control.
+   */
+  inspect?: () => void
 }
 
 /** One document's frame, chrome, and comment-mode state. Null when its arguments carry nothing renderable. */
-export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok' }: SettledDocProps) {
+export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: SettledDocProps) {
   const view = useMemo(() => argsView(argsRaw), [argsRaw])
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
@@ -101,6 +107,20 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok' }: SettledDocPro
                 {t('row.runtimeError')}
                 {runtimeError}
               </span>
+            )}
+            {inspect !== undefined && (
+              <button
+                type="button"
+                className={css.download}
+                aria-label={t('row.inspect')}
+                title={t('row.inspect')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  inspect()
+                }}
+              >
+                <IconInspectOutline12 />
+              </button>
             )}
             {settledOk && (
               <>
