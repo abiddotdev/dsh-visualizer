@@ -13,8 +13,6 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
-  vi.useRealTimers()
 })
 
 const SID = 's1' as SessionId
@@ -23,7 +21,7 @@ const SID = 's1' as SessionId
 const t = ((key: keyof typeof en, params?: Record<string, string | number>) =>
   en[key].replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? ''))) as ResultRowProps['t']
 
-/** Framework standard-kit stubs: the card consumes only the block and the locale seat. */
+/** Framework standard-kit stubs: the card consumes only the block, inputActions, and the locale seat. */
 const kit = {
   sessionId: SID,
   useSession: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<ConversationSnapshot>,
@@ -64,23 +62,21 @@ function settledBlock(argsRaw: string | null, isError = false): ToolCallBlock {
 const DOC = '<!DOCTYPE html><html><body><p>revenue</p></body></html>'
 
 describe('ResultRow', () => {
-  it('shows the running summary and no expand affordance while the call runs', () => {
+  it('renders the live frame while the call runs — the full experience, not a stub', () => {
     render(<ResultRow {...props(runningBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
 
-    expect(screen.getByText('Dash')).toBeTruthy()
+    expect(document.querySelector('iframe')).not.toBeNull()
+    expect(document.querySelector('[class*="streamSweep"]')).toBeTruthy()
     expect(screen.getByText('Rendering…')).toBeTruthy()
-    expect(document.querySelector('iframe')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
-  it('points at the turn-tail card once the call settles successfully, with no frame or chrome', () => {
-    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', height: 360, html: DOC })))} />)
+  it('keeps the frame in place, with full chrome, once the call settles successfully', () => {
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ title: 'Dash', html: DOC })))} />)
 
-    expect(screen.getByText('Dash')).toBeTruthy()
-    expect(screen.getByText('Rendered below ↓')).toBeTruthy()
-    expect(document.querySelector('iframe')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
+    expect(document.querySelector('iframe')).not.toBeNull()
+    expect(document.querySelector('[class*="streamSweep"]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('names the failure code on an error result and renders no frame', () => {
@@ -99,10 +95,5 @@ describe('ResultRow', () => {
 
     expect(document.querySelector('iframe')).toBeNull()
     expect(screen.getByText('Call arguments carry no renderable HTML')).toBeTruthy()
-  })
-
-  it('uses the dictionary title when the arguments supply none', () => {
-    render(<ResultRow {...props(settledBlock(JSON.stringify({ html: '<p>x</p>' })))} />)
-    expect(screen.getByText('HTML preview')).toBeTruthy()
   })
 })

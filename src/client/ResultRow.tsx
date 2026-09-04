@@ -1,16 +1,22 @@
-// visualizer toolview row: the in-place running/error status. A settled
-// success no longer renders its document here — Compact transcript view
-// (harness 0.1.2-rc.1) folds this row's owning tool-call node behind one
-// disclosure once the turn closes, so the full interactive card moved to the
-// `conversation.chat.turnTail` chain (see turn-tail.ts, TurnTailCard.tsx),
-// which sits outside that fold. This row keeps only what still needs to be
-// seen at call time: a running spinner, and an error's alert icon and
-// tooltip — both settle before the fold can apply.
+// visualizer toolview row: the in-place presentation. The frame stays here
+// — full chrome once settled, sweep sheen while running — for as long as the
+// turn is open, exactly as before this row had a turn-tail counterpart: the
+// only thing that changed is what happens once the turn closes. Compact
+// transcript view folds this row's owning tool-call node behind one
+// disclosure at that point (harness 0.1.2-rc.1), so a second copy also
+// republishes through `conversation.chat.turnTail` (TurnTailCard.tsx, exempt
+// from that fold) — briefly redundant in Normal view, but it means the frame
+// never disappears before it has to. An error never reaches turn-tail: it
+// rides the alert icon here instead, where it already settles before any
+// turn can close.
 
+import { useCallback } from 'react'
 import { DisclosureRow, IconCodeOutline16, IconWarningOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
+import { SettledDoc } from './SettledDoc.tsx'
 import { argsView } from './args-view.ts'
+import { submitWidgetPrompt } from './bridge-actions.ts'
 import css from './Card.module.css'
 
 /** Full card props composed by the keyed Tool slot. */
@@ -21,19 +27,21 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
   return 'kind' in block ? (block.call?.argsRaw ?? '') : block.argsRaw
 }
 
-/** Render one running or error `visualizer` call; a settled success shows a pointer to its turn-tail card. */
-export function ResultRow({ block, t }: ResultRowProps) {
+/** Render one `visualizer` call: the live frame while running or settled-ok, else a status-only row. */
+export function ResultRow({ block, t, inputActions }: ResultRowProps) {
   const settled = 'kind' in block
+  const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   const view = !settled || !block.isError ? argsView(argsRawOf(block)) : null
-  const title = view?.title ?? t('row.title')
+
+  if (view !== null) {
+    return <SettledDoc argsRaw={argsRawOf(block)} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} />
+  }
+
+  // No renderable document: either an error result (the alert icon carries
+  // it) or arguments with no html. Neither has a frame to show.
+  const title = t('row.title')
   const errorInfo = settled && block.isError && block.error !== undefined ? block.error : null
-  const summary = view !== null
-    ? settled && !block.isError
-      ? t('row.rendered')
-      : t('row.running')
-    : errorInfo !== null
-      ? ''
-      : t('row.missing')
+  const summary = errorInfo !== null ? '' : t('row.missing')
 
   return (
     <div
