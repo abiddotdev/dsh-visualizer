@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-04
+
 ### Fixed
 
 - Settled cards no longer vanish behind harness `0.1.2-rc.1`'s Compact transcript view fold once their turn closes — closes the plugin-side gap noted in `0.6.0`. The card stays live in place while its turn is open, republishes once through the harness's `conversation.chat.turnTail` hole exactly when the turn closes, and skips that republish in Normal view (which never folds) to avoid a duplicate.
 
-### Changed
+### Breaking
 
-- Minimum harness version raised from `0.1.2-alpha.2` to `0.1.2-rc.1`.
+- **Minimum harness version is now `0.1.2-rc.1`.** Raised from `0.1.2-alpha.2` — the version this release was developed and tested against; older prerelease builds are untested. Installs on an older harness should stay on a prior tagged release.
 
 ## [0.6.0] - 2026-09-02
 
@@ -99,7 +101,8 @@ Initial tagged release.
 - Frame chrome: diagonal streaming sheen, navigation guard converting anchor clicks, runtime-error notices, host theme token injection.
 - Loading messages with a sweep animation.
 
-[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.3.0...v0.4.0
