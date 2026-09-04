@@ -19,6 +19,28 @@ export interface SlotRegistry {
   ): () => void
 
   /**
+   * Register one chain-slot contribution: `select` is the entry's routing
+   * seat over the slot's owner currency, and its non-null return becomes the
+   * rendered component's `matched` prop. `inject` optionally supplies the
+   * registrant's own business face — a `hooks` member synthesizes a
+   * `use<Name>` selector Hook on the component's props (see
+   * `dsh-client-ui-slots`'s `ChainSelect`/`MatchedShare`/`PropsSlotHooks`,
+   * not re-exposed through this trimmed face).
+   * @param definition - slot name, routing selector, optional inject factory, and optional locale namespace.
+   * @param component - the rendered node component for the slot.
+   * @returns disposer removing the contribution.
+   */
+  register<M>(
+    definition: {
+      readonly name: string
+      readonly select: (owner: never) => M | null
+      readonly inject?: (...args: never[]) => Record<string, unknown>
+      readonly locale?: string
+    },
+    component: unknown,
+  ): () => void
+
+  /**
    * Register a lazy slot contribution factory, invoked once the slot is first
    * rendered.
    * @param name - slot name to inject into.

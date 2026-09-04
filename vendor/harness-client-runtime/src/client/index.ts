@@ -29,6 +29,8 @@ export type { ConversationRuntime } from './sessions/conversation-assembler.ts'
 
 export type { SlotRegistry } from './slots.ts'
 
+export type { SettingsScope, SettingsScopeBinder, SettingsScopeSnapshot, SettingsScopeSpec } from './settings.ts'
+
 /** Client-side Cordis context after declaration merging. */
 export type ClientContext = Context
 
@@ -37,6 +39,8 @@ declare module '@deepseek-ai/cordis' {
     slots: import('./slots.ts').SlotRegistry
     /** Event-to-business-Context Definition registry. */
     conversationEvents: import('./conversation/event-registry.ts').ConversationEventRegistry
+    /** Namespace-scope binder for durable Host settings sections. */
+    settingsScope: import('./settings.ts').SettingsScopeBinder
   }
 }
 

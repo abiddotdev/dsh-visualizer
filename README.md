@@ -23,7 +23,7 @@ Full-length demos, one per artifact type:
 
 ## Install
 
-Requires Node ^22.19 or >=24 and a DeepSeek Harness installation on `0.1.2-alpha.3` or newer (older builds: see [Harness version](#harness-version) below):
+Requires Node ^22.19 or >=24 and a DeepSeek Harness installation on `0.1.2-rc.1` or newer (older builds: see [Harness version](#harness-version) below):
 
 ```sh
 # install into the default web profile
@@ -37,7 +37,7 @@ The first run fails with an "Add the package to allowBuilds" hint. That's pnpm's
 
 ### Harness version
 
-The default branch tracks the **latest DeepSeek Harness alpha** (`0.1.2-alpha.3` or newer). That release renamed the client `conversationEvents` service to `uiConversation` and moved the Chat Node out of `dsh-client-ui-conversation` into the new `dsh-client-ui-chat` package, so the card cannot mount on builds older than that — the tool parks at `pending (waiting for service: conversationEvents)`.
+The default branch tracks the **latest DeepSeek Harness pre-release** (`0.1.2-rc.1` or newer). `0.1.2-alpha.3` renamed the client `conversationEvents` service to `uiConversation` and moved the Chat Node out of `dsh-client-ui-conversation` into the new `dsh-client-ui-chat` package, so the card cannot mount on builds older than that — the tool parks at `pending (waiting for service: conversationEvents)`. `0.1.2-rc.1`'s Compact transcript view can fold a settled card away once its turn closes; see [Settled cards and Compact transcript view](#settled-cards-and-compact-transcript-view) below for how this plugin handles that.
 
 On an older harness (`0.1.1-rc.2` and earlier pre-alpha builds), install the pre-alpha compatibility branch instead, with a ref fragment:
 
@@ -47,7 +47,9 @@ dsh plugin --profile <your-profile> add 'git+https://github.com/abidhmuhsin/dsh-
 
 That branch is the last state of the plugin built against the pre-`0.1.2-alpha.3` client API. It is frozen — new features land on the default branch only — so upgrading the harness is the way forward.
 
-**Known issue — Compact transcript view hides settled cards.** `0.1.2-alpha.3` added a "Transcript view" setting (Normal/Compact) that defaults to **Compact**: once a turn closes, the harness folds every tool call in it — including a settled visualizer card — behind a "N tool calls" disclosure line, alongside every other tool. There's currently no extension point for a plugin to opt a call out of that fold. Workaround: switch **Settings → Transcript view → Normal** to keep rendered cards always visible. Tracked upstream for a real fix.
+### Settled cards and Compact transcript view
+
+Compact transcript view folds a settled card's tool-call row away once its turn closes. This plugin keeps the card live in place until then, and republishes it through the harness's `turn-tail` extension point once the turn closes — the only way to survive the fold, since that hole doesn't exist any earlier. Normal view never folds, so the card just stays where it always was, with no second copy. See `CHANGELOG.md` for the mechanics.
 
 ### Or Install from a local checkout
 

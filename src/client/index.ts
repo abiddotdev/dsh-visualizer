@@ -15,12 +15,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { StreamCard } from './StreamCard.tsx'
 import { ResultRow } from './ResultRow.tsx'
+import { TurnTailCard } from './TurnTailCard.tsx'
 import { en, zh, type GenerativeUiKey } from './locales.ts'
 import { generativeStreamDefinition } from './stream-node.ts'
+import { selectVisualizerCards, visualizerTurnDefinition } from './turn-tail.ts'
+import { CHAT_SETTINGS_NAMESPACE, type ChatSettingsSection } from './transcript-view.ts'
 
 export type { StreamCardProps } from './StreamCard.tsx'
 export type { ResultRowProps } from './ResultRow.tsx'
+export type { TurnTailCardProps } from './TurnTailCard.tsx'
 export type { GenerativeCardData, GenerativeStreamChatData } from './stream-node.ts'
+export type { VisualizerTurnCard, VisualizerTurnData } from './turn-tail.ts'
 export type { GenerativeUiKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -33,8 +38,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'visualizer'
 
-/** Required services: the slot registry, the card's copy, and the conversation-event engine. */
-export const inject = ['slots', 'locale', 'uiConversation']
+/** Required services: the slot registry, the card's copy, the conversation-event engine, and the settings scope. */
+export const inject = ['slots', 'locale', 'uiConversation', 'settingsScope']
 
 /**
  * Client plugin body: register the `visualizer` dictionaries, the live
@@ -47,6 +52,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-visualizer: dictionaries')
 
   ctx.uiConversation.events.register(generativeStreamDefinition)
+  ctx.uiConversation.events.register(visualizerTurnDefinition)
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,
@@ -55,4 +61,18 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview', key: 'visualizer', locale: NS,
   }, ResultRow))
+
+  // Compact transcript view folds the tool-call node ResultRow renders into
+  // once its turn closes (see turn-tail.ts); `turn-tail` is exempt from that
+  // fold, so every settled document republishes there instead. In Normal
+  // view nothing folds — ResultRow's own copy already survives — so
+  // TurnTailCard reads the same harness transcript-view preference
+  // (transcript-view.ts) and stays empty there, avoiding a duplicate.
+  const chatSettings = ctx.settingsScope.bind<ChatSettingsSection>({ namespace: CHAT_SETTINGS_NAMESPACE })
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail',
+    select: selectVisualizerCards,
+    locale: NS,
+    inject: () => ({ hooks: { transcriptView: chatSettings } }),
+  }, TurnTailCard))
 }
