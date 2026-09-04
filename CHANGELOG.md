@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Settled cards no longer vanish behind harness `0.1.2-rc.1`'s Compact transcript view fold once their turn closes — closes the plugin-side gap noted in `0.6.0`. The card stays live in place while its turn is open, republishes once through the harness's `conversation.chat.turnTail` hole exactly when the turn closes, and skips that republish in Normal view (which never folds) to avoid a duplicate.
+
+### Changed
+
+- Minimum harness version raised from `0.1.2-alpha.2` to `0.1.2-rc.1`.
+
 ## [0.6.0] - 2026-09-02
 
 ### Added
