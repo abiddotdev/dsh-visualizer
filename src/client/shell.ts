@@ -40,10 +40,16 @@ import { RENDER_CSP_DIRECTIVES } from '../shared/export-csp.ts'
  * conversation, request/response with a per-call timeout. At boot the shell
  * requests the host's theme tokens and applies every `--dsw-*` variable to
  * its root element, so documents can theme with the host's own tokens; the
- * host re-pushes them when the theme changes. A failed external script load
- * is reported to the host as `scriptError`, and a throwing script, async
- * error, or unhandled rejection as `runtimeError`; the card surfaces both
- * as notices, so a dead document is labeled instead of silent.
+ * host re-pushes them when the theme changes. `window.share` is a read-only
+ * `{ exported, url }` snapshot of this call's own share state, requested at
+ * boot and re-pushed on every change; a `dsh-share-status` window event
+ * fires alongside it for a document that wants to react rather than poll.
+ * There is no write counterpart — a document can observe whether it has
+ * been shared, never cause it, since the write itself stays a deliberate,
+ * one-click chrome action. A failed external script load is reported to the
+ * host as `scriptError`, and a throwing script, async error, or unhandled
+ * rejection as `runtimeError`; the card surfaces both as notices, so a dead
+ * document is labeled instead of silent.
  */
 const BRIDGE_SCRIPT = `
 <script>
@@ -195,6 +201,23 @@ const BRIDGE_SCRIPT = `
   }
   try { parent.postMessage({ __dshGui: true, type: 'theme-request' }, '*'); } catch (err) {}
 
+  // Share-status channel: read-only, this call's own — one frame is always
+  // exactly one call, so nothing here ever mixes documents. Deliberately
+  // read-only: the write itself stays a chrome-only, one-user-click action
+  // (see export-control.ts on the host side), so a rendered document can
+  // show whether it has been shared but can never trigger a share itself —
+  // letting a script do that would recreate the automatic-write behavior
+  // write-on-share was built to remove, just moved one layer down.
+  window.share = { exported: false, url: null };
+  function applyShareStatus(status) {
+    window.share = {
+      exported: !!(status && status.exported),
+      url: status && typeof status.url === 'string' ? status.url : null
+    };
+    try { window.dispatchEvent(new CustomEvent('dsh-share-status', { detail: window.share })); } catch (err) {}
+  }
+  try { parent.postMessage({ __dshGui: true, type: 'share-status-request' }, '*'); } catch (err) {}
+
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || d.__dshGui !== true) return;
@@ -208,6 +231,8 @@ const BRIDGE_SCRIPT = `
       report();
     } else if (d.type === 'theme') {
       applyTheme(d.vars && typeof d.vars === 'object' ? d.vars : {});
+    } else if (d.type === 'share-status') {
+      applyShareStatus(d);
     } else if (d.type === 'annotate') {
       if (d.on === true) annotateEnter();
       else annotateExit();

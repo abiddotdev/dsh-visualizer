@@ -14,7 +14,7 @@ import { AutoFrame } from './AutoFrame.tsx'
 import { argsView, DEFAULT_FRAME_HEIGHT_PX } from './args-view.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
+import { artifactPageUrlByName, copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
 import { useExportControl } from './export-control.ts'
 import { openWidgetLink } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
@@ -90,7 +90,14 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect, callId
   }, [])
   const annotateMarks = useMemo(() => picks.map(pick => pick.id), [picks])
   const shareable = exportShareEnabled()
-  const exportControl = useExportControl(callId)
+  const exportControl = useExportControl(callId, view?.title ?? null, view?.html ?? '')
+  // The rendered document's own read-only view of its share state (window.share
+  // in shell.ts) — derived, not stored: exportControl is already the single
+  // source of truth for whether and where this call is exported.
+  const shareStatus = useMemo(() => {
+    if (exportControl.status !== 'exported' || exportControl.name === null) return { exported: false, url: null }
+    return { exported: true, url: artifactPageUrlByName(exportControl.name) }
+  }, [exportControl.status, exportControl.name])
   const [linkCopied, setLinkCopied] = useState(false)
   const onCopyLink = useCallback((): void => {
     void exportControl.ensure().then((name) => {
@@ -325,6 +332,7 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect, callId
             onScriptError={setFailedSrc}
             onRuntimeError={onRuntimeError}
             storage={storage}
+            shareStatus={shareStatus}
             annotate={annotate}
             onAnnotation={onAnnotation}
             onAnnotateExited={onAnnotateExited}

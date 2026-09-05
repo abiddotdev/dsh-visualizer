@@ -14,7 +14,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
+import { artifactPageUrlByName, copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
 import { useExportControl } from './export-control.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
@@ -85,7 +85,14 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
-  const exportControl = useExportControl(card.callId)
+  const exportControl = useExportControl(card.callId, card.title, card.html)
+  // The rendered document's own read-only view of its share state (window.share
+  // in shell.ts) — derived, not stored: exportControl is already the single
+  // source of truth for whether and where this call is exported.
+  const shareStatus = useMemo(() => {
+    if (exportControl.status !== 'exported' || exportControl.name === null) return { exported: false, url: null }
+    return { exported: true, url: artifactPageUrlByName(exportControl.name) }
+  }, [exportControl.status, exportControl.name])
   const onCopyLink = useCallback((): void => {
     void exportControl.ensure().then((name) => {
       if (name === null) return
@@ -303,6 +310,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
               onScriptError={setFailedSrc}
               onRuntimeError={onRuntimeError}
               storage={storage}
+              shareStatus={shareStatus}
             />
             {/* The sheen rides only the live phase; a settled or interrupted
              * frame renders plain. */}

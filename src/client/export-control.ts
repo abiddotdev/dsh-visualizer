@@ -13,7 +13,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { exportCall } from './share.ts'
+import { exportShareName } from '../shared/export-name.ts'
+import { artifactPageUrlByName, exportCall } from './share.ts'
 
 /** How long a failed export stays visible before the control resets, offering a retry. */
 export const EXPORT_FAILURE_REVERT_MS = 4_000
@@ -40,12 +41,39 @@ export interface ExportControl {
  * @param callId - the call to export, or null where the card does not know
  * it (e.g. an owner currency with no per-call identity) — `ensure` then
  * always resolves null without a request.
+ * @param title - the call's title, for the same-name reconciliation check
+ * below; only ever read at mount.
+ * @param html - the call's document, for the same reason.
  */
-export function useExportControl(callId: string | null): ExportControl {
+export function useExportControl(callId: string | null, title: string | null, html: string): ExportControl {
   const [state, setState] = useState<{ status: ExportStatus; name: string | null }>({ status: 'idle', name: null })
   const pending = useRef<Promise<string | null> | null>(null)
   const stateRef = useRef(state)
   stateRef.current = state
+
+  // A page reload remounts every card at 'idle', with no memory of whatever
+  // this component's state held before — but the export itself is durable
+  // (a file on the host's disk), so 'idle' would be a lie for a call that
+  // was already exported in an earlier page load. The client already
+  // computes the exact name that export would carry (the same digest both
+  // planes always derive), so a HEAD check on mount asks the one question
+  // local state cannot answer: does it already exist. Runs once per callId;
+  // an in-progress or already-settled `ensure()` (from a user's own click
+  // racing ahead of this) always wins, since the check only ever moves
+  // 'idle' state, never overwrites 'exporting'/'exported'/'failed'.
+  useEffect(() => {
+    if (callId === null) return
+    const url = artifactPageUrlByName(exportShareName(title, html))
+    if (url === null) return
+    let cancelled = false
+    void fetch(url, { method: 'HEAD' }).then((response) => {
+      if (cancelled || !response.ok || stateRef.current.status !== 'idle') return
+      setState({ status: 'exported', name: exportShareName(title, html) })
+    }).catch(() => {})
+    return () => { cancelled = true }
+    // title/html are frozen once a call settles, so only callId identifying
+    // a fresh card is worth re-checking; deliberately not a dependency.
+  }, [callId])
 
   const ensure = useCallback((): Promise<string | null> => {
     if (stateRef.current.status === 'exported' && stateRef.current.name !== null) {
