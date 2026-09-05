@@ -164,6 +164,75 @@ describe('SettledDoc', () => {
     expect(screen.queryByText(/TypeError: later/)).toBeNull()
   })
 
+  it('offers no fix control while the render is healthy', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Ask for a fix' })).toBeNull()
+  })
+
+  it('sends one composed fix request naming both failures, then stays spent', () => {
+    const onPrompt = vi.fn()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={onPrompt} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const post = (data: Record<string, unknown>): void => {
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { __dshGui: true, ...data },
+          source: frame.contentWindow,
+        }))
+      })
+    }
+
+    post({ type: 'scriptError', src: 'https://unpkg.com/chart.js' })
+    post({ type: 'runtimeError', message: 'ReferenceError: Chart is not defined', line: 12 })
+
+    const fix = screen.getByRole('button', { name: 'Ask for a fix' })
+    act(() => { fix.click() })
+    expect(onPrompt).toHaveBeenCalledTimes(1)
+    const composed = onPrompt.mock.calls[0]![0] as string
+    expect(composed).toContain('"Dash"')
+    expect(composed).toContain('- a library failed to load: https://unpkg.com/chart.js')
+    expect(composed).toContain('- a script error on line 12: ReferenceError: Chart is not defined')
+
+    // One request per broken render: the control stays, relabeled and inert.
+    const spent = screen.getByRole('button', { name: 'Fix requested' })
+    expect((spent as HTMLButtonElement).disabled).toBe(true)
+    act(() => { spent.click() })
+    expect(onPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('appears for a load failure alone and survives a collapse', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: 'https://unpkg.com/chart.js' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByRole('button', { name: 'Ask for a fix' })).toBeTruthy()
+
+    // It acts on card state, not on the frame, so collapsing keeps it — the
+    // same rule copy and download follow.
+    act(() => { screen.getByText('Dash').click() })
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ask for a fix' })).toBeTruthy()
+  })
+
+  it('offers no fix control on a still-running card', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} state="running" />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'TypeError: early', line: 3 },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.queryByRole('button', { name: 'Ask for a fix' })).toBeNull()
+  })
+
   it('copies the bytes and confirms briefly on the row', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })

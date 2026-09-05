@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Fix control on a failed render: a settled card whose document failed to load a library or threw at runtime now offers one click that asks the model to repair it, composing the failure (the failed source URL, the error message and its line) into a `[widget]` turn. These failures were previously a dead-end text notice — the settle-time check compiles script bodies without running them, so the model's own tool result said the document check passed. One request per card; the control stays visible and relabeled once spent, since the repaired render arrives as a card of its own.
+
 - Inspect control on the settled/running card: jumps to the call's raw arguments and result in the harness's trajectory view. Only available on the in-place card (`ResultRow`) — the turn-tail chain's owner currency carries no per-call inspect capability, so the republished copy there shows no such control.
 
 ### Fixed
