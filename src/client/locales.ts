@@ -54,6 +54,8 @@ export const zh = {
   'gallery.open': '打开',
   'gallery.copyLink': '复制链接',
   'gallery.copied': '已复制',
+  'gallery.searchPlaceholder': '搜索生成物…',
+  'gallery.noMatches': '没有匹配的生成物',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -108,6 +110,8 @@ export const en = {
   'gallery.open': 'Open',
   'gallery.copyLink': 'Copy link',
   'gallery.copied': 'Copied',
+  'gallery.searchPlaceholder': 'Search artifacts…',
+  'gallery.noMatches': 'No artifacts match your search',
 } as const
 
 /** Dictionary keys of this namespace. */

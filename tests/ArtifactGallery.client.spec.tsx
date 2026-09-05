@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 // Pulls this package's LocaleNamespaceMap merge into the program so the
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
@@ -27,6 +27,7 @@ function renderGallery(): void {
 }
 
 const ENTRY = { name: 'dash-abc1234567890f.html', title: 'Dash', kind: 'html' as const, bytes: 12_620, mtimeMs: 1_700_000_000_000 }
+const OTHER = { name: 'q3-revenue-1234567890abcdef.svg', title: 'Q3 revenue', kind: 'svg' as const, bytes: 900, mtimeMs: 1_699_000_000_000 }
 
 function stubFetch(handler: () => unknown): void {
   vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
@@ -48,6 +49,36 @@ describe('ArtifactGallery', () => {
       `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(ENTRY.name)}?k=test-token`,
     )
     expect(open.getAttribute('target')).toBe('_blank')
+  })
+
+  it('filters the list to titles matching the search box, case-insensitively', async () => {
+    stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [ENTRY, OTHER] }) }))
+    renderGallery()
+    await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+    expect(screen.getByText('Q3 revenue')).toBeTruthy()
+
+    const search = screen.getByRole('searchbox', { name: 'Search artifacts…' })
+    await act(async () => { fireEvent.change(search, { target: { value: 'rev' } }) })
+    expect(screen.queryByText('Dash')).toBeNull()
+    expect(screen.getByText('Q3 revenue')).toBeTruthy()
+  })
+
+  it('shows the no-matches state distinctly from the nothing-shared-yet state', async () => {
+    stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [ENTRY] }) }))
+    renderGallery()
+    await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+    const search = screen.getByRole('searchbox', { name: 'Search artifacts…' })
+    await act(async () => { fireEvent.change(search, { target: { value: 'nonexistent' } }) })
+    expect(screen.getByText('No artifacts match your search')).toBeTruthy()
+    expect(screen.queryByText('Nothing shared yet — renders appear here once a visualizer call settles')).toBeNull()
+  })
+
+  it('hides the search box when there is nothing to search', async () => {
+    stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [] }) }))
+    renderGallery()
+    await waitFor(() => { expect(screen.getByText('Nothing shared yet — renders appear here once a visualizer call settles')).toBeTruthy() })
+    expect(screen.queryByRole('searchbox')).toBeNull()
   })
 
   it('shows the empty state once loaded with nothing shared yet', async () => {

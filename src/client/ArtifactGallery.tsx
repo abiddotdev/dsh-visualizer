@@ -7,7 +7,7 @@
 // because the listing is host-global, not scoped to the conversation it
 // happened to render in.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCheckOutline16, IconLinkOutline16, IconRefreshOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -72,9 +72,10 @@ function ArtifactRow({ entry, t }: { entry: ArtifactListEntry; t: ArtifactGaller
   )
 }
 
-/** The gallery tab body: every finalized export, newest first, refreshable on demand. */
+/** The gallery tab body: every finalized export, newest first, searchable and refreshable on demand. */
 export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
+  const [query, setQuery] = useState('')
 
   const load = useCallback((): void => {
     setState({ status: 'loading' })
@@ -87,6 +88,16 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   // the conversation, so the list is a snapshot as of the last load or
   // manual refresh — one fetch on mount, same as opening any other tab.
   useEffect(() => { load() }, [load])
+
+  // Filtered client-side over the already-fetched list rather than a fresh
+  // request per keystroke: a listing is at most a few hundred rows, so a
+  // round trip would only add latency the reader can feel.
+  const entries = state.status === 'ready' ? state.entries : EMPTY_ENTRIES
+  const trimmedQuery = query.trim().toLowerCase()
+  const filtered = useMemo(
+    () => trimmedQuery === '' ? entries : entries.filter(entry => entry.title.toLowerCase().includes(trimmedQuery)),
+    [entries, trimmedQuery],
+  )
 
   return (
     <div className={css.gallery}>
@@ -102,16 +113,32 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
           <IconRefreshOutline16 size={14} />
         </button>
       </div>
+      {state.status === 'ready' && entries.length > 0 && (
+        <input
+          type="search"
+          className={css.search}
+          value={query}
+          onChange={(event) => { setQuery(event.target.value) }}
+          placeholder={t('gallery.searchPlaceholder')}
+          aria-label={t('gallery.searchPlaceholder')}
+        />
+      )}
       {state.status === 'loading' && <p className={css.status}>{t('gallery.loading')}</p>}
       {state.status === 'error' && <p className={css.status}>{t('gallery.error')}</p>}
-      {state.status === 'ready' && state.entries.length === 0 && (
+      {state.status === 'ready' && entries.length === 0 && (
         <p className={css.status}>{t('gallery.empty')}</p>
       )}
-      {state.status === 'ready' && state.entries.length > 0 && (
+      {state.status === 'ready' && entries.length > 0 && filtered.length === 0 && (
+        <p className={css.status}>{t('gallery.noMatches')}</p>
+      )}
+      {filtered.length > 0 && (
         <ul className={css.list}>
-          {state.entries.map(entry => <ArtifactRow key={entry.name} entry={entry} t={t} />)}
+          {filtered.map(entry => <ArtifactRow key={entry.name} entry={entry} t={t} />)}
         </ul>
       )}
     </div>
   )
 }
+
+/** Stable empty array so the `useMemo` dependency never churns while loading or on error. */
+const EMPTY_ENTRIES: readonly ArtifactListEntry[] = []
