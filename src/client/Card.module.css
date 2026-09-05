@@ -17,10 +17,23 @@
  * (the fill-summary pattern other tool rows use). */
 .row .summary,
 .row .separator,
-.row .scriptError,
 .row .alertIcon,
 .row .download {
   flex: none;
+}
+
+/* The one exception to the no-stretch rule above: an error notice carries a
+ * message of the frame's choosing (up to 300 characters), and at flex: none
+ * that pushed every trailing action — including the fix control that acts on
+ * this very error — off the row. It may shrink, never grow, and clips with an
+ * ellipsis; the full text rides the native tooltip. */
+.row .scriptError {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .title {

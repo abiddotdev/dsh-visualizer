@@ -98,7 +98,12 @@ export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={cause !== null ? css.scriptError : css.summary}>{summary}</span>
+            <span
+              className={cause !== null ? css.scriptError : css.summary}
+              title={cause ?? undefined}
+            >
+              {summary}
+            </span>
             {errorInfo !== null && (
               <span
                 className={css.alertIcon}

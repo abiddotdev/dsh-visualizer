@@ -161,7 +161,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
             {runtimeError !== null && (
-              <span className={css.scriptError}>
+              <span className={css.scriptError} title={`${t('card.runtimeError')}${runtimeError}`}>
                 {t('card.runtimeError')}
                 {runtimeError}
               </span>

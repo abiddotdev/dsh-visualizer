@@ -124,7 +124,9 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
             <span className={css.summary}>{summary}</span>
             {failedSrc !== null && <span className={css.scriptError}>{t('row.scriptError')}</span>}
             {runtimeError !== null && (
-              <span className={css.scriptError}>
+              // Clipped to keep the row's actions reachable; the tooltip
+              // carries the message in full.
+              <span className={css.scriptError} title={`${t('row.runtimeError')}${runtimeError.message}`}>
                 {t('row.runtimeError')}
                 {runtimeError.message}
               </span>
