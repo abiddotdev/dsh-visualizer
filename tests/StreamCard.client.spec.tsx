@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls this package's LocaleNamespaceMap merge into the program so the
@@ -286,7 +286,7 @@ describe('StreamCard', () => {
     )
   })
 
-  it('copy-link exports on demand too, without ever opening a tab', async () => {
+  it('copy-link is reachable only once exported, and copies without opening a tab', async () => {
     const SVG_DOC = '<svg><rect/></svg>'
     stubExport(exportShareName('中文 图表', SVG_DOC))
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
@@ -294,6 +294,8 @@ describe('StreamCard', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     renderCard([{ callId: 'call-16', phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
 
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
     await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
     expect(writeText).toHaveBeenCalledWith(
       `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
@@ -302,11 +304,29 @@ describe('StreamCard', () => {
     expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
   })
 
+  it('unshare arms, confirms, and returns the card all the way to Export', async () => {
+    const SVG_DOC = '<svg><rect/></svg>'
+    const fetchSpy = stubExport(exportShareName('中文 图表', SVG_DOC))
+    renderCard([{ callId: 'call-18', phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+    await act(async () => { screen.getByRole('button', { name: 'Unshare' }).click() })
+    expect(screen.getByRole('button', { name: 'Click again to confirm unshare' })).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Click again to confirm unshare' }).click() })
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
+      { method: 'DELETE' },
+    )
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy() })
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+  })
+
   it('hides the share controls when the host never announced the route', () => {
     renderCard([{ callId: 'call-17', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unshare' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 

@@ -20,10 +20,11 @@ const NAME = exportShareName(TITLE, HTML)
  * `ensure()`) independently, so a test can drive each path without the
  * other silently satisfying it.
  */
-function stubFetch(handlers: { head?: boolean; post?: (body: unknown) => { name?: string } | null }): ReturnType<typeof vi.fn> {
+function stubFetch(handlers: { head?: boolean; post?: (body: unknown) => { name?: string } | null; delete?: boolean }): ReturnType<typeof vi.fn> {
   vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
   const fetchSpy = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
     if (init?.method === 'HEAD') return Promise.resolve({ ok: handlers.head ?? false })
+    if (init?.method === 'DELETE') return Promise.resolve({ ok: handlers.delete ?? false })
     if (init?.method === 'POST') {
       const body: unknown = JSON.parse(String(init.body))
       const result = handlers.post?.(body) ?? null
@@ -147,5 +148,44 @@ describe('useExportControl ensure()', () => {
     const { result } = renderHook(() => useExportControl(null, TITLE, HTML))
     await expect(result.current.ensure()).resolves.toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('useExportControl unshare()', () => {
+  it('is a no-op when nothing is exported yet', async () => {
+    const fetchSpy = stubFetch({ head: false })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await expect(result.current.unshare()).resolves.toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('deletes the named export and returns the control all the way to idle, not just forgotten locally', async () => {
+    const fetchSpy = stubFetch({ post: () => ({ name: NAME }), delete: true })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await act(async () => { await result.current.ensure() })
+    expect(result.current.status).toBe('exported')
+
+    let ok = false
+    await act(async () => { ok = await result.current.unshare() })
+    expect(ok).toBe(true)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(NAME)}?k=test-token`,
+      { method: 'DELETE' },
+    )
+    expect(result.current.status).toBe('idle')
+    expect(result.current.name).toBeNull()
+  })
+
+  it('leaves the control exported when the host refuses the delete', async () => {
+    const fetchSpy = stubFetch({ post: () => ({ name: NAME }), delete: false })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await act(async () => { await result.current.ensure() })
+
+    let ok = true
+    await act(async () => { ok = await result.current.unshare() })
+    expect(ok).toBe(false)
+    expect(result.current.status).toBe('exported')
+    expect(result.current.name).toBe(NAME)
+    expect(fetchSpy).toHaveBeenCalled()
   })
 })

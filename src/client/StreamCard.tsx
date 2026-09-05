@@ -7,15 +7,15 @@
 // tool.call.toolview row takes over, so this component only ever renders
 // live evidence.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconLinkOutline16, IconLoadingOutline16, IconRightUpOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconLinkOutline16, IconLoadingOutline16, IconRightUpOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
 import { artifactPageUrlByName, copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
-import { useExportControl } from './export-control.ts'
+import { UNSHARE_CONFIRM_MS, useExportControl } from './export-control.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
@@ -94,15 +94,33 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
     return { exported: true, url: artifactPageUrlByName(exportControl.name) }
   }, [exportControl.status, exportControl.name])
   const onCopyLink = useCallback((): void => {
-    void exportControl.ensure().then((name) => {
-      if (name === null) return
-      void copyArtifactLink(name).then((ok) => {
-        if (!ok) return
-        setLinkCopied(true)
-        window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
-      })
+    if (exportControl.name === null) return
+    void copyArtifactLink(exportControl.name).then((ok) => {
+      if (!ok) return
+      setLinkCopied(true)
+      window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
     })
-  }, [exportControl])
+  }, [exportControl.name])
+  // Two clicks, not a native confirm() dialog — the same arm/confirm pattern
+  // the gallery's own delete uses: first click arms (reverting on its own
+  // after a few seconds), second click while armed actually unshares.
+  const [unshareConfirming, setUnshareConfirming] = useState(false)
+  const [unsharing, setUnsharing] = useState(false)
+  const unshareTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => { window.clearTimeout(unshareTimer.current) }, [])
+  const onUnshareClick = useCallback((): void => {
+    if (!unshareConfirming) {
+      setUnshareConfirming(true)
+      unshareTimer.current = window.setTimeout(() => { setUnshareConfirming(false) }, UNSHARE_CONFIRM_MS)
+      return
+    }
+    window.clearTimeout(unshareTimer.current)
+    setUnsharing(true)
+    void exportControl.unshare().then(() => {
+      setUnsharing(false)
+      setUnshareConfirming(false)
+    })
+  }, [unshareConfirming, exportControl])
   // First failed external script wins: one notice per card, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
@@ -235,20 +253,8 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                   <IconDownloadOutline16 size={14} />
                 </button>
                 {shareable && (
-                  <>
-                    <button
-                      type="button"
-                      className={css.download}
-                      aria-label={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
-                      title={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCopyLink()
-                      }}
-                    >
-                      {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
-                    </button>
-                    {exportControl.status === 'exported' && exportControl.name !== null ? (
+                  exportControl.status === 'exported' && exportControl.name !== null ? (
+                    <>
                       <button
                         type="button"
                         className={css.download}
@@ -261,32 +267,64 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                       >
                         <IconShareOutline16 size={14} />
                       </button>
-                    ) : (
+                      {/* Only reachable once exported, so it never needs its
+                        * own ensure() — by the time this renders, the export
+                        * already exists. */}
                       <button
                         type="button"
                         className={css.download}
-                        disabled={exportControl.status === 'exporting'}
-                        aria-label={
-                          exportControl.status === 'exporting' ? t('row.exporting')
-                            : exportControl.status === 'failed' ? t('row.exportFailed')
-                              : t('row.export')
-                        }
-                        title={
-                          exportControl.status === 'exporting' ? t('row.exporting')
-                            : exportControl.status === 'failed' ? t('row.exportFailedTitle')
-                              : t('row.exportTitle')
-                        }
+                        aria-label={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
+                        title={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
                         onClick={(event) => {
                           event.stopPropagation()
-                          void exportControl.ensure()
+                          onCopyLink()
                         }}
                       >
-                        {exportControl.status === 'exporting'
-                          ? <IconLoadingOutline16 size={14} />
-                          : <IconRightUpOutline16 size={14} />}
+                        {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
                       </button>
-                    )}
-                  </>
+                      <button
+                        type="button"
+                        className={unshareConfirming ? css.downloadDanger : css.download}
+                        disabled={unsharing}
+                        aria-label={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
+                        title={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onUnshareClick()
+                        }}
+                      >
+                        <IconCloseOutline16 size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    // Export writes the host's mirror; only once that is
+                    // confirmed does the slot above become Open, so the tab
+                    // it opens is always synchronous with its own click — no
+                    // popup blocker from opening a tab after an awaited write.
+                    <button
+                      type="button"
+                      className={css.download}
+                      disabled={exportControl.status === 'exporting'}
+                      aria-label={
+                        exportControl.status === 'exporting' ? t('row.exporting')
+                          : exportControl.status === 'failed' ? t('row.exportFailed')
+                            : t('row.export')
+                      }
+                      title={
+                        exportControl.status === 'exporting' ? t('row.exporting')
+                          : exportControl.status === 'failed' ? t('row.exportFailedTitle')
+                            : t('row.exportTitle')
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void exportControl.ensure()
+                      }}
+                    >
+                      {exportControl.status === 'exporting'
+                        ? <IconLoadingOutline16 size={14} />
+                        : <IconRightUpOutline16 size={14} />}
+                    </button>
+                  )
                 )}
               </>
             )}

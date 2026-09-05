@@ -238,6 +238,19 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Unshare's armed (confirm) state: the warn register, so a second click
+ * reads as consequential rather than identical to the first. */
+.downloadDanger {
+  composes: download;
+  background: var(--dsw-alias-state-warn-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.downloadDanger:hover {
+  background: var(--dsw-alias-state-warn-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-state-warn-label);
+}
+
 /* Comment strip below a settled frame: one compact row per pick plus a
  * footer of actions; the host's own DOM, so inputs never cross the bridge. */
 .commentBar {

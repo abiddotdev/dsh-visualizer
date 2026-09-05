@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 // Pulls this package's LocaleNamespaceMap merge into the program so the
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
@@ -10,7 +10,7 @@ import { EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.t
 import { STREAM_SHELL } from '../src/client/shell.ts'
 import { REVOKE_DELAY_MS, COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { WIDGET_PROMPT_MIN_INTERVAL_MS } from '../src/client/AutoFrame.tsx'
-import { EXPORT_FAILURE_REVERT_MS } from '../src/client/export-control.ts'
+import { EXPORT_FAILURE_REVERT_MS, UNSHARE_CONFIRM_MS } from '../src/client/export-control.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -93,12 +93,14 @@ describe('SettledDoc', () => {
     return fetchSpy
   }
 
-  it('shows Export until the write confirms, then Open — never a tab before the write resolves', async () => {
+  it('shows only Export until the write confirms, then Open/Copy-link/Unshare — never a tab before the write resolves', async () => {
     const fetchSpy = stubExport()
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
 
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unshare' })).toBeNull()
     const exportButton = screen.getByRole('button', { name: 'Export' })
     await act(async () => { exportButton.click() })
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -106,6 +108,8 @@ describe('SettledDoc', () => {
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ callId: 'call-1' }) },
     )
     expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Unshare' })).toBeTruthy()
 
     // Now that the write is confirmed, opening is synchronous with its own click.
     await act(async () => { screen.getByRole('button', { name: 'Open standalone page' }).click() })
@@ -143,20 +147,21 @@ describe('SettledDoc', () => {
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
-  it('copy-link ensures the export exists first, then copies, confirming briefly', async () => {
-    stubExport()
+  it('copy-link is reachable only once exported, and copies immediately with no export of its own', async () => {
+    const fetchSpy = stubExport()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
 
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+    fetchSpy.mockClear()
     await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
     expect(writeText).toHaveBeenCalledWith(
       `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
     )
+    // No new request: the name was already known, nothing left to ensure.
+    expect(fetchSpy).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
-    // The write already confirmed the export for copy-link's own use, so the
-    // Open control reflects that too without a second click anywhere.
-    expect(screen.getByRole('button', { name: 'Open standalone page' })).toBeTruthy()
   })
 
   it('confirms nothing when the clipboard refuses the link', async () => {
@@ -165,9 +170,60 @@ describe('SettledDoc', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
 
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
     await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
     expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Link copied' })).toBeNull()
+  })
+
+  describe('unshare', () => {
+    it('arms on the first click and only unshares on a second click while armed', async () => {
+      const fetchSpy = stubExport()
+      render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
+      await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+
+      const unshare = screen.getByRole('button', { name: 'Unshare' })
+      await act(async () => { unshare.click() })
+      expect(screen.getByRole('button', { name: 'Click again to confirm unshare' })).toBeTruthy()
+      expect(fetchSpy).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }))
+
+      await act(async () => { screen.getByRole('button', { name: 'Click again to confirm unshare' }).click() })
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
+        { method: 'DELETE' },
+      )
+      // Genuinely unshared, not just forgotten locally: the row reverts all
+      // the way back to Export, not to some half-shared in-between state.
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy() })
+      expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    })
+
+    it('reverts the armed state on its own after the confirm window elapses', async () => {
+      vi.useFakeTimers()
+      stubExport()
+      render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
+      await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+
+      await act(async () => { screen.getByRole('button', { name: 'Unshare' }).click() })
+      expect(screen.getByRole('button', { name: 'Click again to confirm unshare' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(UNSHARE_CONFIRM_MS) })
+      expect(screen.getByRole('button', { name: 'Unshare' })).toBeTruthy()
+    })
+
+    it('leaves the card shared when the host refuses the unshare', async () => {
+      vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+      const name = exportShareName('Dash', DOC)
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) =>
+        Promise.resolve(init?.method === 'DELETE' ? { ok: false, status: 404 } : { ok: true, json: () => Promise.resolve({ name }) })))
+      render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} callId="call-1" />)
+
+      await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+      await act(async () => { screen.getByRole('button', { name: 'Unshare' }).click() })
+      await act(async () => { screen.getByRole('button', { name: 'Click again to confirm unshare' }).click() })
+      expect(screen.getByRole('button', { name: 'Unshare' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+    })
   })
 
   it('downloads the bytes client-side under a sanitized file name', () => {

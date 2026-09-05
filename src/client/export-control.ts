@@ -8,16 +8,22 @@
  * and Copy-link (which has no such constraint and can await the same
  * `ensure()` transparently before copying). Both call the same `ensure()` so
  * a click on either one updates both — copying a link first also flips the
- * Open button out of "Export", and vice versa.
+ * Open button out of "Export", and vice versa. Copy-link and Unshare only
+ * ever render once `status === 'exported'`, so neither needs its own
+ * `ensure()` call: by the time they are reachable, the export already is.
  * @module dsh-visualizer/export-control
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { exportShareName } from '../shared/export-name.ts'
+import { deleteArtifact } from './artifact-gallery.ts'
 import { artifactPageUrlByName, exportCall } from './share.ts'
 
 /** How long a failed export stays visible before the control resets, offering a retry. */
 export const EXPORT_FAILURE_REVERT_MS = 4_000
+
+/** Window Unshare's confirm arm stays live before reverting on its own — the same span the gallery's own row-level delete uses. */
+export const UNSHARE_CONFIRM_MS = 3_000
 
 export type ExportStatus = 'idle' | 'exporting' | 'exported' | 'failed'
 
@@ -33,6 +39,14 @@ export interface ExportControl {
    * the host refused the request.
    */
   readonly ensure: () => Promise<string | null>
+  /**
+   * Remove the export from the host's disk and, on success, return the
+   * control to `idle` — a genuinely unshared card, not just a locally
+   * forgotten one. A no-op (resolves false) when nothing is currently
+   * exported.
+   * @returns whether the host removed it.
+   */
+  readonly unshare: () => Promise<boolean>
 }
 
 /**
@@ -97,5 +111,14 @@ export function useExportControl(callId: string | null, title: string | null, ht
     return () => { window.clearTimeout(timer) }
   }, [state.status])
 
-  return { status: state.status, name: state.name, ensure }
+  const unshare = useCallback((): Promise<boolean> => {
+    const name = stateRef.current.name
+    if (stateRef.current.status !== 'exported' || name === null) return Promise.resolve(false)
+    return deleteArtifact(name).then((ok) => {
+      if (ok) setState({ status: 'idle', name: null })
+      return ok
+    })
+  }, [])
+
+  return { status: state.status, name: state.name, ensure, unshare }
 }
