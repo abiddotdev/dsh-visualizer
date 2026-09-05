@@ -49,11 +49,14 @@ function runningBlock(argsRaw: string): ToolCallBlock {
   }
 }
 
-function settledBlock(argsRaw: string | null, isError = false): ToolCallBlock {
+/** Result content blocks, as the harness hands them to a settled view. */
+type ResultContent = Extract<ToolCallBlock, { kind: 'tool-result' }>['content']
+
+function settledBlock(argsRaw: string | null, isError = false, content: unknown[] = []): ToolCallBlock {
   return {
     kind: 'tool-result', seq: 2, time: 0, callId: 'c1',
     call: argsRaw === null ? null : { name: 'visualizer', argsRaw },
-    callTime: 0, content: [], isError,
+    callTime: 0, content: content as ResultContent, isError,
     ...isError ? { error: { name: 'Error', code: 'E_TOOL' } } : {},
     callView: null, resultView: null, subCalls: [],
   }
@@ -88,6 +91,36 @@ describe('ResultRow', () => {
     const alert = document.querySelector<HTMLElement>('[title="Error: E_TOOL"]')
     expect(alert).not.toBeNull()
     expect(alert?.getAttribute('aria-label')).toBe('Error: E_TOOL')
+  })
+
+  it('states the cause of a failed call from the result content', () => {
+    const cause = 'the document is 300000 bytes, over the 262144-byte render limit'
+    render(<ResultRow {...props(settledBlock(JSON.stringify({ html: DOC }), true, [{ type: 'text', text: cause }]))} />)
+
+    // `error` carries only "Error: E_TOOL"; the thrown message is the only
+    // thing that tells the reader what to change.
+    expect(screen.getByText(cause)).toBeTruthy()
+    expect(document.querySelector<HTMLElement>('[title="Error: E_TOOL"]')).not.toBeNull()
+  })
+
+  it('bounds a long cause and skips non-text blocks on the way to it', () => {
+    const cause = 'x'.repeat(400)
+    render(<ResultRow {...props(settledBlock(null, true, [
+      { type: 'image', attachment: {} },
+      { type: 'text', text: `  ${cause}  ` },
+      { type: 'text', text: 'later block, never shown' },
+    ]))} />)
+
+    expect(screen.getByText('x'.repeat(160))).toBeTruthy()
+    expect(screen.queryByText(/later block/)).toBeNull()
+  })
+
+  it('leaves the summary empty when a failed result carries no message', () => {
+    render(<ResultRow {...props(settledBlock(null, true, [{ type: 'text', text: '   ' }]))} />)
+
+    expect(document.querySelector('iframe')).toBeNull()
+    expect(screen.queryByText('Call arguments carry no renderable HTML')).toBeNull()
+    expect(document.querySelector<HTMLElement>('[title="Error: E_TOOL"]')).not.toBeNull()
   })
 
   it('falls back to the missing-summary when the arguments carry no document', () => {

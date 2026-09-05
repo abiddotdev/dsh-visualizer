@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A failed `visualizer` call now states its cause on the row (the thrown message from the result content, bounded to 160 characters) instead of only an alert icon whose tooltip read `Error: E_TOOL`. The over-limit document and the out-of-range height were previously undiagnosable without opening the trajectory view.
+
 - Copy share link control on both cards, beside Share: puts the export page's address on the clipboard directly. Sharing previously meant opening the page in a new tab only to copy the URL back out of the browser's address bar.
 
 - Fix control on a failed render: a settled card whose document failed to load a library or threw at runtime now offers one click that asks the model to repair it, composing the failure (the failed source URL, the error message and its line) into a `[widget]` turn. These failures were previously a dead-end text notice — the settle-time check compiles script bodies without running them, so the model's own tool result said the document check passed. One request per card; the control stays visible and relabeled once spent, since the repaired render arrives as a card of its own.
