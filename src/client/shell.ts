@@ -26,7 +26,11 @@ import { RENDER_CSP_DIRECTIVES } from '../shared/export-csp.ts'
  * element identity, which would restart keyframes per tick and bake scrollbar
  * height into reported layout — and keeps overflow hidden while partial.
  * Every content change reports the measured content height back to the host,
- * which sizes the frame to its content instead of a fixed viewport.
+ * which sizes the frame to its content instead of a fixed viewport. A
+ * ResizeObserver on the document keeps that measurement live after settle
+ * too, guarded against runaway self-feedback (viewport-relative CSS units,
+ * a responsive chart resizing to fill an intrinsically-unsized container) by
+ * a consecutive-growth streak limit — see `reportFromResize`.
  *
  * The bridge also exposes `sendPrompt(text)` to the rendered document's
  * scripts: one postMessage to the host, which submits it as a tagged user
@@ -50,6 +54,39 @@ const BRIDGE_SCRIPT = `
   function report() {
     var h = Math.ceil(document.documentElement.scrollHeight);
     try { parent.postMessage({ __dshGui: true, type: 'size', height: h }, '*'); } catch (err) {}
+  }
+  // Resize-driven growth guard: a document whose own size feeds back into
+  // its measured height (a 100vh/100dvh container, whose viewport IS this
+  // frame's current height, or a "responsive" chart canvas resizing to
+  // fill a container with no intrinsic height of its own) can keep growing
+  // in lockstep with the auto-sizing this observer drives — every resize
+  // triggers a taller measurement, which grows the frame, which grows the
+  // viewport-relative content again. Content settling for a real reason
+  // (a font swap, an image decoding, one responsive redraw) stops growing
+  // within a few ticks; only a genuine feedback loop keeps climbing on every
+  // single tick indefinitely, so a run of consecutive same-direction growth
+  // ticks is the loop's signature, not its content. Once that streak trips,
+  // this stops trusting the observer for the rest of the frame's life —
+  // explicit content-driven reports (render/commit/heartbeat) are untouched
+  // and keep working normally.
+  var RESIZE_GROW_STREAK_LIMIT = 6;
+  var resizeGrowStreak = 0;
+  var lastResizeHeight = null;
+  var resizeUntrusted = false;
+  function reportFromResize() {
+    if (resizeUntrusted) return;
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    if (lastResizeHeight !== null && h > lastResizeHeight) {
+      resizeGrowStreak++;
+      if (resizeGrowStreak > RESIZE_GROW_STREAK_LIMIT) {
+        resizeUntrusted = true;
+        return;
+      }
+    } else {
+      resizeGrowStreak = 0;
+    }
+    lastResizeHeight = h;
+    report();
   }
   function toFragment(html) {
     var full = /<html[\\s>]/i.test(html) || /<head[\\s>]/i.test(html) || /<body[\\s>]/i.test(html) || /^\\s*<!doctype/i.test(html);
@@ -518,7 +555,7 @@ const BRIDGE_SCRIPT = `
     report();
   }, 500);
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(function () { report(); }).observe(document.documentElement);
+    new ResizeObserver(function () { reportFromResize(); }).observe(document.documentElement);
   }
 })();
 </script>
