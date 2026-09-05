@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Inspect control on the settled/running card: jumps to the call's raw arguments and result in the harness's trajectory view. Only available on the in-place card (`ResultRow`) — the turn-tail chain's owner currency carries no per-call inspect capability, so the republished copy there shows no such control.
 
+### Fixed
+
+- Runaway frame growth ("double height", excess blank space below the content): the auto-sizing ResizeObserver could feed back into its own measurement for documents whose layout depends on their own current size — a `100vh`/`100dvh` container (its viewport IS the frame's current height) or a "responsive" chart canvas filling an intrinsically-unsized container — each resize measuring taller, growing the frame, and re-triggering. The shell now stops trusting resize-driven measurements after 6 consecutive same-direction growth ticks, the loop's signature; explicit content-driven reports (render/commit/heartbeat) are unaffected.
+
 ## [0.7.0] - 2026-09-04
 
 ### Fixed
