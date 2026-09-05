@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-06
+
 ### Added
 
 - A failed `visualizer` call now states its cause on the row (the thrown message from the result content, bounded to 160 characters) instead of only an alert icon whose tooltip read `Error: E_TOOL`. The over-limit document and the out-of-range height were previously undiagnosable without opening the trajectory view.
@@ -115,7 +117,8 @@ Initial tagged release.
 - Frame chrome: diagonal streaming sheen, navigation guard converting anchor clicks, runtime-error notices, host theme token injection.
 - Loading messages with a sweep animation.
 
-[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.4.0...v0.5.0
