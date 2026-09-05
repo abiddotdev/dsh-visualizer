@@ -27,6 +27,30 @@ function argsRawOf(block: ToolCallViewProps['block']): string {
   return 'kind' in block ? (block.call?.argsRaw ?? '') : block.argsRaw
 }
 
+/** Longest error cause shown on the row; the rest stays in the trajectory view. */
+const MAX_ERROR_SUMMARY_CHARS = 160
+
+/**
+ * The cause of a failed call, from the first text block of its result. The
+ * `error` field carries only a name and a code (`Error: TOOL_ERROR`), while
+ * the message the tool threw — the byte overflow, the out-of-range height —
+ * rides the result content, so this is the one place the row can state what
+ * actually went wrong. Content blocks are merge-extensible, hence the
+ * structural read rather than a narrowed union.
+ * @param content - the settled result's content blocks.
+ * @returns the trimmed, bounded message, or null when none is carried.
+ */
+function errorCause(content: readonly unknown[]): string | null {
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue
+    const { type, text } = block as { type?: unknown; text?: unknown }
+    if (type !== 'text' || typeof text !== 'string') continue
+    const trimmed = text.trim()
+    if (trimmed.length > 0) return trimmed.slice(0, MAX_ERROR_SUMMARY_CHARS)
+  }
+  return null
+}
+
 /** Render one `visualizer` call: the live frame while running or settled-ok, else a status-only row. */
 export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
   const settled = 'kind' in block
@@ -45,23 +69,28 @@ export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
     return <SettledDoc argsRaw={argsRaw} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} inspect={inspect} />
   }
 
-  // No renderable document: either an error result (the alert icon carries
-  // it) or arguments with no html. Neither has a frame to show.
+  // No renderable document: either an error result (stated on the row, with
+  // the alert icon carrying its name and code) or arguments with no html.
+  // Neither has a frame to show.
   const title = t('row.title')
-  const errorInfo = settled && block.isError && block.error !== undefined ? block.error : null
-  const summary = errorInfo !== null ? '' : t('row.missing')
+  const failed = settled && block.isError
+  const errorInfo = failed && block.error !== undefined ? block.error : null
+  // A failed call states its cause on the row; the alert icon keeps carrying
+  // the error's name and code for the cases that have no message to show.
+  const cause = failed ? errorCause(block.content) : null
+  const summary = failed ? cause ?? '' : t('row.missing')
 
   return (
     <div
       className={css.card}
       data-tool="visualizer"
-      data-state={settled ? (block.isError ? 'error' : 'ok') : 'running'}
+      data-state={settled ? (failed ? 'error' : 'ok') : 'running'}
     >
       <DisclosureRow
         rowClassName={css.row}
         titleClassName={css.title}
         chevronClassName={css.chevron}
-        icon={settled && block.isError ? <StateDot state="error" /> : <IconCodeOutline16 size={14} />}
+        icon={failed ? <StateDot state="error" /> : <IconCodeOutline16 size={14} />}
         title={title}
         open={false}
         expandable={false}
@@ -69,7 +98,12 @@ export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={css.summary}>{summary}</span>
+            <span
+              className={cause !== null ? css.scriptError : css.summary}
+              title={cause ?? undefined}
+            >
+              {summary}
+            </span>
             {errorInfo !== null && (
               <span
                 className={css.alertIcon}

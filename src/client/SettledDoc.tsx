@@ -8,16 +8,17 @@
 // in-place copy alive until then means it is the only transition that happens.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconEnhanceOutline16, IconFullscreenOutline16, IconInspectOutline12, IconLinkOutline16, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AutoFrame } from './AutoFrame.tsx'
 import { argsView, DEFAULT_FRAME_HEIGHT_PX } from './args-view.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { exportShareEnabled, openExportPage } from './share.ts'
+import { copyExportLink, exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { composeAnnotationPrompt, type AnnotationPick } from './annotate.ts'
+import { composeFixPrompt } from './fix-prompt.ts'
 import { CommentBar } from './CommentBar.tsx'
 import css from './Card.module.css'
 
@@ -49,10 +50,12 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
     : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
-  const [runtimeError, setRuntimeError] = useState<string | null>(null)
-  const onRuntimeError = useCallback((message: string): void => {
-    setRuntimeError(current => current ?? message)
+  // The line rides along for the fix prompt; only the message is displayed.
+  const [runtimeError, setRuntimeError] = useState<{ message: string; line: number | null } | null>(null)
+  const onRuntimeError = useCallback((message: string, line: number | null): void => {
+    setRuntimeError(current => current ?? { message, line })
   }, [])
   const storage = useMemo(() => createWidgetStorage(widgetStorageScope(view?.title ?? null)), [view?.title])
   const [annotate, setAnnotate] = useState(false)
@@ -81,6 +84,24 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
   const annotateMarks = useMemo(() => picks.map(pick => pick.id), [picks])
   const shareable = exportShareEnabled()
   const fullscreen = useFrameFullscreen()
+  // The frame's failures never reached the model — the settle-time check
+  // compiles scripts without running them — so a broken render otherwise
+  // needs the user to retype what the card is already showing.
+  const [fixSent, setFixSent] = useState(false)
+  const fixText = useMemo(() => composeFixPrompt({
+    title: view?.title ?? null,
+    scriptSrc: failedSrc,
+    runtimeMessage: runtimeError?.message ?? null,
+    runtimeLine: runtimeError?.line ?? null,
+  }), [view?.title, failedSrc, runtimeError])
+  const sendFix = useCallback((): void => {
+    if (fixText === null) return
+    onPrompt(fixText)
+    // One request per broken render: the fix arrives as a fresh call with a
+    // card of its own, so this one stays failed and asking twice only
+    // duplicates the turn.
+    setFixSent(true)
+  }, [fixText, onPrompt])
 
   if (view === null) return null
 
@@ -103,10 +124,30 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
             <span className={css.summary}>{summary}</span>
             {failedSrc !== null && <span className={css.scriptError}>{t('row.scriptError')}</span>}
             {runtimeError !== null && (
-              <span className={css.scriptError}>
+              // Clipped to keep the row's actions reachable; the tooltip
+              // carries the message in full.
+              <span className={css.scriptError} title={`${t('row.runtimeError')}${runtimeError.message}`}>
                 {t('row.runtimeError')}
-                {runtimeError}
+                {runtimeError.message}
               </span>
+            )}
+            {/* Rides beside the notice it acts on, and acts on card state
+              * rather than the frame, so it survives a collapse like the
+              * other byte-level actions do. */}
+            {settledOk && fixText !== null && (
+              <button
+                type="button"
+                className={css.download}
+                disabled={fixSent}
+                aria-label={fixSent ? t('row.fixErrorSent') : t('row.fixError')}
+                title={fixSent ? t('row.fixErrorSent') : t('row.fixErrorTitle')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  sendFix()
+                }}
+              >
+                <IconEnhanceOutline16 size={14} />
+              </button>
             )}
             {inspect !== undefined && (
               <button
@@ -185,18 +226,39 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
                   <IconDownloadOutline16 size={14} />
                 </button>
                 {shareable && (
-                  <button
-                    type="button"
-                    className={css.download}
-                    aria-label={t('row.share')}
-                    title={t('row.share')}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openExportPage(view.title, view.html)
-                    }}
-                  >
-                    <IconShareOutline16 size={14} />
-                  </button>
+                  <>
+                    {/* Handing the address to someone else is the other half
+                      * of sharing; opening the page was previously the only
+                      * way to reach the URL at all. */}
+                    <button
+                      type="button"
+                      className={css.download}
+                      aria-label={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
+                      title={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void copyExportLink(view.title, view.html).then((ok) => {
+                          if (!ok) return
+                          setLinkCopied(true)
+                          window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
+                        })
+                      }}
+                    >
+                      {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={css.download}
+                      aria-label={t('row.share')}
+                      title={t('row.share')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openExportPage(view.title, view.html)
+                      }}
+                    >
+                      <IconShareOutline16 size={14} />
+                    </button>
+                  </>
                 )}
               </>
             )}

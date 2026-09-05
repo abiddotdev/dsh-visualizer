@@ -9,12 +9,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconLinkOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { exportShareEnabled, openExportPage } from './share.ts'
+import { copyExportLink, exportShareEnabled, openExportPage } from './share.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
@@ -83,6 +83,7 @@ function WaveText({ label }: { label: string }): ReactNode[] {
 function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate; onPrompt: (text: string) => void }) {
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   // First failed external script wins: one notice per card, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
@@ -160,7 +161,7 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
             </span>
             {failedSrc !== null && <span className={css.scriptError}>{t('card.scriptError')}</span>}
             {runtimeError !== null && (
-              <span className={css.scriptError}>
+              <span className={css.scriptError} title={`${t('card.runtimeError')}${runtimeError}`}>
                 {t('card.runtimeError')}
                 {runtimeError}
               </span>
@@ -215,18 +216,36 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                   <IconDownloadOutline16 size={14} />
                 </button>
                 {shareable && (
-                  <button
-                    type="button"
-                    className={css.download}
-                    aria-label={t('card.share')}
-                    title={t('card.share')}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openExportPage(card.title, card.html)
-                    }}
-                  >
-                    <IconShareOutline16 size={14} />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={css.download}
+                      aria-label={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
+                      title={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void copyExportLink(card.title, card.html).then((ok) => {
+                          if (!ok) return
+                          setLinkCopied(true)
+                          window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
+                        })
+                      }}
+                    >
+                      {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={css.download}
+                      aria-label={t('card.share')}
+                      title={t('card.share')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openExportPage(card.title, card.html)
+                      }}
+                    >
+                      <IconShareOutline16 size={14} />
+                    </button>
+                  </>
                 )}
               </>
             )}

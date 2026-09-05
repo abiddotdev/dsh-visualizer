@@ -12,6 +12,7 @@
  */
 
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../shared/export-name.ts'
+import { copyText } from './download.ts'
 
 /**
  * Whether the host's export fanout is live: the served page carries a
@@ -69,4 +70,23 @@ export function openExportPage(title: string | null, html: string): boolean {
   }
   window.open(url, '_blank', 'noopener,noreferrer')
   return true
+}
+
+/**
+ * Copy one document's export page address to the clipboard. Opening the page
+ * is what a reader does; handing the address to someone else is what a sharer
+ * does, and that previously meant opening the tab only to copy the URL out of
+ * the browser's address bar.
+ * @param title - the call's explicit `title` argument, or null when absent.
+ * @param html - the complete document whose export page to link.
+ * @returns whether the address reached the clipboard; false where there is no
+ * URL to build or the clipboard refused, so the caller confirms nothing.
+ */
+export async function copyExportLink(title: string | null, html: string): Promise<boolean> {
+  const url = exportPageUrl(title, html)
+  if (url === null) {
+    console.info('visualizer: share is unavailable outside the harness web UI')
+    return false
+  }
+  return copyText(url)
 }

@@ -40,21 +40,32 @@ export function downloadDocument(title: string, html: string): void {
 }
 
 /**
- * Copy one document's bytes to the clipboard.
- * @param html - the complete document.
+ * Write one string to the clipboard. The card's copy actions — document bytes
+ * and share links alike — go through here, so an unavailable or denied
+ * clipboard produces the same silent false for all of them.
+ * @param text - the exact string to place on the clipboard.
  * @returns whether the write succeeded; resolves false when the clipboard
  * API is absent (non-secure context, embedder) or the write is denied, so
  * callers show no confirmation either way.
  */
-export async function copyDocument(html: string): Promise<boolean> {
+export async function copyText(text: string): Promise<boolean> {
   const clipboard = navigator.clipboard
   if (clipboard === undefined || clipboard === null) return false
   try {
-    await clipboard.writeText(html)
+    await clipboard.writeText(text)
     return true
   } catch {
     // A denied or failed write is the only reachable failure; the caller
     // learns of it through the false resolve, never a thrown promise.
     return false
   }
+}
+
+/**
+ * Copy one document's bytes to the clipboard.
+ * @param html - the complete document.
+ * @returns whether the write succeeded.
+ */
+export function copyDocument(html: string): Promise<boolean> {
+  return copyText(html)
 }

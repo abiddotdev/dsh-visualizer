@@ -97,10 +97,39 @@ describe('SettledDoc', () => {
     )
   })
 
-  it('hides the share control when the host never announced the route', () => {
+  it('hides the share controls when the host never announced the route', () => {
     render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
+  })
+
+  it('copies the export page address, confirming briefly on the row', async () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.useFakeTimers()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
+    // The exact address the share control opens — same derivation, no tab.
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
+    )
+    expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(COPY_FEEDBACK_MS) })
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+  })
+
+  it('confirms nothing when the clipboard refuses the link', async () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Link copied' })).toBeNull()
   })
 
   it('downloads the bytes client-side under a sanitized file name', () => {
@@ -162,6 +191,75 @@ describe('SettledDoc', () => {
     })
     expect(screen.getByText((_, el) => el?.textContent === 'Script error: ReferenceError: cloud is not defined')).toBeTruthy()
     expect(screen.queryByText(/TypeError: later/)).toBeNull()
+  })
+
+  it('offers no fix control while the render is healthy', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Ask for a fix' })).toBeNull()
+  })
+
+  it('sends one composed fix request naming both failures, then stays spent', () => {
+    const onPrompt = vi.fn()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={onPrompt} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    const post = (data: Record<string, unknown>): void => {
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { __dshGui: true, ...data },
+          source: frame.contentWindow,
+        }))
+      })
+    }
+
+    post({ type: 'scriptError', src: 'https://unpkg.com/chart.js' })
+    post({ type: 'runtimeError', message: 'ReferenceError: Chart is not defined', line: 12 })
+
+    const fix = screen.getByRole('button', { name: 'Ask for a fix' })
+    act(() => { fix.click() })
+    expect(onPrompt).toHaveBeenCalledTimes(1)
+    const composed = onPrompt.mock.calls[0]![0] as string
+    expect(composed).toContain('"Dash"')
+    expect(composed).toContain('- a library failed to load: https://unpkg.com/chart.js')
+    expect(composed).toContain('- a script error on line 12: ReferenceError: Chart is not defined')
+
+    // One request per broken render: the control stays, relabeled and inert.
+    const spent = screen.getByRole('button', { name: 'Fix requested' })
+    expect((spent as HTMLButtonElement).disabled).toBe(true)
+    act(() => { spent.click() })
+    expect(onPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('appears for a load failure alone and survives a collapse', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'scriptError', src: 'https://unpkg.com/chart.js' },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.getByRole('button', { name: 'Ask for a fix' })).toBeTruthy()
+
+    // It acts on card state, not on the frame, so collapsing keeps it — the
+    // same rule copy and download follow.
+    act(() => { screen.getByText('Dash').click() })
+    expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ask for a fix' })).toBeTruthy()
+  })
+
+  it('offers no fix control on a still-running card', () => {
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} state="running" />)
+    const frame = document.querySelector('iframe')
+    if (frame === null) throw new Error('frame not rendered')
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { __dshGui: true, type: 'runtimeError', message: 'TypeError: early', line: 3 },
+        source: frame.contentWindow,
+      }))
+    })
+    expect(screen.queryByRole('button', { name: 'Ask for a fix' })).toBeNull()
   })
 
   it('copies the bytes and confirms briefly on the row', async () => {
