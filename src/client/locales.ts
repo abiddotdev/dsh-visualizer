@@ -56,6 +56,15 @@ export const zh = {
   'gallery.copied': '已复制',
   'gallery.searchPlaceholder': '搜索生成物…',
   'gallery.noMatches': '没有匹配的生成物',
+  'gallery.countTotal': '共 {total} 项',
+  'gallery.countFiltered': '{shown} / {total}',
+  'gallery.delete': '删除',
+  'gallery.deleteConfirm': '再次点击以确认删除',
+  'gallery.filterAll': '全部',
+  'gallery.filterToday': '今天',
+  'gallery.filterWeek': '本周',
+  'gallery.filterKindGroup': '按类型筛选',
+  'gallery.filterDateGroup': '按时间筛选',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -112,6 +121,15 @@ export const en = {
   'gallery.copied': 'Copied',
   'gallery.searchPlaceholder': 'Search artifacts…',
   'gallery.noMatches': 'No artifacts match your search',
+  'gallery.countTotal': '{total} artifacts',
+  'gallery.countFiltered': '{shown} of {total}',
+  'gallery.delete': 'Delete',
+  'gallery.deleteConfirm': 'Click again to confirm delete',
+  'gallery.filterAll': 'All',
+  'gallery.filterToday': 'Today',
+  'gallery.filterWeek': 'This week',
+  'gallery.filterKindGroup': 'Filter by kind',
+  'gallery.filterDateGroup': 'Filter by date',
 } as const
 
 /** Dictionary keys of this namespace. */

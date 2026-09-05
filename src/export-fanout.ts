@@ -528,10 +528,11 @@ function bootToken(): string {
 
 /**
  * Serve one finalized export, or — the route's own root, no name segment —
- * the artifact gallery's JSON listing of everything currently on disk.
- * Requests carry the boot capability token as `?k=`; anything else takes the
- * indistinguishable not-found answer — no token oracle, no enumeration.
- * HTML documents go out through the sandboxed
+ * the artifact gallery's JSON listing of everything currently on disk; `DELETE`
+ * on one name removes it from disk instead of reading it, the gallery's
+ * delete action. Requests carry the boot capability token as `?k=`; anything
+ * else takes the indistinguishable not-found answer — no token oracle, no
+ * enumeration. HTML documents go out through the sandboxed
  * wrapper — an LLM-authored page never runs on the harness origin itself;
  * bare SVG goes out raw under a CSP variant with scripting removed outright,
  * since a diagram has no honest use for script and `<img>`-embedded copies
@@ -544,8 +545,8 @@ function bootToken(): string {
  */
 async function serveExport(state: FanoutState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET'
-  if (method !== 'GET' && method !== 'HEAD') {
-    res.writeHead(405, { allow: 'GET, HEAD', ...SERVE_HEADERS })
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE') {
+    res.writeHead(405, { allow: 'GET, HEAD, DELETE', ...SERVE_HEADERS })
     res.end()
     return
   }
@@ -565,6 +566,31 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     || !timingSafeEqual(Buffer.from(token), Buffer.from(state.token))) {
     res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
+    return
+  }
+  // The gallery's delete action: same token gate as reading, then the same
+  // regular-file check the serve path applies before trusting a name —
+  // unlink follows no symlink (it removes the directory entry named, never
+  // a target), but a name pointing at something other than a plain file
+  // stays untouched rather than silently succeeding on it.
+  if (method === 'DELETE') {
+    if (name.length === 0 || !isServableExportName(name)) {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+      return
+    }
+    try {
+      await state.ready
+      const path = join(state.config.dir, name)
+      const stats = await lstat(path)
+      if (!stats.isFile()) throw new Error('not a regular file')
+      await unlink(path)
+      res.writeHead(204, SERVE_HEADERS)
+      res.end()
+    } catch {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+    }
     return
   }
   // The route's own root (no name segment) is the gallery's listing request:

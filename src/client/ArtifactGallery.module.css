@@ -48,7 +48,15 @@
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .search {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -65,6 +73,55 @@
 .search:focus-visible {
   outline: none;
   border-color: var(--dsw-alias-border-l3);
+}
+
+.count {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.chipGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Single-select toggle within a chip group: quiet by default, tinted like
+ * the card's comment-mode toggle when selected. */
+.chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.chip:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.chipActive {
+  composes: chip;
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
 }
 
 .status {
@@ -151,4 +208,22 @@
 .action:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Delete's armed (confirm) state: the warn register, so a second click
+ * reads as consequential rather than identical to the first. */
+.actionDanger {
+  composes: action;
+  background: var(--dsw-alias-state-warn-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.actionDanger:hover {
+  background: var(--dsw-alias-state-warn-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-state-warn-label);
 }

@@ -8,7 +8,7 @@
  */
 
 import type { ArtifactListEntry } from '../shared/export-name.ts'
-import { artifactListUrl } from './share.ts'
+import { artifactListUrl, artifactPageUrlByName } from './share.ts'
 
 /** Validate one listing entry from the wire. */
 function isEntry(value: unknown): value is ArtifactListEntry {
@@ -40,6 +40,49 @@ export async function fetchArtifactList(): Promise<ArtifactListEntry[]> {
   const entries = typeof data === 'object' && data !== null ? (data as Record<string, unknown>).entries : null
   if (!Array.isArray(entries)) throw new Error('gallery listing response was malformed')
   return entries.filter(isEntry)
+}
+
+/**
+ * Delete one listed export from the host's disk — the same per-name URL the
+ * Open/Copy link actions address, over DELETE instead of GET.
+ * @param name - a name the listing endpoint returned.
+ * @returns whether the host removed it; false where sharing is unavailable
+ * or the request was refused, so the caller leaves the row in place rather
+ * than assuming success it never confirmed.
+ */
+export async function deleteArtifact(name: string): Promise<boolean> {
+  const url = artifactPageUrlByName(name)
+  if (url === null) return false
+  const response = await fetch(url, { method: 'DELETE' })
+  return response.ok
+}
+
+/** A listed export's age bucket, coarsest last, for the gallery's date filter. */
+export type ArtifactDateFilter = 'all' | 'today' | 'week'
+
+/** One day, in milliseconds — the unit both age buckets below are measured in. */
+const DAY_MS = 86_400_000
+
+/**
+ * Whether one export's modification time falls inside the given age bucket.
+ * Pure and clock-injected so the boundary (midnight, seven days back) is
+ * testable without mocking global time.
+ * @param mtimeMs - the export's modification time.
+ * @param filter - the selected bucket.
+ * @param now - the current time; defaults to the real clock.
+ * @returns true when the export belongs in the bucket.
+ */
+export function matchesDateFilter(mtimeMs: number, filter: ArtifactDateFilter, now: number = Date.now()): boolean {
+  if (filter === 'all') return true
+  if (filter === 'today') return isSameCalendarDay(mtimeMs, now)
+  return now - mtimeMs <= 7 * DAY_MS
+}
+
+/** Whether two timestamps fall on the same local calendar day. */
+function isSameCalendarDay(a: number, b: number): boolean {
+  const da = new Date(a)
+  const db = new Date(b)
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate()
 }
 
 /** Binary size units the gallery displays; a single render stays well under a megabyte. */

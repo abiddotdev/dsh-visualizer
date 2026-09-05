@@ -391,7 +391,7 @@ describe('exports serve route', () => {
       JSON.stringify({ csp: res.headerMap['content-security-policy'], cc: res.headerMap['cache-control'], nosniff: res.headerMap['x-content-type-options'], rp: res.headerMap['referrer-policy'], xfo: res.headerMap['x-frame-options'], corp: res.headerMap['cross-origin-resource-policy'], pp: res.headerMap['permissions-policy'] })
     expect(hardened(answers[0]!)).toBe(hardened(answers[1]!))
     expect(hardened(answers[1]!)).toBe(hardened(answers[2]!))
-    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD')
+    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, DELETE')
   })
 
   it('refuses a symlink planted in the exports directory like any unknown name', async () => {
@@ -587,11 +587,69 @@ describe('exports serve route', () => {
     expect(res.body).toContain('sandbox="allow-scripts"')
   })
 
-  it('answers 405 with the method table for anything but GET and HEAD', async () => {
+  it('answers 405 with the method table for anything but GET, HEAD, and DELETE', async () => {
     const harness = await landed('Dash', DOC)
     const res = await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
-    expect(res.headerMap.allow).toBe('GET, HEAD')
+    expect(res.headerMap.allow).toBe('GET, HEAD, DELETE')
+  })
+
+  describe('artifact gallery delete', () => {
+    it('removes a finalized export from disk and answers 204', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      expect(await readFileOrNull(join(harness.dir, name))).not.toBeNull()
+
+      const res = await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+      expect(res.status).toBe(204)
+      expect(res.body).toBe('')
+      expect(await readFileOrNull(join(harness.dir, name))).toBeNull()
+    })
+
+    it('drops it from a subsequent listing', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('refuses without the capability token, identically to a bad name', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      const res = await request(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+      expect(res.status).toBe(404)
+      expect(await readFileOrNull(join(harness.dir, name))).not.toBeNull()
+    })
+
+    it('answers 404 for a missing name, the route root, and a traversal attempt, deleting nothing', async () => {
+      const harness = await landed('Dash', DOC)
+      const urls = [
+        `${EXPORTS_ROUTE_PATH}/missing.html`,
+        `${EXPORTS_ROUTE_PATH}/`,
+        `${EXPORTS_ROUTE_PATH}/..%2Fsecret.html`,
+        `${EXPORTS_ROUTE_PATH}/Dash.partial`,
+      ]
+      for (const url of urls) {
+        const res = await requestTokened(harness, 'DELETE', url)
+        expect(res.status, url).toBe(404)
+      }
+      expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).not.toBeNull()
+    })
+
+    it('refuses a symlink planted under a servable name, like the read path does', async () => {
+      const harness = await setup()
+      const { symlink, writeFile: write } = await import('node:fs/promises')
+      const real = join(harness.dir, 'real.html')
+      await write(real, '<p>real</p>', 'utf8')
+      const planted = join(harness.dir, 'planted-1234567890abcdef.html')
+      await symlink(real, planted)
+
+      const res = await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/planted-1234567890abcdef.html`)
+      expect(res.status).toBe(404)
+      expect(await readFileOrNull(real)).not.toBeNull()
+    })
   })
 })
 
