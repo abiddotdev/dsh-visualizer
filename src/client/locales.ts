@@ -45,6 +45,15 @@ export const zh = {
   'row.commentRemove': '删除批注',
   'row.commentSend': '发送',
   'row.commentClear': '清空',
+  'view.artifacts': '生成物',
+  'gallery.title': '已分享的生成物',
+  'gallery.refresh': '刷新',
+  'gallery.loading': '正在加载…',
+  'gallery.error': '无法加载列表',
+  'gallery.empty': '暂无分享内容——渲染完成后会出现在这里',
+  'gallery.open': '打开',
+  'gallery.copyLink': '复制链接',
+  'gallery.copied': '已复制',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -90,6 +99,15 @@ export const en = {
   'row.commentRemove': 'Remove comment',
   'row.commentSend': 'Send',
   'row.commentClear': 'Clear',
+  'view.artifacts': 'Artifacts',
+  'gallery.title': 'Shared artifacts',
+  'gallery.refresh': 'Refresh',
+  'gallery.loading': 'Loading…',
+  'gallery.error': 'Could not load the artifact list',
+  'gallery.empty': 'Nothing shared yet — renders appear here once a visualizer call settles',
+  'gallery.open': 'Open',
+  'gallery.copyLink': 'Copy link',
+  'gallery.copied': 'Copied',
 } as const
 
 /** Dictionary keys of this namespace. */

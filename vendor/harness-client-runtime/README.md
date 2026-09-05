@@ -33,7 +33,9 @@ hand, each trimmed to only what this plugin calls, matching the existing
 file's style:
 
 - `src/client/slots.ts` — a second `register` overload for chain-kind slots
-  (`select` + a `matched` prop), needed for `conversation.chat.turnTail`.
+  (`select` + a `matched` prop), needed for `conversation.chat.turnTail`; and a
+  third for list-kind slots (`id`/`order`/`label`), needed for the artifact
+  gallery's `conversation.view` tab.
 - `src/client/settings.ts` — a new file: `SettingsScope`/`SettingsScopeBinder`
   reaching `ctx.settingsScope`, needed to read Harness's own Compact/Normal
   transcript-view preference (see `src/client/transcript-view.ts` in this

@@ -16,14 +16,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { StreamCard } from './StreamCard.tsx'
 import { ResultRow } from './ResultRow.tsx'
 import { TurnTailCard } from './TurnTailCard.tsx'
+import { ArtifactGallery } from './ArtifactGallery.tsx'
 import { en, zh, type GenerativeUiKey } from './locales.ts'
 import { generativeStreamDefinition } from './stream-node.ts'
 import { selectVisualizerCards, visualizerTurnDefinition } from './turn-tail.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettingsSection } from './transcript-view.ts'
+import { exportShareEnabled } from './share.ts'
 
 export type { StreamCardProps } from './StreamCard.tsx'
 export type { ResultRowProps } from './ResultRow.tsx'
 export type { TurnTailCardProps } from './TurnTailCard.tsx'
+export type { ArtifactGalleryProps } from './ArtifactGallery.tsx'
 export type { GenerativeCardData, GenerativeStreamChatData } from './stream-node.ts'
 export type { VisualizerTurnCard, VisualizerTurnData } from './turn-tail.ts'
 export type { GenerativeUiKey } from './locales.ts'
@@ -53,6 +56,20 @@ export function apply(ctx: ClientContext): void {
 
   ctx.uiConversation.events.register(generativeStreamDefinition)
   ctx.uiConversation.events.register(visualizerTurnDefinition)
+
+  // The gallery lists what the export fanout mirrors to disk; without that
+  // feature mounted there is nothing to list, so the tab tracks the same
+  // boot-table announcement the card's Share control gates on.
+  if (exportShareEnabled()) {
+    const t = ctx.locale.bind(NS)
+    ctx.slots.inject('conversation.view', () => ctx.slots.register({
+      name: 'conversation.view',
+      id: 'visualizer-artifacts',
+      order: 100,
+      label: () => t('view.artifacts'),
+      locale: NS,
+    }, ArtifactGallery))
+  }
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'visualizer-stream', locale: NS,

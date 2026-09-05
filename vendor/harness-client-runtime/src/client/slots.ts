@@ -41,6 +41,27 @@ export interface SlotRegistry {
   ): () => void
 
   /**
+   * Register one list-slot contribution: an entry among others, ordered and
+   * independently addressable by `id` (`conversation.view`'s tab roster is
+   * this plugin's only user). `label` may be a thunk so registration-time
+   * text (a tab's title) re-evaluates per read and follows the active
+   * locale without re-registration.
+   * @param definition - slot name, list identity/ordering, and optional locale namespace.
+   * @param component - the rendered node component for the slot.
+   * @returns disposer removing the contribution.
+   */
+  register(
+    definition: {
+      readonly name: string
+      readonly id: string
+      readonly order?: number
+      readonly label?: string | (() => string)
+      readonly locale?: string
+    },
+    component: unknown,
+  ): () => void
+
+  /**
    * Register a lazy slot contribution factory, invoked once the slot is first
    * rendered.
    * @param name - slot name to inject into.

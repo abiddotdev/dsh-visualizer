@@ -28,7 +28,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { extractStreamArgs } from './client/partial-args.ts'
 import { RENDER_CSP_DIRECTIVES } from './shared/export-csp.ts'
 import {
-  EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportShareName, isServableExportName, partialFileName,
+  type ArtifactListEntry, EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, displayTitleOf, exportFileBase, exportShareName,
+  isServableExportName, partialFileName,
 } from './shared/export-name.ts'
 
 /** Wire name of the render tool; only its calls fan out. */
@@ -407,6 +408,43 @@ function finalizeCall(state: FanoutState, session: SessionState, event: ToolCall
   })
 }
 
+/** Most rows the gallery listing returns; bounds response size on a long-lived, high-volume artifact directory. */
+const MAX_LISTING_ENTRIES = 500
+
+/**
+ * Every finalized export currently on disk, most recent first, for the
+ * artifact gallery's listing request. Read live rather than cached — the
+ * directory is small relative to a request's cost, and a cache would show
+ * artifacts the retention sweep already removed.
+ * @param dir - the configured exports directory.
+ * @returns entries newest-first, capped at {@link MAX_LISTING_ENTRIES}.
+ */
+async function listArtifacts(dir: string): Promise<ArtifactListEntry[]> {
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch (error: unknown) {
+    // Nothing has ever been shared yet: an empty list, not a failure.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+  const entries: ArtifactListEntry[] = []
+  for (const name of names) {
+    if (!isServableExportName(name)) continue
+    const stats = await lstat(join(dir, name)).catch(() => null)
+    if (stats === null || !stats.isFile()) continue
+    entries.push({
+      name,
+      title: displayTitleOf(name),
+      kind: name.endsWith('.svg') ? 'svg' : 'html',
+      bytes: stats.size,
+      mtimeMs: stats.mtimeMs,
+    })
+  }
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  return entries.slice(0, MAX_LISTING_ENTRIES)
+}
+
 /**
  * Header fields every route answer carries, whatever the status: exports are
  * never cached (each name's content mutates by overwrite, so a stale copy is
@@ -489,9 +527,11 @@ function bootToken(): string {
 }
 
 /**
- * Serve one finalized export. Requests carry the boot capability token as
- * `?k=`; anything else takes the indistinguishable not-found answer — no
- * token oracle, no enumeration. HTML documents go out through the sandboxed
+ * Serve one finalized export, or — the route's own root, no name segment —
+ * the artifact gallery's JSON listing of everything currently on disk.
+ * Requests carry the boot capability token as `?k=`; anything else takes the
+ * indistinguishable not-found answer — no token oracle, no enumeration.
+ * HTML documents go out through the sandboxed
  * wrapper — an LLM-authored page never runs on the harness origin itself;
  * bare SVG goes out raw under a CSP variant with scripting removed outright,
  * since a diagram has no honest use for script and `<img>`-embedded copies
@@ -525,6 +565,25 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     || !timingSafeEqual(Buffer.from(token), Buffer.from(state.token))) {
     res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
+    return
+  }
+  // The route's own root (no name segment) is the gallery's listing request:
+  // every finalized export currently on disk, gated by the same token check
+  // above — the listing is as much a capability as any one export link.
+  if (name.length === 0) {
+    try {
+      await state.ready
+      const body = Buffer.from(JSON.stringify({ entries: await listArtifacts(state.config.dir) }), 'utf8')
+      res.writeHead(200, {
+        ...SERVE_HEADERS,
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': body.length,
+      })
+      res.end(method === 'HEAD' ? undefined : body)
+    } catch {
+      res.writeHead(404, notFoundHeaders)
+      res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
+    }
     return
   }
   if (!isServableExportName(name)) {

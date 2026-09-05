@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Artifact gallery: a new "Artifacts" tab beside Chat and the trajectory view, listing every finalized export the host currently holds — title, kind, size, and modified time, newest first — with Open and Copy link on each row and a manual Refresh (there is no push channel telling the tab a new render just settled elsewhere in the conversation). Every render was already mirrored to disk and reachable at a stable share link the moment it settled, but the only way back to one was to still have its link; this makes the accumulated exports directory visible instead of write-only. Backed by a new listing request at the exports route's own root (`GET /artifacts/visualizer/?k=<key>`), gated by the same capability token as any single export page. Tracks the same `shareArtifacts` switch as the Share control: no route, no tab. The client's compile-time `slots.register` face (vendored from the harness, see `vendor/harness-client-runtime/README.md`) gained a third overload for list-kind slots (`id`/`order`/`label`) to register the tab — the pinned snapshot predates any use of `conversation.view` in this plugin.
+
 - A failed `visualizer` call now states its cause on the row (the thrown message from the result content, bounded to 160 characters) instead of only an alert icon whose tooltip read `Error: E_TOOL`. The over-limit document and the out-of-range height were previously undiagnosable without opening the trajectory view.
 
 - Copy share link control on both cards, beside Share: puts the export page's address on the clipboard directly. Sharing previously meant opening the page in a new tab only to copy the URL back out of the browser's address bar.

@@ -443,7 +443,6 @@ describe('exports serve route', () => {
       `${EXPORTS_ROUTE_PATH}/Dash.partial`,
       `${EXPORTS_ROUTE_PATH}/..%2Fsecret.html`,
       `${EXPORTS_ROUTE_PATH}/nested/Dash.html`,
-      `${EXPORTS_ROUTE_PATH}/`,
       `${EXPORTS_ROUTE_PATH}/Dash.txt`,
     ]
     for (const url of urls) {
@@ -451,6 +450,71 @@ describe('exports serve route', () => {
       expect(res.status, url).toBe(404)
       expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     }
+  })
+
+  describe('artifact gallery listing', () => {
+    it('lists a finalized export at the route root, newest first', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(1_000_000)
+      const harness = await landed('Dash', DOC)
+      vi.setSystemTime(2_000_000)
+      emitSession(harness.ctx, toolCallEvent('c2', 'visualizer', JSON.stringify({ title: 'Later chart', html: '<svg><rect/></svg>' })))
+      await flush()
+      vi.useRealTimers()
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
+      expect(res.headerMap['cache-control']).toBe('no-store')
+      const body = JSON.parse(res.body) as { entries: { name: string; title: string; kind: string; bytes: number; mtimeMs: number }[] }
+      expect(body.entries).toHaveLength(2)
+      // Newest first: the SVG landed after the HTML document.
+      expect(body.entries[0]!.title).toBe('Later chart')
+      expect(body.entries[0]!.kind).toBe('svg')
+      expect(body.entries[0]!.name).toBe(exportShareName('Later chart', '<svg><rect/></svg>'))
+      expect(body.entries[1]!.title).toBe('Dash')
+      expect(body.entries[1]!.kind).toBe('html')
+      expect(body.entries[1]!.bytes).toBe(Buffer.byteLength(DOC, 'utf8'))
+    })
+
+    it('answers an empty list before anything has ever been shared', async () => {
+      const harness = await setup()
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('excludes a streaming sidecar still in flight', async () => {
+      const harness = await setup()
+      emitSession(harness.ctx, delta(JSON.stringify({ title: 'Dash', html: DOC }).slice(0, -1), 'visualizer'))
+      await flush()
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('refuses the listing without the capability token, identically to a bad name', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(404)
+      expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
+    })
+
+    it('answers the same listing whether the request carries a trailing slash or not', async () => {
+      const harness = await landed('Dash', DOC)
+      const withSlash = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      const withoutSlash = await requestTokened(harness, 'GET', EXPORTS_ROUTE_PATH)
+      expect(withSlash.body).toBe(withoutSlash.body)
+      expect(withoutSlash.status).toBe(200)
+    })
+
+    it('answers no body on HEAD but keeps the 200 and headers', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await requestTokened(harness, 'HEAD', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
+      expect(res.body).toBe('')
+    })
   })
 
   it('refuses requests without or with a wrong capability token', async () => {
