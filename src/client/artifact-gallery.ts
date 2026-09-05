@@ -46,15 +46,19 @@ export async function fetchArtifactList(): Promise<ArtifactListEntry[]> {
  * Delete one listed export from the host's disk — the same per-name URL the
  * Open/Copy link actions address, over DELETE instead of GET.
  * @param name - a name the listing endpoint returned.
- * @returns whether the host removed it; false where sharing is unavailable
- * or the request was refused, so the caller leaves the row in place rather
- * than assuming success it never confirmed.
+ * @returns whether the host removed it; false where sharing is unavailable,
+ * the request was refused, or the network call itself failed, so the caller
+ * leaves the row in place rather than assuming success it never confirmed.
  */
 export async function deleteArtifact(name: string): Promise<boolean> {
   const url = artifactPageUrlByName(name)
   if (url === null) return false
-  const response = await fetch(url, { method: 'DELETE' })
-  return response.ok
+  try {
+    const response = await fetch(url, { method: 'DELETE' })
+    return response.ok
+  } catch {
+    return false
+  }
 }
 
 /** A listed export's age bucket, coarsest last, for the gallery's date filter. */

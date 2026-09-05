@@ -104,6 +104,12 @@ describe('deleteArtifact', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
     await expect(deleteArtifact(ENTRY.name)).resolves.toBe(false)
   })
+
+  it('resolves false rather than rejecting when the network call itself fails', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+    await expect(deleteArtifact(ENTRY.name)).resolves.toBe(false)
+  })
 })
 
 describe('matchesDateFilter', () => {
