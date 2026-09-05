@@ -275,9 +275,26 @@ describe('StreamCard', () => {
     )
   })
 
-  it('hides the share control when the host never announced the route', () => {
+  it('copies that same address from the complete card without opening a tab', async () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const SVG_DOC = '<svg><rect/></svg>'
+    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
+    )
+    expect(open).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
+  })
+
+  it('hides the share controls when the host never announced the route', () => {
     renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 

@@ -97,10 +97,39 @@ describe('SettledDoc', () => {
     )
   })
 
-  it('hides the share control when the host never announced the route', () => {
+  it('hides the share controls when the host never announced the route', () => {
     render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
+  })
+
+  it('copies the export page address, confirming briefly on the row', async () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.useFakeTimers()
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
+    // The exact address the share control opens — same derivation, no tab.
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}?k=test-boot-token`,
+    )
+    expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(COPY_FEEDBACK_MS) })
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+  })
+
+  it('confirms nothing when the clipboard refuses the link', async () => {
+    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<SettledDoc argsRaw={args({ title: 'Dash', html: DOC })} t={t} onPrompt={() => {}} />)
+
+    await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Link copied' })).toBeNull()
   })
 
   it('downloads the bytes client-side under a sanitized file name', () => {
