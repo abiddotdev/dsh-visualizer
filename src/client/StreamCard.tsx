@@ -9,12 +9,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconLinkOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconFullscreenOutline16, IconLinkOutline16, IconLoadingOutline16, IconRightUpOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GenerativeCardData } from './stream-node.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { copyExportLink, exportShareEnabled, openExportPage } from './share.ts'
+import { copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
+import { useExportControl } from './export-control.ts'
 import { openWidgetLink, submitWidgetPrompt } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { AutoFrame, START_FRAME_HEIGHT_PX } from './AutoFrame.tsx'
@@ -84,6 +85,17 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+  const exportControl = useExportControl(card.callId)
+  const onCopyLink = useCallback((): void => {
+    void exportControl.ensure().then((name) => {
+      if (name === null) return
+      void copyArtifactLink(name).then((ok) => {
+        if (!ok) return
+        setLinkCopied(true)
+        window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
+      })
+    })
+  }, [exportControl])
   // First failed external script wins: one notice per card, later failures
   // add nothing.
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
@@ -224,27 +236,49 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                       title={linkCopied ? t('card.linkCopied') : t('card.copyLink')}
                       onClick={(event) => {
                         event.stopPropagation()
-                        void copyExportLink(card.title, card.html).then((ok) => {
-                          if (!ok) return
-                          setLinkCopied(true)
-                          window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
-                        })
+                        onCopyLink()
                       }}
                     >
                       {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
                     </button>
-                    <button
-                      type="button"
-                      className={css.download}
-                      aria-label={t('card.share')}
-                      title={t('card.share')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openExportPage(card.title, card.html)
-                      }}
-                    >
-                      <IconShareOutline16 size={14} />
-                    </button>
+                    {exportControl.status === 'exported' && exportControl.name !== null ? (
+                      <button
+                        type="button"
+                        className={css.download}
+                        aria-label={t('card.share')}
+                        title={t('card.share')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openArtifactPage(exportControl.name!)
+                        }}
+                      >
+                        <IconShareOutline16 size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={css.download}
+                        disabled={exportControl.status === 'exporting'}
+                        aria-label={
+                          exportControl.status === 'exporting' ? t('row.exporting')
+                            : exportControl.status === 'failed' ? t('row.exportFailed')
+                              : t('row.export')
+                        }
+                        title={
+                          exportControl.status === 'exporting' ? t('row.exporting')
+                            : exportControl.status === 'failed' ? t('row.exportFailedTitle')
+                              : t('row.exportTitle')
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void exportControl.ensure()
+                        }}
+                      >
+                        {exportControl.status === 'exporting'
+                          ? <IconLoadingOutline16 size={14} />
+                          : <IconRightUpOutline16 size={14} />}
+                      </button>
+                    )}
                   </>
                 )}
               </>

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -7,9 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { Session } from '@deepseek-ai/dsh-session'
+import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import * as visualizer from '../src/index.ts'
-import { PARTIAL_WRITE_INTERVAL_MS } from '../src/export-fanout.ts'
-import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportFileBase, exportShareName, partialFileName } from '../src/shared/export-name.ts'
+import { EXPORT_RATE_LIMIT } from '../src/export-fanout.ts'
+import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
 
 /**
  * Minimal stand-in for the harness web server's route registry: the same
@@ -32,11 +34,33 @@ class FakeWebServer extends Service {
   }
 }
 
-/** One mounted fanout's handles. */
+/**
+ * Minimal stand-in for the real `SessionStore`: a plain map of live sessions
+ * a test seeds directly with real `Session` instances (see {@link seedCall}),
+ * satisfying the exact `.get`/`.list` contract `resolveCallDocument` reads.
+ */
+class FakeSessions extends Service {
+  readonly byId = new Map<string, Session>()
+
+  constructor(ctx: Context) {
+    super(ctx, 'sessions')
+  }
+
+  get(id: unknown): Session | undefined {
+    return this.byId.get(String(id))
+  }
+
+  list(): Session[] {
+    return [...this.byId.values()]
+  }
+}
+
+/** One mounted route's handles. */
 interface Harness {
   ctx: Context
   dir: string
   server: FakeWebServer
+  sessions: FakeSessions
 }
 
 async function setup(config: Record<string, unknown> = {}): Promise<Harness> {
@@ -45,10 +69,12 @@ async function setup(config: Record<string, unknown> = {}): Promise<Harness> {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(FakeWebServer)
+  await ctx.plugin(FakeSessions)
   await ctx.plugin(visualizer, { artifactDir: dir, ...config })
   const server = ctx.get('webServer') as FakeWebServer
-  // The webServer-injected sub-fiber activates on its own microtask chain;
-  // a disabled feature registers no route to wait for.
+  const sessions = ctx.get('sessions') as FakeSessions
+  // The webServer/sessions-injected sub-fiber activates on its own microtask
+  // chain; a disabled feature registers no route to wait for.
   if (config.shareArtifacts !== false) {
     for (let i = 0; i < 100 && server.routes.length === 0; i++) {
       await new Promise(resolve => { setTimeout(resolve, 2) })
@@ -56,62 +82,51 @@ async function setup(config: Record<string, unknown> = {}): Promise<Harness> {
   } else {
     await new Promise(resolve => { setTimeout(resolve, 10) })
   }
-  return { ctx, dir, server }
+  return { ctx, dir, server, sessions }
 }
 
 afterEach(async () => {
   vi.useRealTimers()
 })
 
-/** The session object the fanout keys its per-session state by; one identity for the whole suite, as in the harness. */
-const session = { id: 's1' }
-
-/** Loose-typed emit: the session firehose's typed declaration lives in dsh-session. */
-function emitSession(ctx: Context, event: unknown): void {
-  ;(ctx as unknown as { emit: (name: string, ...args: unknown[]) => void }).emit('session/event', session, event)
-}
-
-/** Let the fanout's serialized file chains drain. */
-/** Let the fanout's serialized file chains drain: both event-loop phases, repeatedly. */
-async function flush(): Promise<void> {
-  for (let i = 0; i < 25; i++) {
-    await new Promise(resolve => { setImmediate(resolve) })
-    await new Promise(resolve => { setTimeout(resolve, 0) })
-  }
-}
-
-function chunkEvent(chunk: unknown, turn = 1, step = 1): unknown {
-  return { type: 'assistant/chunk', data: { turn, step, chunk } }
-}
-
-function delta(args: string, name?: string, callId = 'c1', index = 0): unknown {
-  return chunkEvent({ type: 'tool-call-delta', index, id: callId, name, argumentsDelta: args })
-}
-
-function toolCallEvent(callId: unknown, name: string, args: string): unknown {
-  return { type: 'tool/call', data: { turn: 1, step: 1, callId, name, arguments: args } }
-}
-
-function toolResultEvent(callId: string, error?: { name: string; code: string }): unknown {
-  return {
-    type: 'tool/result',
-    data: { message: { content: [{ toolCallId: callId }] }, ...(error !== undefined ? { error } : {}) },
-  }
-}
-
 /**
- * Split one call's complete argument JSON into stream-order delta fragments:
- * the head through the `html` value's opening quote, the escaped body in
- * chunks, then the closing quote and brace — the shape the model streams.
+ * Seed one settled `visualizer` call into a fresh live session — the exact
+ * durable shape `resolveCallDocument` reads (see `export-fanout.ts`), built
+ * with the real `Session.create` and `createToolResultMessage` rather than a
+ * hand-rolled structural guess, so a shape drift in the real package would
+ * fail these tests instead of silently passing against a stale mirror.
+ * @param harness - the route harness whose fake session store to seed into.
+ * @param callId - the call's identity.
+ * @param name - the tool name; only `'visualizer'` calls resolve.
+ * @param args - the raw JSON arguments string the call carried, or undefined
+ * to seed the `tool/call` alone (an unsettled call, for negative tests).
+ * @param error - when present, the call settled as this error instead of ok.
  */
-function argumentDeltas(title: string | null, html: string, chunks: number): string[] {
-  const doc = JSON.stringify({ ...(title !== null ? { title } : {}), html })
-  const head = doc.slice(0, doc.indexOf(':"', doc.indexOf('"html"')) + 2)
-  const body = doc.slice(head.length, doc.length - 2)
-  const size = Math.max(1, Math.ceil(body.length / chunks))
-  const parts: string[] = []
-  for (let i = 0; i < body.length; i += size) parts.push(body.slice(i, i + size))
-  return [head, ...parts, doc.slice(-2)]
+function seedCall(
+  harness: Harness, callId: string, name: string, args: string | undefined, error?: { name: string; code: string },
+): void {
+  const events: unknown[] = [
+    { type: 'tool/call', seq: 0, time: 1, data: { turn: 1, step: 1, callId, name, arguments: args ?? '{}' } },
+  ]
+  if (args !== undefined) {
+    const message = createToolResultMessage({
+      callId: callId as never,
+      content: [{ type: 'text', text: error !== undefined ? 'failed' : 'ok' }],
+      isError: error !== undefined,
+    })
+    events.push({
+      type: 'tool/result', seq: 1, time: 2, surfaceOp: 'append',
+      data: { turn: 1, step: 1, message, ...(error !== undefined ? { error } : {}) },
+    })
+  }
+  const sessionId = `session-${callId}`
+  harness.sessions.byId.set(sessionId, Session.create(sessionId as never, events as never))
+}
+
+/** Seed and export one settled `visualizer` call in a single step, for tests whose focus is what happens after landing. */
+async function exportSettled(harness: Harness, callId: string, title: string | null, html: string): Promise<ReturnType<typeof fakeResponse>> {
+  seedCall(harness, callId, 'visualizer', JSON.stringify({ ...(title !== null ? { title } : {}), html }))
+  return requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId })
 }
 
 async function readFileOrNull(path: string): Promise<string | null> {
@@ -141,198 +156,182 @@ function fakeResponse(): ServerResponse & { status: number; headerMap: Record<st
   return res as unknown as ServerResponse & typeof res
 }
 
-async function request(harness: Harness, method: string, url: string): Promise<ReturnType<typeof fakeResponse>> {
+/**
+ * A minimal `IncomingMessage` stand-in: `method`/`url` plus a readable-stream
+ * face over an optional JSON body, delivered asynchronously like a real
+ * socket so the route's own `req.on('data'|'end', …)` body reader exercises
+ * unchanged.
+ */
+function fakeRequest(method: string, url: string, jsonBody?: unknown): IncomingMessage {
+  const bytes = jsonBody === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(jsonBody), 'utf8')
+  const listeners: Record<string, ((chunk?: Buffer) => void)[]> = {}
+  const req = {
+    method,
+    url,
+    on(event: string, cb: (chunk?: Buffer) => void) {
+      (listeners[event] ??= []).push(cb)
+      return req
+    },
+    destroy() { /* the fake never needs to abort mid-stream */ },
+  }
+  queueMicrotask(() => {
+    for (const cb of listeners.data ?? []) cb(bytes)
+    for (const cb of listeners.end ?? []) cb()
+  })
+  return req as unknown as IncomingMessage
+}
+
+async function request(harness: Harness, method: string, url: string, jsonBody?: unknown): Promise<ReturnType<typeof fakeResponse>> {
   const route = harness.server.routes.find(entry => entry.path === EXPORTS_ROUTE_PATH)
   if (route === undefined) throw new Error('exports route was not registered')
   const res = fakeResponse()
-  await route.handler({ method, url } as IncomingMessage, res)
+  await route.handler(fakeRequest(method, url, jsonBody), res)
   return res
 }
 
 /**
  * The request helper appends the capability token, learned the way the
- * browser half learns it: off the index-inject announcement the fanout
+ * browser half learns it: off the index-inject announcement the route
  * pushes at every emit.
  */
-async function requestTokened(harness: Harness, method: string, url: string): Promise<ReturnType<typeof fakeResponse>> {
+async function requestTokened(harness: Harness, method: string, url: string, jsonBody?: unknown): Promise<ReturnType<typeof fakeResponse>> {
   const table: unknown[] = []
   ;(harness.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
     .emit('webserver/index-inject', table)
   const token = (table[0] as { value: string }).value
   const joiner = url.includes('?') ? '&' : '?'
-  return request(harness, method, `${url}${joiner}k=${encodeURIComponent(token)}`)
+  return request(harness, method, `${url}${joiner}k=${encodeURIComponent(token)}`, jsonBody)
 }
 
 const DOC = '<!DOCTYPE html><html><body><h1>Revenue</h1></body></html>'
 
-describe('export fanout', () => {
-  it('mirrors the stream into a growing sidecar, then finalizes on tool/call', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(1_000_000)
+describe('export request (POST)', () => {
+  async function landed(title: string, html: string, extra: Record<string, unknown> = {}): Promise<Harness> {
+    const harness = await setup(extra)
+    const res = await exportSettled(harness, 'c1', title, html)
+    if (res.status !== 200) throw new Error(`export request failed: ${res.status} ${res.body}`)
+    return harness
+  }
+
+  it('writes the document from the session\'s own durable log — the request body never carries html', async () => {
     const harness = await setup()
-    const args = JSON.stringify({ title: 'Dash', html: DOC })
-    const [head, first, mid, last, tail] = argumentDeltas('Dash', DOC, 3)
-
-    // The opening delta names the tool and carries the first body piece: the
-    // sidecar appears with a partial document.
-    emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
-    await flush()
-    let sidecar = await readFileOrNull(join(harness.dir, partialFileName('dash')))
-    expect(sidecar).not.toBeNull()
-    expect(sidecar!.length).toBeGreaterThan(0)
-    expect(sidecar!.length).toBeLessThan(DOC.length)
-    const afterFirst = sidecar!.length
-
-    // A same-instant delta is coalesced by the throttle: content unchanged.
-    emitSession(harness.ctx, delta(mid ?? ''))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBe(sidecar)
-
-    // Past the interval the next write grows the sidecar to the full document.
-    vi.setSystemTime(Date.now() + PARTIAL_WRITE_INTERVAL_MS + 1)
-    emitSession(harness.ctx, delta((last ?? '') + (tail ?? '')))
-    await flush()
-    sidecar = await readFileOrNull(join(harness.dir, partialFileName('dash')))
-    expect(sidecar!.length).toBeGreaterThan(afterFirst)
-
-    // The landed call finalizes: exact bytes under the final name, sidecar gone.
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', args))
-    await flush()
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }))
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(200)
+    expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
+    expect(JSON.parse(res.body)).toEqual({ name: exportShareName('Dash', DOC) })
     expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBe(DOC)
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
   })
 
   it('writes an untitled document under the fallback name', async () => {
     const harness = await setup()
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ html: DOC })))
-    await flush()
+    const res = await exportSettled(harness, 'c1', null, DOC)
+    expect(res.status).toBe(200)
     expect(await readFileOrNull(join(harness.dir, exportShareName(null, DOC)))).toBe(DOC)
   })
 
   it('finalizes a bare SVG document under .svg', async () => {
-    const harness = await setup()
     const svg = '<svg viewBox="0 0 10 10"><rect width="4" height="4"/></svg>'
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Flow', html: svg })))
-    await flush()
+    const harness = await landed('Flow', svg)
     expect(await readFileOrNull(join(harness.dir, exportShareName('Flow', svg)))).toBe(svg)
   })
 
-  it('never finalizes an over-limit document', async () => {
-    const harness = await setup({ maxArtifactBytes: 8 })
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Big', html: DOC })))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, 'Big.html'))).toBeNull()
-  })
-
-  it('removes the export when the call errors', async () => {
+  it('is idempotent: exporting the same call twice reproduces the same file', async () => {
     const harness = await setup()
-    // A streamed sidecar of a failing call is removed by the error result.
-    const [head, first] = argumentDeltas('Bad', DOC, 1)
-    emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer', 'c2'))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('bad')))).not.toBeNull()
-    emitSession(harness.ctx, toolResultEvent('c2', { name: 'Error', code: 'E_TOOL' }))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('bad')))).toBeNull()
-
-    // A landed call's finalized file is likewise removed by its error result.
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).not.toBeNull()
-    emitSession(harness.ctx, toolResultEvent('c1', { name: 'Error', code: 'E_TOOL' }))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBeNull()
-  })
-
-  it('keeps a later call\'s distinct export when an earlier same-title call errors', async () => {
-    const harness = await setup()
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
-    await flush()
-    const rewritten = '<!DOCTYPE html><html><body><h1>v2</h1></body></html>'
-    emitSession(harness.ctx, toolCallEvent('c2', 'visualizer', JSON.stringify({ title: 'Dash', html: rewritten })))
-    await flush()
-    // Digest-keyed names: different bytes land under different files, and
-    // c1's late error removes only c1's own export, never c2's.
-    emitSession(harness.ctx, toolResultEvent('c1', { name: 'Error', code: 'E_TOOL' }))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBeNull()
-    expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', rewritten)))).toBe(rewritten)
-  })
-
-  it('drops interrupted partials and resets cleanly on llm/retry', async () => {
-    const harness = await setup()
-    const [head, first] = argumentDeltas('Dash', DOC, 2)
-
-    // An interrupted step never dispatches: its sidecar is residue and removed.
-    emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).not.toBeNull()
-    emitSession(harness.ctx, {
-      type: 'assistant/message',
-      data: { turn: 1, step: 1, message: { content: [] }, interrupted: true },
-    })
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
-
-    // A retried request resets the step; the retry's stream and finalize work.
-    emitSession(harness.ctx, delta((head ?? '') + (first ?? ''), 'visualizer'))
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).not.toBeNull()
-    emitSession(harness.ctx, {
-      type: 'llm/retry',
-      data: { turn: 1, step: 1, retryId: 'r1', provider: 'p', mode: 'normal', policyKey: 'k', retry: 1, maxRetries: 3, delayMs: 10, failure: { name: 'Error', code: 'E_LLM' } },
-    })
-    await flush()
-    expect(await readFileOrNull(join(harness.dir, partialFileName('dash')))).toBeNull()
-
-    emitSession(harness.ctx, toolCallEvent('c9', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
-    await flush()
+    const first = await exportSettled(harness, 'c1', 'Dash', DOC)
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }))
+    const second = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(first.body).toBe(second.body)
     expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).toBe(DOC)
   })
 
-  it('ignores other tools entirely', async () => {
+  it('resolves the call from whichever live session logged it, not a session named in the request', async () => {
     const harness = await setup()
-    emitSession(harness.ctx, delta('{"command":"ls"}', 'bash', 'c1'))
-    emitSession(harness.ctx, toolCallEvent('c1', 'bash', '{"command":"ls"}'))
-    await flush()
+    // Two live sessions; the call lives in the second one. The request names
+    // only the call — there is no sessionId field to get right or wrong.
+    const other = 'session-other'
+    harness.sessions.byId.set(other, Session.create(other as never, [
+      { type: 'tool/call', seq: 0, time: 1, data: { turn: 1, step: 1, callId: 'unrelated', name: 'bash', arguments: '{}' } },
+    ] as never))
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }))
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses a call id no live session ever logged', async () => {
+    const harness = await setup()
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'ghost' })
+    expect(res.status).toBe(404)
+  })
+
+  it('refuses a call that belongs to a different tool', async () => {
+    const harness = await setup()
+    seedCall(harness, 'c1', 'bash', JSON.stringify({ command: 'ls' }))
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(404)
     expect(await readdir(harness.dir)).toEqual([])
   })
 
-  it('stays entirely dormant when the config disables exports', async () => {
-    const harness = await setup({ shareArtifacts: false })
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
-    await flush()
-    // No route serves anything and no file lands: one flag gates the feature.
-    expect(harness.server.routes).toEqual([])
+  it('refuses a call that never settled', async () => {
+    const harness = await setup()
+    seedCall(harness, 'c1', 'visualizer', undefined)
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(404)
+  })
+
+  it('refuses a call that settled as an error', async () => {
+    const harness = await setup()
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }), { name: 'Error', code: 'E_TOOL' })
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(404)
     expect(await readdir(harness.dir)).toEqual([])
   })
 
-  it('announces the share page on the boot injection table, only while enabled', async () => {
-    const enabled = await setup()
-    const table: unknown[] = []
-    ;(enabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
-      .emit('webserver/index-inject', table)
-    // The announcement carries the boot capability token, not a bare flag.
-    expect(table).toHaveLength(1)
-    const row = table[0] as { kind: string; name: string; value: unknown }
-    expect(row.kind).toBe('global')
-    expect(row.name).toBe(EXPORTS_BOOT_GLOBAL)
-    expect(typeof row.value).toBe('string')
-    expect((row.value as string).length).toBeGreaterThan(15)
+  it('refuses a request whose html would exceed the configured cap', async () => {
+    const harness = await setup({ maxArtifactBytes: 8 })
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Big', html: DOC }))
+    const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(404)
+    expect(await readdir(harness.dir)).toEqual([])
+  })
 
-    const disabled = await setup({ shareArtifacts: false })
-    const empty: unknown[] = []
-    ;(disabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
-      .emit('webserver/index-inject', empty)
-    expect(empty).toEqual([])
+  it('answers 400 for a missing or malformed callId, without touching disk', async () => {
+    const harness = await setup()
+    for (const body of [{}, { callId: '' }, { callId: 42 }, { notCallId: 'c1' }]) {
+      const res = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, body)
+      expect(res.status, JSON.stringify(body)).toBe(400)
+    }
+    expect(await readdir(harness.dir)).toEqual([])
+  })
+
+  it('refuses without the capability token, identically to any other failure', async () => {
+    const harness = await setup()
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }))
+    const res = await request(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(res.status).toBe(404)
+    expect(res.body).toContain('No exported visualizer document')
+    expect(await readdir(harness.dir)).toEqual([])
+  })
+
+  it('rate-limits repeated export requests within the window', async () => {
+    const harness = await setup()
+    seedCall(harness, 'c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC }))
+    let last: ReturnType<typeof fakeResponse> | undefined
+    for (let i = 0; i < EXPORT_RATE_LIMIT; i++) {
+      last = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+      expect(last.status, `request ${i}`).toBe(200)
+    }
+    const overLimit = await requestTokened(harness, 'POST', EXPORTS_ROUTE_PATH, { callId: 'c1' })
+    expect(overLimit.status).toBe(429)
+    expect(overLimit.headerMap['retry-after']).toBeDefined()
   })
 })
 
 describe('exports serve route', () => {
   async function landed(title: string, html: string, extra: Record<string, unknown> = {}): Promise<Harness> {
     const harness = await setup(extra)
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title, html })))
-    await flush()
+    const res = await exportSettled(harness, 'c1', title, html)
+    if (res.status !== 200) throw new Error(`export request failed: ${res.status} ${res.body}`)
     return harness
   }
 
@@ -374,7 +373,7 @@ describe('exports serve route', () => {
     const answers = [
       await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`),
       await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
-      await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/Dash.html`),
     ]
     for (const res of answers) {
       expect(res.headerMap['cache-control']).toBe('no-store')
@@ -391,7 +390,7 @@ describe('exports serve route', () => {
       JSON.stringify({ csp: res.headerMap['content-security-policy'], cc: res.headerMap['cache-control'], nosniff: res.headerMap['x-content-type-options'], rp: res.headerMap['referrer-policy'], xfo: res.headerMap['x-frame-options'], corp: res.headerMap['cross-origin-resource-policy'], pp: res.headerMap['permissions-policy'] })
     expect(hardened(answers[0]!)).toBe(hardened(answers[1]!))
     expect(hardened(answers[1]!)).toBe(hardened(answers[2]!))
-    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, DELETE')
+    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, POST, DELETE')
   })
 
   it('refuses a symlink planted in the exports directory like any unknown name', async () => {
@@ -399,8 +398,7 @@ describe('exports serve route', () => {
     const { symlink, writeFile: writeFileRaw } = await import('node:fs/promises')
     await writeFileRaw(join(harness.dir, 'outside-secret.txt'), 'stolen bytes')
     await symlink(join(harness.dir, 'outside-secret.txt'), join(harness.dir, 'Planted.html'))
-    emitSession(harness.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Real', html: DOC })))
-    await flush()
+    await exportSettled(harness, 'c1', 'Real', DOC)
     const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/Planted.html`)
     expect(res.status).toBe(404)
     expect(res.body).not.toContain('stolen bytes')
@@ -419,7 +417,7 @@ describe('exports serve route', () => {
   it('serves a bare SVG raw with scripting stripped from its policy', async () => {
     const SVG_DOC = '<svg viewBox="0 0 10 10"><rect/></svg>'
     const harness = await landed('Flow', SVG_DOC)
-    const url = `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Flow', '<svg viewBox="0 0 10 10"><rect/></svg>'))}`
+    const url = `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Flow', SVG_DOC))}`
     // Raw bytes stay hotlinkable as an image; the policy alone drops script.
     const res = await requestTokened(harness, 'GET', url)
     expect(res.status).toBe(200)
@@ -458,8 +456,7 @@ describe('exports serve route', () => {
       vi.setSystemTime(1_000_000)
       const harness = await landed('Dash', DOC)
       vi.setSystemTime(2_000_000)
-      emitSession(harness.ctx, toolCallEvent('c2', 'visualizer', JSON.stringify({ title: 'Later chart', html: '<svg><rect/></svg>' })))
-      await flush()
+      await exportSettled(harness, 'c2', 'Later chart', '<svg><rect/></svg>')
       vi.useRealTimers()
 
       const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
@@ -477,19 +474,10 @@ describe('exports serve route', () => {
       expect(body.entries[1]!.bytes).toBe(Buffer.byteLength(DOC, 'utf8'))
     })
 
-    it('answers an empty list before anything has ever been shared', async () => {
+    it('answers an empty list before anything has ever been exported', async () => {
       const harness = await setup()
       const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
       expect(res.status).toBe(200)
-      expect(JSON.parse(res.body)).toEqual({ entries: [] })
-    })
-
-    it('excludes a streaming sidecar still in flight', async () => {
-      const harness = await setup()
-      emitSession(harness.ctx, delta(JSON.stringify({ title: 'Dash', html: DOC }).slice(0, -1), 'visualizer'))
-      await flush()
-
-      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
       expect(JSON.parse(res.body)).toEqual({ entries: [] })
     })
 
@@ -544,8 +532,35 @@ describe('exports serve route', () => {
     expect(a).not.toBe(b)
   })
 
+  it('announces the share page on the boot injection table, only while enabled', async () => {
+    const enabled = await setup()
+    const table: unknown[] = []
+    ;(enabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
+      .emit('webserver/index-inject', table)
+    // The announcement carries the boot capability token, not a bare flag.
+    expect(table).toHaveLength(1)
+    const row = table[0] as { kind: string; name: string; value: unknown }
+    expect(row.kind).toBe('global')
+    expect(row.name).toBe(EXPORTS_BOOT_GLOBAL)
+    expect(typeof row.value).toBe('string')
+    expect((row.value as string).length).toBeGreaterThan(15)
+
+    const disabled = await setup({ shareArtifacts: false })
+    const empty: unknown[] = []
+    ;(disabled.ctx as unknown as { emit: (name: string, ...args: unknown[]) => void })
+      .emit('webserver/index-inject', empty)
+    expect(empty).toEqual([])
+  })
+
+  it('stays entirely dormant when the config disables exports', async () => {
+    const harness = await setup({ shareArtifacts: false })
+    // No route serves anything: one flag gates the whole feature.
+    expect(harness.server.routes).toEqual([])
+    expect(await readdir(harness.dir)).toEqual([])
+  })
+
   it('sweeps artifacts past the retention window at activation and keeps fresh ones', async () => {
-    // The sweep runs once when the fanout mounts, so the files must exist
+    // The sweep runs once when the route mounts, so the files must exist
     // before the plugin does: age two entries (one servable, one stray) and
     // leave one fresh, then mount and read the survivors.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-visualizer-exports-'))
@@ -556,8 +571,10 @@ describe('exports serve route', () => {
     await utimes(join(dir, 'aged-dash.html'), aged, aged)
     await utimes(join(dir, 'aged.partial'), aged, aged)
 
-    const harness = await setup({ artifactDir: dir, artifactRetentionDays: 30 })
-    await flush()
+    await setup({ artifactDir: dir, artifactRetentionDays: 30 })
+    // The sweep is a fire-and-forget async IIFE kicked off at registration;
+    // give its microtasks a turn before reading survivors.
+    await new Promise(resolve => { setTimeout(resolve, 20) })
     expect(await readFileOrNull(join(dir, 'aged-dash.html'))).toBeNull()
     expect(await readFileOrNull(join(dir, 'fresh-dash.html'))).toBe('<p>new</p>')
     // Sidecars never pass the servable-name check; the sweep leaves them.
@@ -574,8 +591,7 @@ describe('exports serve route', () => {
     // A link from "before the restart" — a second mount with the same key —
     // keeps working: same key, same name, still served.
     const reborn = await setup({ shareKey: 'my-stable-shared-key-01' })
-    emitSession(reborn.ctx, toolCallEvent('c1', 'visualizer', JSON.stringify({ title: 'Dash', html: DOC })))
-    await flush()
+    await exportSettled(reborn, 'c1', 'Dash', DOC)
     const route = reborn.server.routes.find(entry => entry.path === EXPORTS_ROUTE_PATH)
     if (route === undefined) throw new Error('exports route was not registered')
     const res = fakeResponse()
@@ -587,11 +603,11 @@ describe('exports serve route', () => {
     expect(res.body).toContain('sandbox="allow-scripts"')
   })
 
-  it('answers 405 with the method table for anything but GET, HEAD, and DELETE', async () => {
+  it('answers 405 with the method table for anything but GET, HEAD, POST, and DELETE', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
+    const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
-    expect(res.headerMap.allow).toBe('GET, HEAD, DELETE')
+    expect(res.headerMap.allow).toBe('GET, HEAD, POST, DELETE')
   })
 
   describe('artifact gallery delete', () => {
@@ -652,6 +668,3 @@ describe('exports serve route', () => {
     })
   })
 })
-
-// Keep rm referenced for suite-local cleanup of a setup dir when needed.
-void rm

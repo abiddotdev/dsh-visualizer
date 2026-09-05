@@ -202,16 +202,16 @@ describe('visualizer_guide tool', () => {
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['visualizer'])
   })
 
-  it('tells the model renders are auto-saved while artifact sharing is on', async () => {
+  it('points the model at the Share control while artifact sharing is on', async () => {
     const { ctx } = await setup()
     const text = await systemText(ctx)
-    expect(text).toContain('saved automatically as a shareable standalone page')
+    expect(text).toContain('shareable standalone pages when the user clicks Share')
   })
 
-  it('keeps the save note out of the prompt while artifact sharing is off', async () => {
+  it('keeps the share note out of the prompt while artifact sharing is off', async () => {
     const { ctx } = await setup({ shareArtifacts: false })
     const text = await systemText(ctx)
-    expect(text).not.toContain('saved automatically')
+    expect(text).not.toContain('shareable standalone pages')
   })
 
   it('narrows the guide tool enum to the configured modules', async () => {

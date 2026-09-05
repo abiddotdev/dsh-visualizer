@@ -1,20 +1,26 @@
 /**
- * Streaming export fanout, node half: while the model writes a `visualizer`
- * call, the same `assistant/chunk` `tool-call-delta` events the browser card
- * folds also reach the host's `session/event` firehose — this module folds
- * them the same way and mirrors the growing document into an exports
- * directory on disk. The sidecar (`<base>.partial`) grows while the document
- * streams; the `tool/call` event that precedes execution carries the
- * authoritative bytes, which land under their final name by an atomic rename.
- * The serve route on the harness web server then hands the finalized file out
- * at `<route>/<name>` — the URL the card's share control opens. Both names
- * come from the shared derivation module, so host and card cannot disagree.
+ * Artifact export route, node half: serves, lists, deletes, and — on
+ * request — creates the shareable mirror of one `visualizer` call.
  *
- * The fanout is a read-only projection of the logged stream: it never touches
- * the conversation, and a failure inside it is contained to a log line. It
- * activates only where a web server exists (the web profile), so an export
- * exists exactly when it is shareable; surfaces without one keep the tool's
- * untouched, filesystem-free behavior.
+ * Nothing is written to disk until a card's Share control asks for it.
+ * `POST {route}` names one call (`{callId}`); this module reads the call's
+ * arguments straight from whichever currently-live session's durable log
+ * logged it — never from bytes the request carries — verifies it is a
+ * settled, non-error `visualizer` call, and writes the resulting document
+ * under the name both planes independently derive from `(title, html)` (see
+ * `shared/export-name.ts`). The write is idempotent: exporting the same call
+ * twice reproduces the same bytes under the same name, a harmless overwrite.
+ *
+ * Reading the durable log (rather than trusting the request body) keeps the
+ * write path exactly as trustworthy as the render pipeline that produced the
+ * content in the first place — an export names a call that already
+ * happened; a caller who does not hold the export route's own capability
+ * token cannot make one up, and one who does still cannot choose what bytes
+ * get written, only which already-logged call to mirror.
+ *
+ * The route activates only where a web server exists (the web profile), so
+ * an export exists exactly when it is shareable; surfaces without one keep
+ * the tool's untouched, filesystem-free behavior.
  *
  * @module dsh-visualizer/export-fanout
  */
@@ -25,18 +31,19 @@ import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import { extractStreamArgs } from './client/partial-args.ts'
+// Type-side-effect import: pulls the `Context.sessions` augmentation into the
+// program so `ctx.sessions` below is checked against the real contract
+// instead of a hand-mirrored structural guess.
+import type {} from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { RENDER_CSP_DIRECTIVES } from './shared/export-csp.ts'
 import {
-  type ArtifactListEntry, EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, displayTitleOf, exportFileBase, exportShareName,
+  type ArtifactListEntry, EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, displayTitleOf, exportShareName,
   isServableExportName, partialFileName,
 } from './shared/export-name.ts'
 
-/** Wire name of the render tool; only its calls fan out. */
+/** Wire name of the render tool; only its calls export. */
 const TOOL_NAME = 'visualizer'
-
-/** Minimum spacing between two sidecar writes for one call; token deltas far outpace any disk. */
-export const PARTIAL_WRITE_INTERVAL_MS = 120
 
 /**
  * The face of `ctx.webServer` this module uses. Declared structurally because
@@ -54,76 +61,18 @@ interface WebServerLike {
 }
 
 /**
- * Structural view of one stream chunk the fanout folds; `dsh-llm` owns the
- * closed wire union, mirrored here member by member so the switch narrows.
- * Only the tool-call members carry meaning here.
+ * Normalize a call identity (branded `ToolCallId`, or whatever the request
+ * body carried) to a plain string for comparison.
  */
-type WireChunk =
-  | { type: 'tool-call-delta'; index: number; id: unknown; name?: string; argumentsDelta: string }
-  | { type: 'block-end'; index: number; block: { type: string; id?: unknown; name?: string; arguments?: string } }
-  | { type: 'block-start' | 'text-delta' | 'reasoning-delta' | 'usage' | 'finish' }
-
-/** Structural view of the `session/event` payloads the fanout consumes. */
-type WireEvent =
-  | { type: 'assistant/chunk'; data: { turn: number; step: number; chunk: WireChunk } }
-  | {
-    type: 'assistant/message'
-    data: { turn: number; step: number; message: { content: readonly unknown[] }; interrupted?: true }
-  }
-  | { type: 'llm/retry'; data: { turn: number; step: number } }
-  | { type: 'tool/call'; data: { turn: number; step: number; callId: unknown; name: string; arguments: string } }
-  | {
-    type: 'tool/result'
-    data: { message: { content: readonly { toolCallId?: unknown }[] }; error?: { name: string; code: string } }
-  }
-
-/** The `tool/call` member of {@link WireEvent}, extracted for the finalize path. */
-type ToolCallEvent = Extract<WireEvent, { type: 'tool/call' }>
-
-/**
- * Loose-typed `ctx.on`: the `session/event` firehose's typed declaration
- * lives in `@deepseek-ai/dsh-session`, which this package does not depend on.
- * The mixed accessor still registers the listener on this plugin's fiber —
- * the one property an untyped call must keep.
- */
-type LooseOn = (name: string, listener: (...args: unknown[]) => void) => () => boolean
-
-/** One streamed tool-call block's accumulating state; the host mirror of the client's fold. */
-interface WireBlock {
-  /** Call identity; the empty string until a delta names it. */
-  callId: string
-  /** Tool name; empty until a delta or the final block names the call. */
-  name: string
-  argsRaw: string
-  complete: boolean
+function callKey(id: unknown): string {
+  return String(id ?? '')
 }
 
-/** Every block one assistant step streamed, keyed by streamed block index. */
-interface StepState {
-  readonly blocks: Map<number, WireBlock>
-}
-
-/** Files the fanout owns for one call: what error cleanup may remove. */
-interface ExportRecord {
-  /** The growing streaming sidecar's path, or null once finalized. */
-  sidecar: string | null
-  /** The finalized export's path, or null until the call lands. */
-  final: string | null
-}
-
-/** All fanout state for one session. */
-interface SessionState {
-  /** Folded stream blocks, keyed `<turn>:<step>`. */
-  readonly steps: Map<string, StepState>
-  /** Files owned per call id. */
-  readonly exports: Map<string, ExportRecord>
-}
-
-/** Configuration the fanout runs under. */
+/** Configuration the route runs under. */
 export interface ExportFanoutConfig {
   /** Absolute exports directory; created on activation. */
   readonly dir: string
-  /** Per-call render size limit in bytes; the fanout mirrors it, never exceeds it. */
+  /** Per-call render size limit in bytes; a resolved call over this never writes. */
   readonly maxArtifactBytes: number
   /** Days a finalized artifact survives; `0` disables the expiry sweep. */
   readonly artifactRetentionDays: number
@@ -131,95 +80,21 @@ export interface ExportFanoutConfig {
   readonly shareKey: string
 }
 
-/** All fanout state for one registration. */
+/** All route state for one registration. */
 interface FanoutState {
   readonly config: ExportFanoutConfig
   readonly ctx: Context
   /** mkdir completion; every file write awaits it, so the directory exists first. */
   readonly ready: Promise<void>
-  /** Session-keyed wire folds; the sessions themselves key their lifetime. */
-  readonly sessions: WeakMap<object, SessionState>
-  /** Tail of each call's serialized file-operation chain. */
-  readonly chains: Map<string, Promise<void>>
-  /** Last sidecar write per call, for throttling. */
-  readonly lastPartialAt: Map<string, number>
-  /** Which call last finalized each export path, so one call's cleanup never removes a later call's overwrite. */
-  readonly finalOwners: Map<string, string>
-  /** Per-boot capability token every serve request must echo as `?k=`. */
+  /** Tail of each in-flight write, keyed by resolved export name — serializes
+   * a double-click into one write followed by a fast no-op, instead of two
+   * writers racing the same path. Self-pruning: an entry only lives while its
+   * write is in flight. */
+  readonly writeLocks: Map<string, Promise<void>>
+  /** Sliding window of recent export request timestamps, for the rate limit. */
+  readonly exportRequestTimes: number[]
+  /** Per-boot capability token every request must echo as `?k=`. */
   readonly token: string
-}
-
-/**
- * Normalize a streamed or logged call identity to the string key the fold and
- * the `tool/call`/`tool/result` events share.
- */
-function callKey(id: unknown): string {
-  return String(id ?? '')
-}
-
-/** The session's state record, created on first sight. */
-function sessionState(state: FanoutState, session: object): SessionState {
-  let record = state.sessions.get(session)
-  if (record === undefined) {
-    record = { steps: new Map(), exports: new Map() }
-    state.sessions.set(session, record)
-  }
-  return record
-}
-
-/** The step's block table, created on first sight. */
-function stepState(session: SessionState, turn: number, step: number): StepState {
-  const key = `${turn}:${step}`
-  let record = session.steps.get(key)
-  if (record === undefined) {
-    record = { blocks: new Map() }
-    session.steps.set(key, record)
-  }
-  return record
-}
-
-/** The call's file record, created on first sight. */
-function exportRecord(session: SessionState, id: string): ExportRecord {
-  let record = session.exports.get(id)
-  if (record === undefined) {
-    record = { sidecar: null, final: null }
-    session.exports.set(id, record)
-  }
-  return record
-}
-
-/**
- * Serialize one file operation onto its call's chain; a rejection is logged
- * and contained — a failing export never reaches the conversation. The map
- * holds one tail per call id and is pruned as calls settle: `cleanupCall`
- * (error) and `settleCall` (success) both drop the tail once it drains.
- */
-function enqueue(state: FanoutState, id: string, op: () => Promise<void>): void {
-  const chained = (state.chains.get(id) ?? Promise.resolve())
-    .then(op)
-    .catch((error: unknown) => {
-      state.ctx.logger.warn(`export fanout: ${error instanceof Error ? error.message : String(error)}`)
-    })
-  state.chains.set(id, chained)
-}
-
-/**
- * Like {@link enqueue}, but the tail removes itself once it settles — for the
- * last operation a call will ever enqueue (finalize and result-time prune).
- * The identity guard keeps a later `enqueue` onto the same id safe: if one
- * arrives before this tail drains, the map still holds that newer tail and
- * the deletion is a no-op.
- */
-function enqueueFinal(state: FanoutState, id: string, op: () => Promise<void>): void {
-  const tail: Promise<void> = (state.chains.get(id) ?? Promise.resolve())
-    .then(op)
-    .then(() => {
-      if (state.chains.get(id) === tail) state.chains.delete(id)
-    }, (error: unknown) => {
-      state.ctx.logger.warn(`export fanout: ${error instanceof Error ? error.message : String(error)}`)
-      if (state.chains.get(id) === tail) state.chains.delete(id)
-    })
-  state.chains.set(id, tail)
 }
 
 /**
@@ -232,180 +107,26 @@ async function unlinkQuiet(path: string): Promise<void> {
 }
 
 /**
- * Fold one streamed delta into its block; the host mirror of the client's
- * foldDelta. A foreign tool's block drops out so its arguments never
- * accumulate here.
+ * Run one operation after any prior operation queued under the same key has
+ * settled (success or failure), and let the next one queue behind this in
+ * turn. Unlike a plain mutex, the caller still sees this operation's own
+ * result — a failed write reports 500, it does not silently vanish into a
+ * background chain.
+ * @param state - route state carrying the lock map.
+ * @param key - the export name being written; the granularity of the lock.
+ * @param op - the operation to serialize.
+ * @returns `op`'s own result or rejection.
  */
-function foldDelta(
-  state: FanoutState, session: SessionState, turn: number, step: number,
-  index: number, id: unknown, name: string | undefined, delta: string,
-): void {
-  const blocks = stepState(session, turn, step).blocks
-  const previous = blocks.get(index)
-  if (previous?.complete === true) return
-  const known = name ?? previous?.name ?? ''
-  if (known !== '' && known !== TOOL_NAME) {
-    blocks.delete(index)
-    return
-  }
-  const block: WireBlock = {
-    callId: callKey(id) || previous?.callId || '',
-    name: known,
-    argsRaw: (previous?.argsRaw ?? '') + delta,
-    complete: false,
-  }
-  blocks.set(index, block)
-  if (known === TOOL_NAME) streamPrefix(state, session, block)
-}
-
-/**
- * Adopt a finalized tool-call block from `block-end` or `assistant/message`;
- * like the client fold, the complete arguments replace the accumulation. No
- * write happens here: the authoritative bytes ride the `tool/call` event.
- */
-function foldFinalBlock(
-  session: SessionState, turn: number, step: number, index: number,
-  block: { id: unknown; name: string; arguments: string },
-): void {
-  const blocks = stepState(session, turn, step).blocks
-  if (block.name !== TOOL_NAME) {
-    blocks.delete(index)
-    return
-  }
-  blocks.set(index, { callId: callKey(block.id), name: block.name, argsRaw: block.arguments, complete: true })
-}
-
-/**
- * Mirror the latest decoded prefix into the call's sidecar, throttled: token
- * deltas arrive far faster than any reader needs the file to change. A base
- * change (the title decoded after the document began) moves the sidecar and
- * removes the stale one.
- */
-function streamPrefix(state: FanoutState, session: SessionState, block: WireBlock): void {
-  if (block.callId.length === 0) return
-  const view = extractStreamArgs(block.argsRaw)
-  if (view === null || view.html.length === 0) return
-  if (Buffer.byteLength(view.html, 'utf8') > state.config.maxArtifactBytes) return
-  const now = Date.now()
-  if (now - (state.lastPartialAt.get(block.callId) ?? 0) < PARTIAL_WRITE_INTERVAL_MS) return
-  state.lastPartialAt.set(block.callId, now)
-  const record = exportRecord(session, block.callId)
-  const html = view.html
-  const path = join(state.config.dir, partialFileName(exportFileBase(view.title)))
-  const stale = record.sidecar !== null && record.sidecar !== path ? record.sidecar : null
-  record.sidecar = path
-  enqueue(state, block.callId, async () => {
-    await state.ready
-    await writeFile(path, html, 'utf8')
-    if (stale !== null) await unlinkQuiet(stale)
-  })
-}
-
-/**
- * Retire one call's fanout bookkeeping on its successful result: the export
- * stays on disk (until overwritten or swept by retention), but the session
- * record, the ownership pin, and any streaming leftovers go — the maps hold
- * only in-flight calls once every call has settled either way.
- */
-function settleCall(state: FanoutState, session: SessionState, id: string): void {
-  const record = session.exports.get(id)
-  if (record === undefined) return
-  if (record.final !== null && state.finalOwners.get(record.final) === id) {
-    state.finalOwners.delete(record.final)
-  }
-  session.exports.delete(id)
-  state.lastPartialAt.delete(id)
-  // A call that streamed but never finalized (result arrived without a
-  // tool/call) may still own a sidecar; it is residue now.
-  const sidecar = record.sidecar
-  if (sidecar !== null) {
-    enqueueFinal(state, id, async () => {
-      await state.ready
-      await unlinkQuiet(sidecar)
-    })
-  }
-}
-
-/**
- * Remove every file the fanout owns for one call — the failed-render and
- * interruption cleanup. A finalized path is removed only when this call is
- * still its last writer, so one call's cleanup never deletes a later call's
- * overwrite under the same title.
- */
-function cleanupCall(state: FanoutState, session: SessionState, id: string): void {
-  const record = session.exports.get(id)
-  if (record === undefined) return
-  const sidecar = record.sidecar
-  const final = record.final !== null && state.finalOwners.get(record.final) === id ? record.final : null
-  record.sidecar = null
-  record.final = null
-  session.exports.delete(id)
-  state.lastPartialAt.delete(id)
-  enqueue(state, id, async () => {
-    await state.ready
-    if (sidecar !== null) await unlinkQuiet(sidecar)
-    if (final !== null) {
-      await unlinkQuiet(final)
-      if (state.finalOwners.get(final) === id) state.finalOwners.delete(final)
-    }
-  })
-}
-
-/** Drop one step's accumulators and owned sidecars — the `llm/retry` reset. */
-function resetStep(state: FanoutState, session: SessionState, turn: number, step: number): void {
-  const key = `${turn}:${step}`
-  const record = session.steps.get(key)
-  if (record === undefined) return
-  for (const block of record.blocks.values()) {
-    if (block.name === TOOL_NAME && block.callId.length > 0) cleanupCall(state, session, block.callId)
-  }
-  session.steps.delete(key)
-}
-
-/**
- * Finalize one landed call from the authoritative `tool/call` arguments: the
- * settled bytes replace the sidecar's content and the file takes its final
- * name by rename, so a reader never sees a torn or half-named export. Calls
- * the tool would reject (empty or over-limit documents) never finalize; their
- * result-error cleanup removes whatever streamed.
- */
-function finalizeCall(state: FanoutState, session: SessionState, event: ToolCallEvent): void {
-  const data = event.data
-  if (data.name !== TOOL_NAME) return
-  const id = callKey(data.callId)
-  if (id.length === 0) return
-  let parsed: { title?: unknown; html?: unknown }
+async function withWriteLock<T>(state: FanoutState, key: string, op: () => Promise<T>): Promise<T> {
+  const previous = state.writeLocks.get(key) ?? Promise.resolve()
+  const chained = previous.catch(() => {}).then(op)
+  const marker = chained.then(() => undefined, () => undefined)
+  state.writeLocks.set(key, marker)
   try {
-    parsed = JSON.parse(data.arguments) as { title?: unknown; html?: unknown }
-  } catch {
-    return
+    return await chained
+  } finally {
+    if (state.writeLocks.get(key) === marker) state.writeLocks.delete(key)
   }
-  if (typeof parsed.html !== 'string' || parsed.html.trim().length === 0) return
-  if (Buffer.byteLength(parsed.html, 'utf8') > state.config.maxArtifactBytes) return
-  const html = parsed.html
-  const title = typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : null
-  const shareName = exportShareName(title, html)
-  const sidecar = join(state.config.dir, partialFileName(shareName))
-  const final = join(state.config.dir, shareName)
-  const record = exportRecord(session, id)
-  const stale = record.sidecar !== null && record.sidecar !== sidecar ? record.sidecar : null
-  record.sidecar = null
-  record.final = final
-  // A path has exactly one owner — the latest finalizer — so an overwritten
-  // export never stays pinned to a dead call id (and the older call's later
-  // error cleanup must not delete the newer call's file).
-  state.finalOwners.set(final, id)
-  // Finalize retires the call from streaming: no more sidecar writes, so the
-  // throttle entry goes now. The exports record stays until the tool result
-  // (an error result still needs it to remove what finalized), and the chain
-  // tail removes itself once the rename settles.
-  state.lastPartialAt.delete(id)
-  enqueueFinal(state, id, async () => {
-    await state.ready
-    await writeFile(sidecar, html, 'utf8')
-    await rename(sidecar, final)
-    if (stale !== null) await unlinkQuiet(stale)
-  })
 }
 
 /** Most rows the gallery listing returns; bounds response size on a long-lived, high-volume artifact directory. */
@@ -443,6 +164,142 @@ async function listArtifacts(dir: string): Promise<ArtifactListEntry[]> {
   }
   entries.sort((a, b) => b.mtimeMs - a.mtimeMs)
   return entries.slice(0, MAX_LISTING_ENTRIES)
+}
+
+/** One resolved visualizer call's durable document — never client-supplied bytes. */
+interface ResolvedCall {
+  readonly title: string | null
+  readonly html: string
+}
+
+/**
+ * Find and parse the `visualizer` call `callId` names within one session's
+ * durable log, if it is there at all.
+ * @param events - one session's complete event snapshot.
+ * @param callId - the call to resolve.
+ * @returns the call's title/html, or null when the call is absent from this
+ * session's log, is not a `visualizer` call, never settled, or settled as
+ * an error.
+ */
+function resolveFromEvents(events: readonly SessionEvent[], callId: string): ResolvedCall | null {
+  let args: string | null = null
+  let settledOk = false
+  for (const event of events) {
+    if (event.type === 'tool/call' && event.data.name === TOOL_NAME && callKey(event.data.callId) === callId) {
+      args = event.data.arguments
+    } else if (event.type === 'tool/result' && callKey(event.data.message.content[0].toolCallId) === callId) {
+      settledOk = event.data.error === undefined
+    }
+  }
+  if (args === null || !settledOk) return null
+  let parsed: { title?: unknown; html?: unknown }
+  try {
+    parsed = JSON.parse(args) as { title?: unknown; html?: unknown }
+  } catch {
+    return null
+  }
+  if (typeof parsed.html !== 'string' || parsed.html.trim().length === 0) return null
+  const title = typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : null
+  return { title, html: parsed.html }
+}
+
+/**
+ * Resolve one settled `visualizer` call's document straight from a session's
+ * durable log — never from bytes the request carries. The request names
+ * only the call, not its session: `ToolCallId`s are provider-issued and
+ * unique enough in practice that scanning every currently live session for
+ * the one that logged it is simpler than asking the browser to also track
+ * and send a session identity it may not reliably know at click time.
+ * Requires the owning session to still be live (loaded in this harness
+ * process) — a card can only be looking at, and therefore only ask to
+ * export, a call whose session is live, so this is not a practical limit
+ * beyond what is already true of the UI that calls it.
+ * @param ctx - context carrying the `sessions` service.
+ * @param callId - the call to resolve.
+ * @returns the call's title/html, or null when no live session logged it,
+ * it is not a `visualizer` call, never settled, or settled as an error —
+ * any of which refuses the export with the same not-found answer, so a
+ * caller cannot use this to probe which case applied.
+ */
+function resolveCallDocument(ctx: Context, callId: string): ResolvedCall | null {
+  for (const session of ctx.sessions.list()) {
+    const resolved = resolveFromEvents(session.snapshotEvents(), callId)
+    if (resolved !== null) return resolved
+  }
+  return null
+}
+
+/**
+ * Write one resolved document under its co-computed name: a temp file next
+ * to it, then an atomic rename, so a concurrent reader never sees a torn or
+ * half-named export. Serialized per name so exporting the same call twice in
+ * quick succession is a fast no-op behind the first write, not a race.
+ * @param state - route state (directory, write-lock map).
+ * @param resolved - the call's title/html, already read from durable log.
+ * @returns the finalized export's name.
+ */
+async function writeArtifact(state: FanoutState, resolved: ResolvedCall): Promise<string> {
+  const name = exportShareName(resolved.title, resolved.html)
+  return withWriteLock(state, name, async () => {
+    await state.ready
+    const sidecar = join(state.config.dir, partialFileName(name))
+    const final = join(state.config.dir, name)
+    await writeFile(sidecar, resolved.html, 'utf8')
+    await rename(sidecar, final)
+    return name
+  })
+}
+
+/** Longest raw body the export-request endpoint accepts; `{callId}` is a few dozen bytes. */
+const MAX_EXPORT_REQUEST_BYTES = 4_096
+
+/**
+ * Collect a request body up to a byte cap, rejecting (and destroying the
+ * connection) rather than buffering an oversized body — the payload this
+ * route expects is tiny, so anything past the cap is already misbehaving.
+ */
+function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let total = 0
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length
+      if (total > maxBytes) {
+        req.destroy()
+        reject(new Error('request body too large'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('invalid JSON body'))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+/** Rate-limit window for export requests. */
+const EXPORT_RATE_WINDOW_MS = 60_000
+/** Most export requests honored inside one window — generous for a user reviewing and sharing several renders, tight enough to blunt a scripted loop. */
+export const EXPORT_RATE_LIMIT = 30
+
+/**
+ * Whether one more export request fits inside the current rate window,
+ * recording it if so. One shared window for the whole route: every request
+ * already carries the same single per-boot (or pinned) capability token, so
+ * "per caller" and "per boot" are the same thing here.
+ */
+function admitExportRequest(state: FanoutState): boolean {
+  const now = Date.now()
+  const cutoff = now - EXPORT_RATE_WINDOW_MS
+  while (state.exportRequestTimes.length > 0 && state.exportRequestTimes[0]! < cutoff) state.exportRequestTimes.shift()
+  if (state.exportRequestTimes.length >= EXPORT_RATE_LIMIT) return false
+  state.exportRequestTimes.push(now)
+  return true
 }
 
 /**
@@ -516,9 +373,9 @@ function wrapExportPage(base: string, doc: string): string {
 }
 
 /**
- * The boot capability token gating the serve route: one unguessable value per
+ * The boot capability token gating the route: one unguessable value per
  * process boot, pushed to served pages through the index-inject table and
- * required as `?k=` on every export request. Links stop being enumerable —
+ * required as `?k=` on every request. Links stop being enumerable —
  * knowing (or guessing) a name alone serves nothing. Holding the token is the
  * access grant, so a shared link keeps working until the harness restarts.
  */
@@ -527,26 +384,29 @@ function bootToken(): string {
 }
 
 /**
- * Serve one finalized export, or — the route's own root, no name segment —
- * the artifact gallery's JSON listing of everything currently on disk; `DELETE`
- * on one name removes it from disk instead of reading it, the gallery's
- * delete action. Requests carry the boot capability token as `?k=`; anything
- * else takes the indistinguishable not-found answer — no token oracle, no
- * enumeration. HTML documents go out through the sandboxed
- * wrapper — an LLM-authored page never runs on the harness origin itself;
- * bare SVG goes out raw under a CSP variant with scripting removed outright,
- * since a diagram has no honest use for script and `<img>`-embedded copies
- * would not run it either. Both answers carry the shared hardening table.
- * Only a regular file of the exports directory is servable: a symlink planted
- * in the directory (or any special node) refuses with the indistinguishable
- * not-found answer instead of leaking another path's bytes. TOCTOU between
- * lstat and readFile is accepted — the check closes the planted-entry class;
+ * Serve, list, create, or delete artifact exports, all behind one route:
+ *
+ * - `GET {route}/<name>` — one finalized export (see {@link wrapExportPage}
+ *   for HTML; bare SVG goes out raw with scripting stripped from its CSP).
+ * - `GET {route}/` (no name segment) — the gallery's JSON listing of
+ *   everything currently on disk.
+ * - `POST {route}/` with `{callId}` — create the export for one settled
+ *   call, reading its document from whichever live session logged it.
+ * - `DELETE {route}/<name>` — remove one export from disk.
+ *
+ * Every request carries the boot capability token as `?k=`; anything else
+ * (missing token, wrong token, unknown or malformed name) takes the same
+ * indistinguishable not-found answer — no token oracle, no enumeration.
+ * Only a regular file of the exports directory is ever read, written, or
+ * removed: a symlink planted in the directory (or any special node) refuses
+ * the same way rather than following or replacing it. TOCTOU between lstat
+ * and the operation is accepted — the check closes the planted-entry class;
  * narrowing it further needs O_NOFOLLOW semantics out of scope here.
  */
 async function serveExport(state: FanoutState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET'
-  if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE') {
-    res.writeHead(405, { allow: 'GET, HEAD, DELETE', ...SERVE_HEADERS })
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE' && method !== 'POST') {
+    res.writeHead(405, { allow: 'GET, HEAD, POST, DELETE', ...SERVE_HEADERS })
     res.end()
     return
   }
@@ -561,18 +421,68 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     // a malformed escape falls through to the not-found page
   }
   const notFoundHeaders = { ...SERVE_HEADERS, 'content-type': 'text/html; charset=utf-8' }
-  // Constant-time comparison: the token gates every byte this route serves.
+  // Constant-time comparison: the token gates every byte this route touches.
   if (token.length !== state.token.length
     || !timingSafeEqual(Buffer.from(token), Buffer.from(state.token))) {
     res.writeHead(404, notFoundHeaders)
     res.end(method === 'HEAD' ? undefined : NOT_FOUND_PAGE)
     return
   }
-  // The gallery's delete action: same token gate as reading, then the same
-  // regular-file check the serve path applies before trusting a name —
-  // unlink follows no symlink (it removes the directory entry named, never
-  // a target), but a name pointing at something other than a plain file
-  // stays untouched rather than silently succeeding on it.
+  if (method === 'POST') {
+    if (name.length !== 0) {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+      return
+    }
+    if (!admitExportRequest(state)) {
+      res.writeHead(429, { ...SERVE_HEADERS, 'retry-after': '60' })
+      res.end()
+      return
+    }
+    let body: unknown
+    try {
+      body = await readJsonBody(req, MAX_EXPORT_REQUEST_BYTES)
+    } catch {
+      res.writeHead(400, SERVE_HEADERS)
+      res.end()
+      return
+    }
+    const { callId } = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    if (typeof callId !== 'string' || callId.length === 0) {
+      res.writeHead(400, SERVE_HEADERS)
+      res.end()
+      return
+    }
+    const resolved = resolveCallDocument(state.ctx, callId)
+    if (resolved === null) {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+      return
+    }
+    if (Buffer.byteLength(resolved.html, 'utf8') > state.config.maxArtifactBytes) {
+      // Defensive only: the tool itself already refuses to settle a call
+      // this large, so a resolved call should never reach here over the cap
+      // unless the config was lowered after the fact.
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+      return
+    }
+    try {
+      const finalName = await writeArtifact(state, resolved)
+      const responseBody = Buffer.from(JSON.stringify({ name: finalName }), 'utf8')
+      res.writeHead(200, {
+        ...SERVE_HEADERS,
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': responseBody.length,
+      })
+      res.end(responseBody)
+    } catch (error: unknown) {
+      state.ctx.logger.warn(`export fanout: ${error instanceof Error ? error.message : String(error)}`)
+      res.writeHead(500, SERVE_HEADERS)
+      res.end()
+    }
+    return
+  }
   if (method === 'DELETE') {
     if (name.length === 0 || !isServableExportName(name)) {
       res.writeHead(404, notFoundHeaders)
@@ -658,16 +568,15 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
 }
 
 /**
- * Register the export fanout on one context: the streaming sidecar/finalize
- * fold over the session firehose, plus the serve route on the web server.
- * Everything lands as effects of the given context, so the whole feature
- * unmounts with it — call it from the `webServer`-injected callback so the
- * fanout exists exactly where exports are shareable.
- * @param ctx - context carrying the `webServer` service.
- * @param config - exports directory and the mirrored render limit.
+ * Register the export route on one context. Everything lands as an effect of
+ * the given context, so the whole feature unmounts with it — call it from
+ * the `webServer`+`sessions`-injected callback so the route exists exactly
+ * where exports are shareable and durable-log reads are possible.
+ * @param ctx - context carrying the `webServer` and `sessions` services.
+ * @param config - exports directory, the render size cap, retention, and the share key.
  */
 export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): void {
-  // The share key gates every serve request. Empty (the default) takes the
+  // The share key gates every request. Empty (the default) takes the
   // fresh-per-boot random; a configured value pins it so links survive
   // restarts — but then the key lives in a plaintext config file, so a short
   // one turns an unguessable gate into a guessable one and earns a warning.
@@ -681,10 +590,8 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     ready: mkdir(config.dir, { recursive: true, mode: 0o700 }).then(() => undefined, (error: unknown) => {
       ctx.logger.warn(`export fanout: cannot create ${config.dir}: ${error instanceof Error ? error.message : String(error)}`)
     }),
-    sessions: new WeakMap(),
-    chains: new Map(),
-    lastPartialAt: new Map(),
-    finalOwners: new Map(),
+    writeLocks: new Map(),
+    exportRequestTimes: [],
     token: trimmedKey.length > 0 ? trimmedKey : bootToken(),
   }
 
@@ -696,11 +603,12 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
   }), 'visualizer: exports route')
 
   // Retention sweep at activation, before any request can arrive: digest-keyed
-  // names accumulate by design, so expiry replaces the overwrite self-cleaning.
-  // A failure logs one line and never blocks the route or the fold.
+  // names accumulate by design (no auto-mirror to self-clean by overwrite
+  // the way a fixed-name file would), so expiry is what bounds disk usage
+  // over time. A failure logs one line and never blocks the route.
   if (config.artifactRetentionDays > 0) {
     const cutoff = Date.now() - config.artifactRetentionDays * 86_400_000
-    enqueue(state, ':retention', async () => {
+    void (async () => {
       await state.ready
       for (const entry of await readdir(config.dir)) {
         if (!isServableExportName(entry)) continue
@@ -708,82 +616,20 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
         if (stats === null || !stats.isFile() || stats.mtimeMs >= cutoff) continue
         await unlinkQuiet(join(config.dir, entry))
       }
+    })().catch((error: unknown) => {
+      ctx.logger.warn(`export fanout: retention sweep failed: ${error instanceof Error ? error.message : String(error)}`)
     })
   }
 
-  const on = (ctx as unknown as { on: LooseOn }).on
-  on('session/event', (session: unknown, event: unknown) => {
-    if (typeof session !== 'object' || session === null) return
-    handleEvent(state, session, event as WireEvent)
-  })
   // Announce the feature on the boot table, carrying the capability token:
   // the served page stores it where the card's share control reads it, and
   // every export request echoes it back as `?k=`. A deployment with the
   // feature off never sets it, and the cards hide the share control.
   // Rows are read fresh at every emit, so the announcement tracks activation.
+  const on = (ctx as unknown as { on: (name: string, listener: (...args: unknown[]) => void) => () => boolean }).on
   on('webserver/index-inject', (table: unknown) => {
     if (Array.isArray(table)) {
       table.push({ kind: 'global', name: EXPORTS_BOOT_GLOBAL, value: state.token })
     }
   })
-}
-
-/**
- * One appended session event, post-commit: fold the stream, finalize landed
- * calls, clean up failures and interruptions.
- */
-function handleEvent(state: FanoutState, session: object, event: WireEvent): void {
-  const record = sessionState(state, session)
-  switch (event.type) {
-    case 'assistant/chunk': {
-      const chunk = event.data.chunk
-      if (chunk.type === 'tool-call-delta') {
-        foldDelta(state, record, event.data.turn, event.data.step, chunk.index, chunk.id, chunk.name, chunk.argumentsDelta)
-      } else if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
-        foldFinalBlock(record, event.data.turn, event.data.step, chunk.index, {
-          id: chunk.block.id, name: chunk.block.name ?? '', arguments: chunk.block.arguments ?? '',
-        })
-      }
-      return
-    }
-    case 'assistant/message': {
-      // An interrupted step never dispatches: its partials are residue, removed.
-      if (event.data.interrupted === true) {
-        resetStep(state, record, event.data.turn, event.data.step)
-        return
-      }
-      const content = event.data.message.content
-      for (let index = 0; index < content.length; index++) {
-        const block = content[index]
-        if (block !== null && typeof block === 'object' && (block as { type?: string }).type === 'tool-call') {
-          const call = block as { id: unknown; name: string; arguments: string }
-          foldFinalBlock(record, event.data.turn, event.data.step, index, call)
-        }
-      }
-      // A settled step admits no more deltas or retries, so its accumulator
-      // entry is residue; finalize reads only `exports` records, so dropping
-      // the step never affects the later `tool/call`.
-      record.steps.delete(`${event.data.turn}:${event.data.step}`)
-      return
-    }
-    case 'llm/retry':
-      resetStep(state, record, event.data.turn, event.data.step)
-      return
-    case 'tool/call':
-      finalizeCall(state, record, event)
-      return
-    case 'tool/result': {
-      const first = event.data.message.content[0]
-      if (first === undefined) return
-      const id = callKey(first.toolCallId)
-      if (event.data.error !== undefined) {
-        cleanupCall(state, record, id)
-      } else {
-        settleCall(state, record, id)
-      }
-      return
-    }
-    default:
-      return
-  }
 }

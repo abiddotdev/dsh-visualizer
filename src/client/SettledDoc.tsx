@@ -8,13 +8,14 @@
 // in-place copy alive until then means it is the only transition that happens.
 
 import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconEnhanceOutline16, IconFullscreenOutline16, IconInspectOutline12, IconLinkOutline16, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconEnhanceOutline16, IconFullscreenOutline16, IconInspectOutline12, IconLinkOutline16, IconListPenOutline16, IconLoadingOutline16, IconRightUpOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AutoFrame } from './AutoFrame.tsx'
 import { argsView, DEFAULT_FRAME_HEIGHT_PX } from './args-view.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { copyExportLink, exportShareEnabled, openExportPage } from './share.ts'
+import { copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
+import { useExportControl } from './export-control.ts'
 import { openWidgetLink } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { composeAnnotationPrompt, type AnnotationPick } from './annotate.ts'
@@ -37,10 +38,17 @@ export interface SettledDocProps {
    * capability, so a card rendered there shows no such control.
    */
   inspect?: () => void
+  /**
+   * This call's identity, for the Export control. Omitted or null where the
+   * owner cannot supply one — Export then stays inert (no call to name), not
+   * absent, since there is otherwise no way to distinguish "cannot export
+   * yet" from "will never be able to".
+   */
+  callId?: string | null
 }
 
 /** One document's frame, chrome, and comment-mode state. Null when its arguments carry nothing renderable. */
-export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: SettledDocProps) {
+export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect, callId = null }: SettledDocProps) {
   const view = useMemo(() => argsView(argsRaw), [argsRaw])
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
@@ -50,7 +58,6 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
     : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   // The line rides along for the fix prompt; only the message is displayed.
   const [runtimeError, setRuntimeError] = useState<{ message: string; line: number | null } | null>(null)
@@ -83,6 +90,18 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
   }, [])
   const annotateMarks = useMemo(() => picks.map(pick => pick.id), [picks])
   const shareable = exportShareEnabled()
+  const exportControl = useExportControl(callId)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const onCopyLink = useCallback((): void => {
+    void exportControl.ensure().then((name) => {
+      if (name === null) return
+      void copyArtifactLink(name).then((ok) => {
+        if (!ok) return
+        setLinkCopied(true)
+        window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
+      })
+    })
+  }, [exportControl])
   const fullscreen = useFrameFullscreen()
   // The frame's failures never reached the model — the settle-time check
   // compiles scripts without running them — so a broken render otherwise
@@ -229,7 +248,9 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
                   <>
                     {/* Handing the address to someone else is the other half
                       * of sharing; opening the page was previously the only
-                      * way to reach the URL at all. */}
+                      * way to reach the URL. Copy-link ensures the export
+                      * exists first (a no-op once it already does) rather
+                      * than waiting on the Export/Open control below. */}
                     <button
                       type="button"
                       className={css.download}
@@ -237,27 +258,54 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
                       title={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
                       onClick={(event) => {
                         event.stopPropagation()
-                        void copyExportLink(view.title, view.html).then((ok) => {
-                          if (!ok) return
-                          setLinkCopied(true)
-                          window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
-                        })
+                        onCopyLink()
                       }}
                     >
                       {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
                     </button>
-                    <button
-                      type="button"
-                      className={css.download}
-                      aria-label={t('row.share')}
-                      title={t('row.share')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openExportPage(view.title, view.html)
-                      }}
-                    >
-                      <IconShareOutline16 size={14} />
-                    </button>
+                    {/* Export writes the host's mirror; only once that is
+                      * confirmed does this slot become Open, so the tab it
+                      * opens is always synchronous with its own click — no
+                      * popup blocker from opening a tab after an awaited
+                      * write. */}
+                    {exportControl.status === 'exported' && exportControl.name !== null ? (
+                      <button
+                        type="button"
+                        className={css.download}
+                        aria-label={t('row.share')}
+                        title={t('row.share')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openArtifactPage(exportControl.name!)
+                        }}
+                      >
+                        <IconShareOutline16 size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={css.download}
+                        disabled={exportControl.status === 'exporting'}
+                        aria-label={
+                          exportControl.status === 'exporting' ? t('row.exporting')
+                            : exportControl.status === 'failed' ? t('row.exportFailed')
+                              : t('row.export')
+                        }
+                        title={
+                          exportControl.status === 'exporting' ? t('row.exporting')
+                            : exportControl.status === 'failed' ? t('row.exportFailedTitle')
+                              : t('row.exportTitle')
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void exportControl.ensure()
+                        }}
+                      >
+                        {exportControl.status === 'exporting'
+                          ? <IconLoadingOutline16 size={14} />
+                          : <IconRightUpOutline16 size={14} />}
+                      </button>
+                    )}
                   </>
                 )}
               </>
