@@ -140,6 +140,40 @@ export function partialFileName(base: string): string {
   return base + PARTIAL_SUFFIX
 }
 
+/** One servable export's identity for the artifact gallery listing. */
+export interface ArtifactListEntry {
+  /** The exact served name (`<slug>-<16hex>.html|.svg`); what the page and copy-link URLs address. */
+  name: string
+  /** Human-readable title derived from the slug: digest and extension stripped, hyphens read as spaces. */
+  title: string
+  /** `svg` for a bare-SVG export, `html` otherwise. */
+  kind: 'html' | 'svg'
+  /** File size in bytes. */
+  bytes: number
+  /** Last-modified time, Unix epoch ms — the finalize rename's mtime. */
+  mtimeMs: number
+}
+
+/** Digest suffix {@link exportShareName} appends; stripped before display. */
+const DIGEST_SUFFIX = /-[0-9a-f]{16}$/
+
+/**
+ * Human-readable title of one served export name, for the artifact gallery
+ * listing: the digest and extension stripped, hyphens read as spaces, first
+ * character capitalized. The original title is not recoverable from the name
+ * alone — kebab-slugging is lossy by design (see {@link exportFileBase}) —
+ * so this is a display approximation, not a round-trip.
+ * @param servedName - a name {@link isServableExportName} accepts.
+ * @returns the display title.
+ */
+export function displayTitleOf(servedName: string): string {
+  const dot = servedName.lastIndexOf('.')
+  const stem = dot === -1 ? servedName : servedName.slice(0, dot)
+  const spaced = stem.replace(DIGEST_SUFFIX, '').replace(/-+/g, ' ').trim()
+  if (spaced.length === 0) return FALLBACK_BASE
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 /**
  * Validate one request path segment as a finalized export name. The serve
  * route answers `<route>/<name>`; everything else (nested paths, dot-dot,

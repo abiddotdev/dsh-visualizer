@@ -90,3 +90,31 @@ export async function copyExportLink(title: string | null, html: string): Promis
   }
   return copyText(url)
 }
+
+/**
+ * The artifact gallery's listing endpoint: every finalized export the host
+ * currently holds, most recent first. The route's own root, gated by the
+ * same capability token as any single export page — the listing is just as
+ * much a capability as one link.
+ * @returns the URL, or null under the same conditions as {@link exportPageUrl}.
+ */
+export function artifactListUrl(): string | null {
+  const token = capabilityToken()
+  if (token === null) return null
+  if (!/^https?:$/.test(window.location.protocol)) return null
+  return `${window.location.origin}${EXPORTS_ROUTE_PATH}/?k=${encodeURIComponent(token)}`
+}
+
+/**
+ * One listed artifact's export page URL, addressed by the exact served name
+ * the listing endpoint returned — the gallery never holds the title/html
+ * pair {@link exportPageUrl} recomputes from.
+ * @param name - a name the listing endpoint returned.
+ * @returns the URL, or null under the same conditions as {@link exportPageUrl}.
+ */
+export function artifactPageUrlByName(name: string): string | null {
+  const token = capabilityToken()
+  if (token === null) return null
+  if (!/^https?:$/.test(window.location.protocol)) return null
+  return `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}?k=${encodeURIComponent(token)}`
+}

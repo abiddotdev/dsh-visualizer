@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EXPORTS_ROUTE_PATH, MAX_EXPORT_BASE_CHARS, PARTIAL_SUFFIX,
-  exportFileBase, exportFileName, exportShareName, isServableExportName, isSvgDocument, partialFileName,
+  displayTitleOf, exportFileBase, exportFileName, exportShareName, isServableExportName, isSvgDocument, partialFileName,
 } from '../src/shared/export-name.ts'
 
 describe('export naming', () => {
@@ -133,5 +133,18 @@ describe('export naming', () => {
     expect(isServableExportName('..svg')).toBe(false)
     expect(isServableExportName('chart.txt')).toBe(false)
     expect(isServableExportName('')).toBe(false)
+  })
+
+  it('derives a readable gallery title from a served name', () => {
+    const name = exportShareName('Q3 Revenue by Region', '<p>x</p>')
+    expect(displayTitleOf(name)).toBe('Q3 revenue by region')
+    expect(displayTitleOf(exportShareName(null, '<p>x</p>'))).toBe('Render')
+  })
+
+  it('falls back to the plain base when a name carries no recognizable digest', () => {
+    // Defensive: every finalized export does carry one, but the derivation
+    // must not throw or blank out on a name shaped some other way.
+    expect(displayTitleOf('chart.html')).toBe('Chart')
+    expect(displayTitleOf('a-b-c.svg')).toBe('A b c')
   })
 })

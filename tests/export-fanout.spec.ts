@@ -391,7 +391,7 @@ describe('exports serve route', () => {
       JSON.stringify({ csp: res.headerMap['content-security-policy'], cc: res.headerMap['cache-control'], nosniff: res.headerMap['x-content-type-options'], rp: res.headerMap['referrer-policy'], xfo: res.headerMap['x-frame-options'], corp: res.headerMap['cross-origin-resource-policy'], pp: res.headerMap['permissions-policy'] })
     expect(hardened(answers[0]!)).toBe(hardened(answers[1]!))
     expect(hardened(answers[1]!)).toBe(hardened(answers[2]!))
-    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD')
+    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, DELETE')
   })
 
   it('refuses a symlink planted in the exports directory like any unknown name', async () => {
@@ -443,7 +443,6 @@ describe('exports serve route', () => {
       `${EXPORTS_ROUTE_PATH}/Dash.partial`,
       `${EXPORTS_ROUTE_PATH}/..%2Fsecret.html`,
       `${EXPORTS_ROUTE_PATH}/nested/Dash.html`,
-      `${EXPORTS_ROUTE_PATH}/`,
       `${EXPORTS_ROUTE_PATH}/Dash.txt`,
     ]
     for (const url of urls) {
@@ -451,6 +450,71 @@ describe('exports serve route', () => {
       expect(res.status, url).toBe(404)
       expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
     }
+  })
+
+  describe('artifact gallery listing', () => {
+    it('lists a finalized export at the route root, newest first', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(1_000_000)
+      const harness = await landed('Dash', DOC)
+      vi.setSystemTime(2_000_000)
+      emitSession(harness.ctx, toolCallEvent('c2', 'visualizer', JSON.stringify({ title: 'Later chart', html: '<svg><rect/></svg>' })))
+      await flush()
+      vi.useRealTimers()
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
+      expect(res.headerMap['cache-control']).toBe('no-store')
+      const body = JSON.parse(res.body) as { entries: { name: string; title: string; kind: string; bytes: number; mtimeMs: number }[] }
+      expect(body.entries).toHaveLength(2)
+      // Newest first: the SVG landed after the HTML document.
+      expect(body.entries[0]!.title).toBe('Later chart')
+      expect(body.entries[0]!.kind).toBe('svg')
+      expect(body.entries[0]!.name).toBe(exportShareName('Later chart', '<svg><rect/></svg>'))
+      expect(body.entries[1]!.title).toBe('Dash')
+      expect(body.entries[1]!.kind).toBe('html')
+      expect(body.entries[1]!.bytes).toBe(Buffer.byteLength(DOC, 'utf8'))
+    })
+
+    it('answers an empty list before anything has ever been shared', async () => {
+      const harness = await setup()
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('excludes a streaming sidecar still in flight', async () => {
+      const harness = await setup()
+      emitSession(harness.ctx, delta(JSON.stringify({ title: 'Dash', html: DOC }).slice(0, -1), 'visualizer'))
+      await flush()
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('refuses the listing without the capability token, identically to a bad name', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await request(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(404)
+      expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
+    })
+
+    it('answers the same listing whether the request carries a trailing slash or not', async () => {
+      const harness = await landed('Dash', DOC)
+      const withSlash = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      const withoutSlash = await requestTokened(harness, 'GET', EXPORTS_ROUTE_PATH)
+      expect(withSlash.body).toBe(withoutSlash.body)
+      expect(withoutSlash.status).toBe(200)
+    })
+
+    it('answers no body on HEAD but keeps the 200 and headers', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await requestTokened(harness, 'HEAD', `${EXPORTS_ROUTE_PATH}/`)
+      expect(res.status).toBe(200)
+      expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
+      expect(res.body).toBe('')
+    })
   })
 
   it('refuses requests without or with a wrong capability token', async () => {
@@ -523,11 +587,69 @@ describe('exports serve route', () => {
     expect(res.body).toContain('sandbox="allow-scripts"')
   })
 
-  it('answers 405 with the method table for anything but GET and HEAD', async () => {
+  it('answers 405 with the method table for anything but GET, HEAD, and DELETE', async () => {
     const harness = await landed('Dash', DOC)
     const res = await requestTokened(harness, 'POST', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
-    expect(res.headerMap.allow).toBe('GET, HEAD')
+    expect(res.headerMap.allow).toBe('GET, HEAD, DELETE')
+  })
+
+  describe('artifact gallery delete', () => {
+    it('removes a finalized export from disk and answers 204', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      expect(await readFileOrNull(join(harness.dir, name))).not.toBeNull()
+
+      const res = await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+      expect(res.status).toBe(204)
+      expect(res.body).toBe('')
+      expect(await readFileOrNull(join(harness.dir, name))).toBeNull()
+    })
+
+    it('drops it from a subsequent listing', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+
+      const res = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      expect(JSON.parse(res.body)).toEqual({ entries: [] })
+    })
+
+    it('refuses without the capability token, identically to a bad name', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      const res = await request(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+      expect(res.status).toBe(404)
+      expect(await readFileOrNull(join(harness.dir, name))).not.toBeNull()
+    })
+
+    it('answers 404 for a missing name, the route root, and a traversal attempt, deleting nothing', async () => {
+      const harness = await landed('Dash', DOC)
+      const urls = [
+        `${EXPORTS_ROUTE_PATH}/missing.html`,
+        `${EXPORTS_ROUTE_PATH}/`,
+        `${EXPORTS_ROUTE_PATH}/..%2Fsecret.html`,
+        `${EXPORTS_ROUTE_PATH}/Dash.partial`,
+      ]
+      for (const url of urls) {
+        const res = await requestTokened(harness, 'DELETE', url)
+        expect(res.status, url).toBe(404)
+      }
+      expect(await readFileOrNull(join(harness.dir, exportShareName('Dash', DOC)))).not.toBeNull()
+    })
+
+    it('refuses a symlink planted under a servable name, like the read path does', async () => {
+      const harness = await setup()
+      const { symlink, writeFile: write } = await import('node:fs/promises')
+      const real = join(harness.dir, 'real.html')
+      await write(real, '<p>real</p>', 'utf8')
+      const planted = join(harness.dir, 'planted-1234567890abcdef.html')
+      await symlink(real, planted)
+
+      const res = await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/planted-1234567890abcdef.html`)
+      expect(res.status).toBe(404)
+      expect(await readFileOrNull(real)).not.toBeNull()
+    })
   })
 })
 
