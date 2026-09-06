@@ -377,11 +377,19 @@ function admitExportRequest(state: FanoutState): boolean {
 /**
  * Header fields every route answer carries, whatever the status: exports are
  * never cached (each name's content mutates by overwrite, so a stale copy is
- * worse than no copy), exported pages are not for framing elsewhere, and the
+ * worse than no copy), exported pages are not for framing anywhere, and the
  * document must never leak the page address to the public CDNs its scripts
  * load from. Keeping one table means a 404 and a 200 are indistinguishable
  * by header shape — an invalid name reveals nothing through presence or
  * absence of hardening.
+ *
+ * `x-frame-options: DENY` stays at its original, most conservative value:
+ * an earlier attempt at the gallery's hover preview navigated an iframe's
+ * `src=` straight to this route and needed `SAMEORIGIN` to avoid being
+ * blocked, but the preview now fetches the page as text and embeds it via
+ * `srcDoc` instead (matching the chat card's own AutoFrame technique) — a
+ * plain resource fetch is never subject to `x-frame-options` at all, so
+ * nothing in this plugin needs framing permission from this route anymore.
  */
 const SERVE_HEADERS: Record<string, string> = {
   'cache-control': 'no-store',

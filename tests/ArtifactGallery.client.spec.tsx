@@ -330,6 +330,145 @@ describe('ArtifactGallery', () => {
     })
   })
 
+  describe('preview', () => {
+    // Distinguishes the listing GET (always .../visualizer/?k=...) from a
+    // per-artifact GET (.../visualizer/<name>?k=...) so the HTML preview's
+    // own fetch(url).then(text()) gets real HTML text back, not the listing
+    // JSON — matching how the two routes actually differ on the wire.
+    function stubFetchWithPreview(entries: unknown[], html = '<html><body>preview</body></html>'): ReturnType<typeof vi.fn> {
+      vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+      const fetchSpy = vi.fn().mockImplementation((url: string) => {
+        if (url.includes(`${EXPORTS_ROUTE_PATH}/?`)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries }) })
+        return Promise.resolve({ ok: true, text: () => Promise.resolve(html) })
+      })
+      vi.stubGlobal('fetch', fetchSpy)
+      return fetchSpy
+    }
+
+    /** The row's selection trigger — now a button spanning badge+title+meta,
+     * not just the title text, so its accessible name is their concatenation. */
+    function titleButton(title: string): HTMLElement {
+      return within(rowFor(title)).getByRole('button', { name: (accessibleName) => accessibleName.includes(title) })
+    }
+
+    it('shows no preview before any row is expanded', async () => {
+      stubFetchWithPreview([ENTRY])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      expect(screen.queryByTitle('Live preview of Dash')).toBeNull()
+      expect(screen.queryByRole('img', { name: /Live preview/ })).toBeNull()
+      expect(titleButton('Dash').getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('selecting an HTML entry shows its sandboxed srcDoc iframe preview in the detail pane', async () => {
+      const html = '<html><body>preview content</body></html>'
+      const fetchSpy = stubFetchWithPreview([ENTRY], html)
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      await act(async () => { fireEvent.click(titleButton('Dash')) })
+
+      const frame = screen.getByTitle('Live preview of Dash') as HTMLIFrameElement
+      expect(frame.tagName).toBe('IFRAME')
+      expect(frame.srcdoc).toBe(html)
+      expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(ENTRY.name)}?k=test-token`,
+        { cache: 'no-store' },
+      )
+      expect(screen.queryByText('Select an artifact to preview it')).toBeNull()
+    })
+
+    it('selecting an SVG entry shows a plain image preview', async () => {
+      stubFetchWithPreview([OTHER])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Q3 revenue')).toBeTruthy() })
+
+      await act(async () => { fireEvent.click(titleButton('Q3 revenue')) })
+
+      const image = screen.getByRole('img', { name: 'Live preview of Q3 revenue' }) as HTMLImageElement
+      expect(image.src).toBe(`${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(OTHER.name)}?k=test-token`)
+    })
+
+    it('switching selection to a different row swaps the pane\'s content', async () => {
+      stubFetchWithPreview([ENTRY, OTHER])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      await act(async () => { fireEvent.click(titleButton('Dash')) })
+      expect(screen.getByTitle('Live preview of Dash')).toBeTruthy()
+
+      await act(async () => { fireEvent.click(titleButton('Q3 revenue')) })
+      expect(screen.queryByTitle('Live preview of Dash')).toBeNull()
+      expect(screen.getByRole('img', { name: 'Live preview of Q3 revenue' })).toBeTruthy()
+    })
+
+    it('collapses an expanded row when its own trigger is clicked again', async () => {
+      stubFetchWithPreview([ENTRY])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      const trigger = titleButton('Dash')
+      await act(async () => { fireEvent.click(trigger) })
+      expect(screen.getByTitle('Live preview of Dash')).toBeTruthy()
+
+      await act(async () => { fireEvent.click(trigger) })
+      expect(screen.queryByTitle('Live preview of Dash')).toBeNull()
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('is a real Tab stop, reachable and activatable without a pointer', async () => {
+      stubFetchWithPreview([ENTRY])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      const button = titleButton('Dash')
+      button.focus()
+      expect(document.activeElement).toBe(button)
+      // A native <button> gets Enter/Space activation from the browser
+      // itself; there is no app-level key handler to test, so activation is
+      // exercised the same way a real Enter/Space press resolves — a click.
+      await act(async () => { fireEvent.click(button) })
+      expect(screen.getByTitle('Live preview of Dash')).toBeTruthy()
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    it('does not affect the row\'s own Pin/Open/Copy-link/Delete controls', async () => {
+      stubFetchWithPreview([ENTRY])
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      await act(async () => { fireEvent.click(titleButton('Dash')) })
+      expect(screen.getByTitle('Live preview of Dash')).toBeTruthy()
+
+      const copy = within(rowFor('Dash')).getByRole('button', { name: 'Copy link' })
+      await act(async () => { copy.click() })
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(ENTRY.name)}?k=test-token`,
+      )
+      expect(within(rowFor('Dash')).getByRole('button', { name: 'Copied' })).toBeTruthy()
+    })
+
+    it('shows neither a preview nor the empty state when the preview fetch fails', async () => {
+      vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+        if (url.includes(`${EXPORTS_ROUTE_PATH}/?`)) return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries: [ENTRY] }) })
+        return Promise.resolve({ ok: false, status: 404 })
+      }))
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      await act(async () => { fireEvent.click(titleButton('Dash')) })
+      expect(screen.queryByTitle('Live preview of Dash')).toBeNull()
+      // Something IS selected (just failed to load), so the empty-state
+      // prompt — reserved for "nothing selected yet" — should not reappear.
+      expect(screen.queryByText('Select an artifact to preview it')).toBeNull()
+    })
+  })
+
   describe('live cross-surface sync', () => {
     it('drops a row the instant a card unshares it, without waiting for Refresh', async () => {
       stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [ENTRY, OTHER] }) }))
