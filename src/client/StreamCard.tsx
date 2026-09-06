@@ -286,8 +286,8 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                         type="button"
                         className={unshareConfirming ? css.downloadDanger : css.download}
                         disabled={unsharing}
-                        aria-label={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
-                        title={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
+                        aria-label={unshareConfirming ? t('card.unshareConfirm') : t('card.unshare')}
+                        title={unshareConfirming ? t('card.unshareConfirm') : t('card.unshare')}
                         onClick={(event) => {
                           event.stopPropagation()
                           onUnshareClick()
@@ -306,14 +306,14 @@ function LiveDoc({ card, t, onPrompt }: { card: GenerativeCardData; t: Translate
                       className={css.download}
                       disabled={exportControl.status === 'exporting'}
                       aria-label={
-                        exportControl.status === 'exporting' ? t('row.exporting')
-                          : exportControl.status === 'failed' ? t('row.exportFailed')
-                            : t('row.export')
+                        exportControl.status === 'exporting' ? t('card.exporting')
+                          : exportControl.status === 'failed' ? t('card.exportFailed')
+                            : t('card.export')
                       }
                       title={
-                        exportControl.status === 'exporting' ? t('row.exporting')
-                          : exportControl.status === 'failed' ? t('row.exportFailedTitle')
-                            : t('row.exportTitle')
+                        exportControl.status === 'exporting' ? t('card.exporting')
+                          : exportControl.status === 'failed' ? t('card.exportFailedTitle')
+                            : t('card.exportTitle')
                       }
                       onClick={(event) => {
                         event.stopPropagation()
