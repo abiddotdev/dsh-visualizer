@@ -10,8 +10,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconCheckOutline16, IconLinkOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconCheckOutline16, IconLinkOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16, IconTriangleRightFill14,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconPinFill16, IconPinOutline16 } from './PinIcon.tsx'
+import { ArtifactPreview } from './ArtifactPreview.tsx'
 import type { ArtifactListEntry } from '../shared/export-name.ts'
 import {
   type ArtifactDateFilter, deleteArtifact, fetchArtifactList, formatArtifactSize, formatArtifactTime, matchesDateFilter,
@@ -38,11 +41,14 @@ type PinnedFilter = 'all' | 'pinned'
 /** Window a delete's confirm arm stays live before reverting on its own — long enough to notice, short enough that a stale arm never lingers into an unrelated later click. */
 const DELETE_CONFIRM_MS = 3_000
 
-/** One listed export's row: title, size, time, and its actions. */
+/** One listed export's row: title, size, time, its actions, and — when
+ * expanded — a live preview inline below the header. */
 function ArtifactRow(
-  { entry, t, onDeleted, onPinned }: {
+  { entry, t, expanded, onToggle, onDeleted, onPinned }: {
     entry: ArtifactListEntry
     t: ArtifactGalleryProps['t']
+    expanded: boolean
+    onToggle: (name: string) => void
     onDeleted: (name: string) => void
     onPinned: (name: string, pinned: boolean) => void
   },
@@ -98,56 +104,73 @@ function ArtifactRow(
 
   return (
     <li className={entry.pinned ? css.rowPinned : css.row}>
-      <span className={css.kindBadge}>{entry.kind.toUpperCase()}</span>
-      <span className={css.title}>{entry.title}</span>
-      <span className={css.meta}>
-        {formatArtifactSize(entry.bytes)}
-        {' · '}
-        {formatArtifactTime(entry.mtimeMs)}
-      </span>
-      <span className={css.actions}>
+      <div className={css.rowHeader}>
         <button
           type="button"
-          className={entry.pinned ? css.pinToggleActive : css.pinToggle}
-          disabled={pinning}
-          aria-pressed={entry.pinned}
-          onClick={onPinClick}
-          aria-label={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
-          title={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
+          className={expanded ? css.rowTriggerSelected : css.rowTrigger}
+          aria-expanded={expanded}
+          onClick={() => { onToggle(entry.name) }}
         >
-          {entry.pinned ? <IconPinFill16 size={14} /> : <IconPinOutline16 size={14} />}
+          <span className={expanded ? css.chevronExpanded : css.chevron}>
+            <IconTriangleRightFill14 size={12} />
+          </span>
+          <span className={css.kindBadge}>{entry.kind.toUpperCase()}</span>
+          <span className={css.title}>{entry.title}</span>
+          <span className={css.meta}>
+            {formatArtifactSize(entry.bytes)}
+            {' · '}
+            {formatArtifactTime(entry.mtimeMs)}
+          </span>
         </button>
-        <a
-          className={css.action}
-          href={url ?? undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={t('gallery.open')}
-          title={t('gallery.open')}
-        >
-          <IconShareOutline16 size={14} />
-        </a>
-        <button
-          type="button"
-          className={css.action}
-          onClick={onCopy}
-          aria-label={copied ? t('gallery.copied') : t('gallery.copyLink')}
-          title={copied ? t('gallery.copied') : t('gallery.copyLink')}
-        >
-          {copied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
-        </button>
-        <button
-          type="button"
-          className={confirming ? css.actionDanger : css.action}
-          disabled={deleting}
-          onClick={onDeleteClick}
-          onBlur={() => { window.clearTimeout(confirmTimer.current); setConfirming(false) }}
-          aria-label={confirming ? t('gallery.deleteConfirm') : t('gallery.delete')}
-          title={confirming ? t('gallery.deleteConfirm') : t('gallery.delete')}
-        >
-          <IconTrashOutline16 size={14} />
-        </button>
-      </span>
+        <span className={css.actions}>
+          <button
+            type="button"
+            className={entry.pinned ? css.pinToggleActive : css.pinToggle}
+            disabled={pinning}
+            aria-pressed={entry.pinned}
+            onClick={onPinClick}
+            aria-label={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
+            title={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
+          >
+            {entry.pinned ? <IconPinFill16 size={14} /> : <IconPinOutline16 size={14} />}
+          </button>
+          <a
+            className={css.action}
+            href={url ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t('gallery.open')}
+            title={t('gallery.open')}
+          >
+            <IconShareOutline16 size={14} />
+          </a>
+          <button
+            type="button"
+            className={css.action}
+            onClick={onCopy}
+            aria-label={copied ? t('gallery.copied') : t('gallery.copyLink')}
+            title={copied ? t('gallery.copied') : t('gallery.copyLink')}
+          >
+            {copied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
+          </button>
+          <button
+            type="button"
+            className={confirming ? css.actionDanger : css.action}
+            disabled={deleting}
+            onClick={onDeleteClick}
+            onBlur={() => { window.clearTimeout(confirmTimer.current); setConfirming(false) }}
+            aria-label={confirming ? t('gallery.deleteConfirm') : t('gallery.delete')}
+            title={confirming ? t('gallery.deleteConfirm') : t('gallery.delete')}
+          >
+            <IconTrashOutline16 size={14} />
+          </button>
+        </span>
+      </div>
+      {expanded && url !== null && (
+        <div className={css.rowPreview}>
+          <ArtifactPreview url={url} kind={entry.kind} label={t('gallery.previewTitle', { title: entry.title })} />
+        </div>
+      )}
     </li>
   )
 }
@@ -175,6 +198,15 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [dateFilter, setDateFilter] = useState<ArtifactDateFilter>('all')
   const [pinnedFilter, setPinnedFilter] = useState<PinnedFilter>('all')
+  // No row is expanded by default: auto-expanding the first one would fire
+  // an extra preview fetch on every mount even when the reader only wants to
+  // skim or filter. Tracked by name rather than index, and only one at a
+  // time (an accordion, not independent disclosures) — expanding a
+  // different row implicitly collapses whichever one was open.
+  const [expandedName, setExpandedName] = useState<string | null>(null)
+  const onToggle = useCallback((name: string): void => {
+    setExpandedName(current => current === name ? null : name)
+  }, [])
 
   const load = useCallback((): void => {
     setState({ status: 'loading' })
@@ -288,7 +320,17 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
       )}
       {filtered.length > 0 && (
         <ul className={css.list}>
-          {filtered.map(entry => <ArtifactRow key={entry.name} entry={entry} t={t} onDeleted={onDeleted} onPinned={onPinned} />)}
+          {filtered.map(entry => (
+            <ArtifactRow
+              key={entry.name}
+              entry={entry}
+              t={t}
+              expanded={entry.name === expandedName}
+              onToggle={onToggle}
+              onDeleted={onDeleted}
+              onPinned={onPinned}
+            />
+          ))}
         </ul>
       )}
     </div>

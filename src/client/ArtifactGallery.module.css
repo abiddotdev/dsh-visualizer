@@ -140,12 +140,13 @@
   list-style: none;
 }
 
+/* A row stacks its header and (when expanded) an inline preview below it —
+ * an accordion, not a separate always-visible pane, so the list's own
+ * scroll container carries the expanded content instead of a fixed-size
+ * side column needing to fill the tab's available height. */
 .row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 6px 8px;
+  flex-direction: column;
   border-radius: 6px;
 }
 
@@ -154,12 +155,24 @@
 }
 
 /* A pinned row: subtle accent so pinned items are scannable without relying
- * on the pin toggle's own state alone. Padding shortens by the border's
- * width so content doesn't shift versus an unpinned row. */
+ * on the pin toggle's own state alone. */
 .rowPinned {
   composes: row;
-  padding-left: 6px;
   border-left: 2px solid var(--dsw-alias-border-l3);
+}
+
+.rowHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px;
+}
+
+/* Padding shortens by the border's width so content doesn't shift versus
+ * an unpinned row. */
+.rowPinned .rowHeader {
+  padding-left: 6px;
 }
 
 .kindBadge {
@@ -172,6 +185,55 @@
   letter-spacing: 0.02em;
 }
 
+/* The disclosure chevron: plain text/badges alone don't read as "click to
+ * expand," so this rotates from pointing right (collapsed) to pointing down
+ * (expanded) — the standard accordion affordance. */
+.chevron, .chevronExpanded {
+  flex: none;
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+/* The row's selection control: badge + title + meta all live inside one
+ * <button> (not just the title text) so clicking anywhere across that
+ * whole span selects the row, not only a narrow title hit target. A plain
+ * <button> gives Tab-reachability and Enter/Space-activation for free,
+ * which a hover-only trigger never could. Reset to look like the plain
+ * flex row it replaces. */
+.rowTrigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rowTrigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+/* The currently selected row — the same active-tint background this file
+ * already uses for .chipActive/.pinToggleActive, so "which row is this"
+ * reads at a glance across the whole trigger, not just its title text. */
+.rowTriggerSelected {
+  composes: rowTrigger;
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
 .title {
   flex: 1 1 auto;
   overflow: hidden;
@@ -179,6 +241,49 @@
   white-space: nowrap;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-13);
+}
+
+.rowTriggerSelected .title {
+  font-weight: 600;
+}
+
+/* The expanded row's inline preview block. Sized generously but capped
+ * relative to the viewport (not a fixed pixel value) so it stays usable on
+ * a short window without dominating the whole page — an accordion item, not
+ * a pane that needs to fill exactly the tab's remaining height. */
+.rowPreview {
+  height: clamp(320px, 60vh, 560px);
+  margin: 0 4px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* A plain 100%-width/height iframe or image inside .rowPreview, sized
+ * purely by CSS, no JS measurement. The embedded document reflows at
+ * whatever real pixel size the block occupies, which is the point of a
+ * real inline preview rather than a small fixed-size popup. */
+.previewBox {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.previewFrame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* A browser never executes script for <img> content regardless of the SVG's
+ * own markup, so this needs no sandbox/frame at all. */
+.previewImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .meta {
