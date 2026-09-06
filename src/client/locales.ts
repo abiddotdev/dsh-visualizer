@@ -74,11 +74,15 @@ export const zh = {
   'gallery.countFiltered': '{shown} / {total}',
   'gallery.delete': '删除',
   'gallery.deleteConfirm': '再次点击以确认删除',
+  'gallery.pin': '置顶',
+  'gallery.pinned': '已置顶',
   'gallery.filterAll': '全部',
   'gallery.filterToday': '今天',
   'gallery.filterWeek': '本周',
   'gallery.filterKindGroup': '按类型筛选',
   'gallery.filterDateGroup': '按时间筛选',
+  'gallery.filterPinnedGroup': '按置顶筛选',
+  'gallery.filterPinnedOnly': '置顶',
 } as const
 
 /** English streaming-HTML card messages. */
@@ -153,11 +157,15 @@ export const en = {
   'gallery.countFiltered': '{shown} of {total}',
   'gallery.delete': 'Delete',
   'gallery.deleteConfirm': 'Click again to confirm delete',
+  'gallery.pin': 'Pin',
+  'gallery.pinned': 'Pinned',
   'gallery.filterAll': 'All',
   'gallery.filterToday': 'Today',
   'gallery.filterWeek': 'This week',
   'gallery.filterKindGroup': 'Filter by kind',
   'gallery.filterDateGroup': 'Filter by date',
+  'gallery.filterPinnedGroup': 'Filter by pinned',
+  'gallery.filterPinnedOnly': 'Pinned',
 } as const
 
 /** Dictionary keys of this namespace. */

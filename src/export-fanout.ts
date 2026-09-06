@@ -39,7 +39,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { RENDER_CSP_DIRECTIVES } from './shared/export-csp.ts'
 import {
   type ArtifactListEntry, EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, displayTitleOf, exportShareName,
-  isServableExportName, partialFileName,
+  isServableExportName, partialFileName, sortArtifactEntries,
 } from './shared/export-name.ts'
 
 /** Wire name of the render tool; only its calls export. */
@@ -107,13 +107,82 @@ async function unlinkQuiet(path: string): Promise<void> {
 }
 
 /**
+ * Sidecar at the root of the exports directory holding the pinned name set.
+ * Never itself servable or listed: it carries no `.html`/`.svg` extension, so
+ * `isServableExportName` rejects it the same way it rejects any other stray
+ * file in the directory — no special-casing needed in the listing, serve, or
+ * delete paths.
+ */
+const PIN_STORE_NAME = 'pins.json'
+
+/**
+ * Lock key serializing pin-store reads/writes through the same
+ * {@link withWriteLock} map real export writes use. A leading space can never
+ * equal a real export name (every one ends `.html`/`.svg`), so a pin-store
+ * operation can never alias, and therefore never queue behind, one
+ * particular export's own write lock.
+ */
+const PIN_STORE_LOCK_KEY = ' pins'
+
+/**
+ * The current pinned set, read fresh with no lock: the write side always
+ * writes via temp-file + atomic rename, so a concurrent plain read only ever
+ * sees a complete old or new file, never torn. A missing or corrupt file
+ * both read as "nothing pinned" rather than failing the caller.
+ * @param state - route state carrying the exports directory.
+ */
+async function readPinSet(state: FanoutState): Promise<Set<string>> {
+  try {
+    const raw = await readFile(join(state.config.dir, PIN_STORE_NAME), 'utf8')
+    const parsed: unknown = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+/**
+ * Persist the pinned set: temp file next to it, then an atomic rename, so a
+ * concurrent {@link readPinSet} never sees a torn write.
+ * @param state - route state carrying the exports directory.
+ * @param pins - the complete pinned set to persist.
+ */
+async function writePinSet(state: FanoutState, pins: ReadonlySet<string>): Promise<void> {
+  const dir = state.config.dir
+  const tmp = join(dir, `${PIN_STORE_NAME}.tmp-${randomBytes(4).toString('hex')}`)
+  await writeFile(tmp, JSON.stringify([...pins].sort()), 'utf8')
+  await rename(tmp, join(dir, PIN_STORE_NAME))
+}
+
+/**
+ * Set one export's pinned bit, read-modify-write serialized under
+ * {@link PIN_STORE_LOCK_KEY} so two concurrent toggles never race each
+ * other's read of the same file. A no-op (already pinned/unpinned) skips the
+ * write entirely.
+ * @param state - route state.
+ * @param name - the export name to pin or unpin.
+ * @param pinned - the desired state.
+ */
+async function setPinned(state: FanoutState, name: string, pinned: boolean): Promise<void> {
+  await withWriteLock(state, PIN_STORE_LOCK_KEY, async () => {
+    const pins = await readPinSet(state)
+    const changed = pinned ? !pins.has(name) : pins.has(name)
+    if (!changed) return
+    if (pinned) pins.add(name)
+    else pins.delete(name)
+    await writePinSet(state, pins)
+  })
+}
+
+/**
  * Run one operation after any prior operation queued under the same key has
  * settled (success or failure), and let the next one queue behind this in
  * turn. Unlike a plain mutex, the caller still sees this operation's own
  * result — a failed write reports 500, it does not silently vanish into a
  * background chain.
  * @param state - route state carrying the lock map.
- * @param key - the export name being written; the granularity of the lock.
+ * @param key - the granularity of the lock: an export name for a per-call
+ * write, or {@link PIN_STORE_LOCK_KEY} for the shared pin-store file.
  * @param op - the operation to serialize.
  * @returns `op`'s own result or rejection.
  */
@@ -133,14 +202,16 @@ async function withWriteLock<T>(state: FanoutState, key: string, op: () => Promi
 const MAX_LISTING_ENTRIES = 500
 
 /**
- * Every finalized export currently on disk, most recent first, for the
- * artifact gallery's listing request. Read live rather than cached — the
- * directory is small relative to a request's cost, and a cache would show
- * artifacts the retention sweep already removed.
- * @param dir - the configured exports directory.
- * @returns entries newest-first, capped at {@link MAX_LISTING_ENTRIES}.
+ * Every finalized export currently on disk, pinned first then most recent,
+ * for the artifact gallery's listing request. Read live rather than cached —
+ * the directory is small relative to a request's cost, and a cache would
+ * show artifacts the retention sweep already removed.
+ * @param state - route state (directory, pin store).
+ * @returns entries pinned-first, newest-first within each group, capped at
+ * {@link MAX_LISTING_ENTRIES}.
  */
-async function listArtifacts(dir: string): Promise<ArtifactListEntry[]> {
+async function listArtifacts(state: FanoutState): Promise<ArtifactListEntry[]> {
+  const dir = state.config.dir
   let names: string[]
   try {
     names = await readdir(dir)
@@ -149,6 +220,7 @@ async function listArtifacts(dir: string): Promise<ArtifactListEntry[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error
   }
+  const pins = await readPinSet(state)
   const entries: ArtifactListEntry[] = []
   for (const name of names) {
     if (!isServableExportName(name)) continue
@@ -160,10 +232,10 @@ async function listArtifacts(dir: string): Promise<ArtifactListEntry[]> {
       kind: name.endsWith('.svg') ? 'svg' : 'html',
       bytes: stats.size,
       mtimeMs: stats.mtimeMs,
+      pinned: pins.has(name),
     })
   }
-  entries.sort((a, b) => b.mtimeMs - a.mtimeMs)
-  return entries.slice(0, MAX_LISTING_ENTRIES)
+  return sortArtifactEntries(entries).slice(0, MAX_LISTING_ENTRIES)
 }
 
 /** One resolved visualizer call's durable document — never client-supplied bytes. */
@@ -392,7 +464,11 @@ function bootToken(): string {
  *   everything currently on disk.
  * - `POST {route}/` with `{callId}` — create the export for one settled
  *   call, reading its document from whichever live session logged it.
- * - `DELETE {route}/<name>` — remove one export from disk.
+ * - `PATCH {route}/<name>` with `{pinned}` — set one export's pinned bit:
+ *   pinned exports sort first in the listing and are exempt from the
+ *   retention sweep.
+ * - `DELETE {route}/<name>` — remove one export from disk (and drop it from
+ *   the pin set, if pinned).
  *
  * Every request carries the boot capability token as `?k=`; anything else
  * (missing token, wrong token, unknown or malformed name) takes the same
@@ -405,8 +481,8 @@ function bootToken(): string {
  */
 async function serveExport(state: FanoutState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET'
-  if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE' && method !== 'POST') {
-    res.writeHead(405, { allow: 'GET, HEAD, POST, DELETE', ...SERVE_HEADERS })
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE' && method !== 'POST' && method !== 'PATCH') {
+    res.writeHead(405, { allow: 'GET, HEAD, POST, PATCH, DELETE', ...SERVE_HEADERS })
     res.end()
     return
   }
@@ -483,6 +559,39 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
     }
     return
   }
+  if (method === 'PATCH') {
+    if (name.length === 0 || !isServableExportName(name)) {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+      return
+    }
+    let body: unknown
+    try {
+      body = await readJsonBody(req, MAX_EXPORT_REQUEST_BYTES)
+    } catch {
+      res.writeHead(400, SERVE_HEADERS)
+      res.end()
+      return
+    }
+    const { pinned } = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    if (typeof pinned !== 'boolean') {
+      res.writeHead(400, SERVE_HEADERS)
+      res.end()
+      return
+    }
+    try {
+      await state.ready
+      const stats = await lstat(join(state.config.dir, name))
+      if (!stats.isFile()) throw new Error('not a regular file')
+      await setPinned(state, name, pinned)
+      res.writeHead(204, SERVE_HEADERS)
+      res.end()
+    } catch {
+      res.writeHead(404, notFoundHeaders)
+      res.end()
+    }
+    return
+  }
   if (method === 'DELETE') {
     if (name.length === 0 || !isServableExportName(name)) {
       res.writeHead(404, notFoundHeaders)
@@ -495,6 +604,13 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
       const stats = await lstat(path)
       if (!stats.isFile()) throw new Error('not a regular file')
       await unlink(path)
+      // Drop it from pins.json too, so a deleted export never lingers in the
+      // pin set — best-effort and outside the response's own error path: the
+      // delete itself already succeeded, so a pin-store write failure here
+      // must not turn a successful delete into a reported 404.
+      await setPinned(state, name, false).catch((error: unknown) => {
+        state.ctx.logger.warn(`export fanout: could not clear pin for deleted export ${name}: ${error instanceof Error ? error.message : String(error)}`)
+      })
       res.writeHead(204, SERVE_HEADERS)
       res.end()
     } catch {
@@ -509,7 +625,7 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
   if (name.length === 0) {
     try {
       await state.ready
-      const body = Buffer.from(JSON.stringify({ entries: await listArtifacts(state.config.dir) }), 'utf8')
+      const body = Buffer.from(JSON.stringify({ entries: await listArtifacts(state) }), 'utf8')
       res.writeHead(200, {
         ...SERVE_HEADERS,
         'content-type': 'application/json; charset=utf-8',
@@ -610,8 +726,10 @@ export function registerExportFanout(ctx: Context, config: ExportFanoutConfig): 
     const cutoff = Date.now() - config.artifactRetentionDays * 86_400_000
     void (async () => {
       await state.ready
+      const pins = await readPinSet(state)
       for (const entry of await readdir(config.dir)) {
         if (!isServableExportName(entry)) continue
+        if (pins.has(entry)) continue // pinned artifacts are exempt regardless of age
         const stats = await lstat(join(config.dir, entry)).catch(() => null)
         if (stats === null || !stats.isFile() || stats.mtimeMs >= cutoff) continue
         await unlinkQuiet(join(config.dir, entry))

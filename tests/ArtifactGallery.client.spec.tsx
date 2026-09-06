@@ -28,8 +28,8 @@ function renderGallery(): void {
   render(<ArtifactGallery {...({ t } as unknown as ArtifactGalleryProps)} />)
 }
 
-const ENTRY = { name: 'dash-abc1234567890f.html', title: 'Dash', kind: 'html' as const, bytes: 12_620, mtimeMs: 1_700_000_000_000 }
-const OTHER = { name: 'q3-revenue-1234567890abcdef.svg', title: 'Q3 revenue', kind: 'svg' as const, bytes: 900, mtimeMs: 1_699_000_000_000 }
+const ENTRY = { name: 'dash-abc1234567890f.html', title: 'Dash', kind: 'html' as const, bytes: 12_620, mtimeMs: 1_700_000_000_000, pinned: false }
+const OTHER = { name: 'q3-revenue-1234567890abcdef.svg', title: 'Q3 revenue', kind: 'svg' as const, bytes: 900, mtimeMs: 1_699_000_000_000, pinned: false }
 
 function stubFetch(handler: () => unknown): void {
   vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
@@ -248,6 +248,85 @@ describe('ArtifactGallery', () => {
       await act(async () => { screen.getByRole('button', { name: 'Click again to confirm delete' }).click() })
       await waitFor(() => { expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy() })
       expect(screen.getByText('Dash')).toBeTruthy()
+    })
+  })
+
+  describe('pin toggle', () => {
+    function stubFetchWithPatch(entries: unknown[], patchOk = true): ReturnType<typeof vi.fn> {
+      vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+      const fetchSpy = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return Promise.resolve({ ok: patchOk, status: patchOk ? 204 : 404 })
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries }) })
+      })
+      vi.stubGlobal('fetch', fetchSpy)
+      return fetchSpy
+    }
+
+    it('pins on a single click, no arm/confirm, without refetching the listing', async () => {
+      const fetchSpy = stubFetchWithPatch([ENTRY])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      const pin = within(rowFor('Dash')).getByRole('button', { name: 'Pin' })
+      await act(async () => { pin.click() })
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(ENTRY.name)}?k=test-token`,
+        { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pinned: true }) },
+      )
+      await waitFor(() => { expect(within(rowFor('Dash')).getByRole('button', { name: 'Pinned' })).toBeTruthy() })
+      expect(within(rowFor('Dash')).getByRole('button', { name: 'Pinned' }).getAttribute('aria-pressed')).toBe('true')
+      expect(fetchSpy).toHaveBeenCalledTimes(2) // initial load + the PATCH, no extra listing refetch
+    })
+
+    it('floats a newly pinned older entry ahead of a newer unpinned one immediately', async () => {
+      const older = { ...ENTRY, mtimeMs: 1 }
+      const newer = { ...OTHER, mtimeMs: 2 }
+      stubFetchWithPatch([newer, older])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      const rowsBefore = screen.getAllByRole('listitem')
+      expect(rowsBefore[0]!.textContent).toContain('Q3 revenue')
+
+      await act(async () => { within(rowFor('Dash')).getByRole('button', { name: 'Pin' }).click() })
+      await waitFor(() => {
+        const rowsAfter = screen.getAllByRole('listitem')
+        expect(rowsAfter[0]!.textContent).toContain('Dash')
+      })
+    })
+
+    it('unpins on a second click', async () => {
+      stubFetchWithPatch([{ ...ENTRY, pinned: true }])
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      const pinned = within(rowFor('Dash')).getByRole('button', { name: 'Pinned' })
+      await act(async () => { pinned.click() })
+      await waitFor(() => { expect(within(rowFor('Dash')).getByRole('button', { name: 'Pin' })).toBeTruthy() })
+    })
+
+    it('leaves the row unchanged when the host refuses the pin request', async () => {
+      stubFetchWithPatch([ENTRY], false)
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      await act(async () => { within(rowFor('Dash')).getByRole('button', { name: 'Pin' }).click() })
+      await waitFor(() => { expect(within(rowFor('Dash')).getByRole('button', { name: 'Pin' })).toBeTruthy() })
+    })
+  })
+
+  describe('pinned filter chip', () => {
+    it('narrows to pinned entries only, composing with search and other chips', async () => {
+      const pinned = { ...ENTRY, pinned: true }
+      stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [pinned, OTHER] }) }))
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      const pinnedGroup = screen.getByRole('group', { name: 'Filter by pinned' })
+      await act(async () => { within(pinnedGroup).getByRole('button', { name: 'Pinned' }).click() })
+      expect(screen.getByText('Dash')).toBeTruthy()
+      expect(screen.queryByText('Q3 revenue')).toBeNull()
     })
   })
 

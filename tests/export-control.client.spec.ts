@@ -16,8 +16,8 @@ const HTML = '<p>revenue</p>'
 const NAME = exportShareName(TITLE, HTML)
 
 /** A minimally valid listing entry for one name — the reconciliation check only ever looks at `name`, but `fetchArtifactList` drops anything failing its full shape check. */
-function listingEntry(name: string): { name: string; title: string; kind: 'html'; bytes: number; mtimeMs: number } {
-  return { name, title: 'Dash', kind: 'html', bytes: 42, mtimeMs: 1_700_000_000_000 }
+function listingEntry(name: string): { name: string; title: string; kind: 'html'; bytes: number; mtimeMs: number; pinned: boolean } {
+  return { name, title: 'Dash', kind: 'html', bytes: 42, mtimeMs: 1_700_000_000_000, pinned: false }
 }
 
 /**

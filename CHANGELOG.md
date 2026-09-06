@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Pin an artifact in the gallery: a **Pin** toggle floats it to the top of the listing (still newest-first within the pinned/unpinned groups) and exempts it from the `artifactRetentionDays` age sweep. Backed by a new `PATCH /artifacts/visualizer/<name>` route (`{pinned: boolean}`, gated by the same capability token as every other verb) and a small `pins.json` sidecar at the exports directory's root — never itself listed or servable. Deleting a pinned artifact also drops it from the pin set so it can't accumulate stale entries. A new "Pinned" filter chip narrows the gallery to pinned entries alongside the existing kind/date chips.
+
 ## [0.9.0] - 2026-09-06
 
 ### Changed

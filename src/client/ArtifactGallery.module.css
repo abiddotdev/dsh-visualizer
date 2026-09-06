@@ -153,6 +153,15 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* A pinned row: subtle accent so pinned items are scannable without relying
+ * on the pin toggle's own state alone. Padding shortens by the border's
+ * width so content doesn't shift versus an unpinned row. */
+.rowPinned {
+  composes: row;
+  padding-left: 6px;
+  border-left: 2px solid var(--dsw-alias-border-l3);
+}
+
 .kindBadge {
   flex: none;
   padding: 1px 6px;
@@ -213,6 +222,21 @@
 .action:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* The pin toggle: the same square icon-button look as Open/Copy/Delete (the
+ * icon set has no dedicated pin glyph, so `PinIcon.tsx` hand-rolls one,
+ * following the set's own outline-vs-fill toggle convention). */
+.pinToggle {
+  composes: action;
+}
+
+/* Pinned state: filled icon plus an active tint, so a scan of the row
+ * actions shows which artifacts are pinned without reading a tooltip. */
+.pinToggleActive {
+  composes: action;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Delete's armed (confirm) state: the warn register, so a second click
