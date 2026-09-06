@@ -13,12 +13,13 @@ import { artifactListUrl, artifactPageUrlByName, broadcastArtifactChanged } from
 /** Validate one listing entry from the wire. */
 function isEntry(value: unknown): value is ArtifactListEntry {
   if (typeof value !== 'object' || value === null) return false
-  const { name, title, kind, bytes, mtimeMs } = value as Record<string, unknown>
+  const { name, title, kind, bytes, mtimeMs, pinned } = value as Record<string, unknown>
   return typeof name === 'string' && name.length > 0
     && typeof title === 'string' && title.length > 0
     && (kind === 'html' || kind === 'svg')
     && typeof bytes === 'number' && Number.isFinite(bytes)
     && typeof mtimeMs === 'number' && Number.isFinite(mtimeMs)
+    && typeof pinned === 'boolean'
 }
 
 /**
@@ -61,6 +62,43 @@ export async function deleteArtifact(name: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * Toggle one listed export's pinned state — the same per-name URL the
+ * Open/Copy link/Delete actions address, over PATCH with a `{pinned}` body.
+ * @param name - a name the listing endpoint returned.
+ * @param pinned - the desired state.
+ * @returns whether the host applied it; false where sharing is unavailable,
+ * the request was refused, or the network call itself failed, so the caller
+ * leaves the row's displayed state unchanged rather than assuming success it
+ * never confirmed.
+ */
+export async function setArtifactPinned(name: string, pinned: boolean): Promise<boolean> {
+  const url = artifactPageUrlByName(name)
+  if (url === null) return false
+  try {
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pinned }),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Pinned-first, newest-first within each group — the same comparator the
+ * host's own listing already applies. Exposed here too so a local pin toggle
+ * can re-sort the already-fetched list without a refetch: the row should
+ * float to (or off) the top immediately, not wait for the next Refresh.
+ * @param entries - the currently loaded listing.
+ * @returns a new array in pinned-first, newest-first order.
+ */
+export function sortArtifactEntries(entries: readonly ArtifactListEntry[]): ArtifactListEntry[] {
+  return [...entries].sort((a, b) => (a.pinned === b.pinned ? b.mtimeMs - a.mtimeMs : a.pinned ? -1 : 1))
 }
 
 /**

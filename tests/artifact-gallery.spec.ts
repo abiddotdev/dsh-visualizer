@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteArtifact, fetchArtifactList, fetchArtifactListOnce, formatArtifactSize, formatArtifactTime, matchesDateFilter } from '../src/client/artifact-gallery.ts'
+import {
+  deleteArtifact, fetchArtifactList, fetchArtifactListOnce, formatArtifactSize, formatArtifactTime, matchesDateFilter,
+  setArtifactPinned, sortArtifactEntries,
+} from '../src/client/artifact-gallery.ts'
 import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail } from '../src/client/share.ts'
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../src/shared/export-name.ts'
 
@@ -9,7 +12,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const ENTRY = { name: 'dash-abc1234567890f.html', title: 'Dash', kind: 'html' as const, bytes: 42, mtimeMs: 1_700_000_000_000 }
+const ENTRY = { name: 'dash-abc1234567890f.html', title: 'Dash', kind: 'html' as const, bytes: 42, mtimeMs: 1_700_000_000_000, pinned: false }
 
 describe('fetchArtifactList', () => {
   it('resolves to an empty list where sharing is not announced, without a request', async () => {
@@ -39,6 +42,7 @@ describe('fetchArtifactList', () => {
       { ...ENTRY, name: '' },
       { ...ENTRY, kind: 'pdf' },
       { ...ENTRY, bytes: 'big' },
+      { ...ENTRY, pinned: 'yes' },
       null,
       'not an object',
     ]
@@ -138,6 +142,56 @@ describe('deleteArtifact', () => {
     } finally {
       window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
     }
+  })
+})
+
+describe('setArtifactPinned', () => {
+  it('resolves false without a request where sharing is not announced', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    await expect(setArtifactPinned(ENTRY.name, true)).resolves.toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('sends PATCH with a JSON body to the entry\'s own token-gated URL', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(setArtifactPinned(ENTRY.name, true)).resolves.toBe(true)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(ENTRY.name)}?k=test-token`,
+      { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pinned: true }) },
+    )
+  })
+
+  it('resolves false when the host refuses the request', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+    await expect(setArtifactPinned(ENTRY.name, false)).resolves.toBe(false)
+  })
+
+  it('resolves false rather than rejecting when the network call itself fails', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+    await expect(setArtifactPinned(ENTRY.name, true)).resolves.toBe(false)
+  })
+})
+
+describe('sortArtifactEntries', () => {
+  it('floats pinned entries above unpinned ones', () => {
+    const older = { ...ENTRY, name: 'a.html', mtimeMs: 1, pinned: false }
+    const newer = { ...ENTRY, name: 'b.html', mtimeMs: 2, pinned: false }
+    const pinnedOld = { ...ENTRY, name: 'c.html', mtimeMs: 0, pinned: true }
+    expect(sortArtifactEntries([older, newer, pinnedOld])).toEqual([pinnedOld, newer, older])
+  })
+
+  it('keeps newest-first ordering within each group', () => {
+    const a = { ...ENTRY, name: 'a.html', mtimeMs: 3, pinned: true }
+    const b = { ...ENTRY, name: 'b.html', mtimeMs: 5, pinned: true }
+    const c = { ...ENTRY, name: 'c.html', mtimeMs: 1, pinned: false }
+    const d = { ...ENTRY, name: 'd.html', mtimeMs: 2, pinned: false }
+    expect(sortArtifactEntries([a, b, c, d])).toEqual([b, a, d, c])
   })
 })
 

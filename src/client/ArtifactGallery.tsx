@@ -11,9 +11,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCheckOutline16, IconLinkOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPinFill16, IconPinOutline16 } from './PinIcon.tsx'
 import type { ArtifactListEntry } from '../shared/export-name.ts'
 import {
   type ArtifactDateFilter, deleteArtifact, fetchArtifactList, formatArtifactSize, formatArtifactTime, matchesDateFilter,
+  setArtifactPinned, sortArtifactEntries,
 } from './artifact-gallery.ts'
 import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail, artifactPageUrlByName } from './share.ts'
 import { COPY_FEEDBACK_MS, copyText } from './download.ts'
@@ -30,20 +32,41 @@ type LoadState =
 /** A listed export's kind bucket, for the gallery's kind filter. */
 type KindFilter = 'all' | 'html' | 'svg'
 
+/** The gallery's pinned-only filter. */
+type PinnedFilter = 'all' | 'pinned'
+
 /** Window a delete's confirm arm stays live before reverting on its own — long enough to notice, short enough that a stale arm never lingers into an unrelated later click. */
 const DELETE_CONFIRM_MS = 3_000
 
-/** One listed export's row: title, size, time, and its three actions. */
+/** One listed export's row: title, size, time, and its actions. */
 function ArtifactRow(
-  { entry, t, onDeleted }: { entry: ArtifactListEntry; t: ArtifactGalleryProps['t']; onDeleted: (name: string) => void },
+  { entry, t, onDeleted, onPinned }: {
+    entry: ArtifactListEntry
+    t: ArtifactGalleryProps['t']
+    onDeleted: (name: string) => void
+    onPinned: (name: string, pinned: boolean) => void
+  },
 ) {
   const [copied, setCopied] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [pinning, setPinning] = useState(false)
   const confirmTimer = useRef<number | undefined>(undefined)
   const url = artifactPageUrlByName(entry.name)
 
   useEffect(() => () => { window.clearTimeout(confirmTimer.current) }, [])
+
+  // Single click, no arm/confirm — pinning is reversible and non-destructive,
+  // unlike Delete. The row's own displayed state only moves once the host
+  // confirms, so a refused toggle leaves it exactly where it was.
+  const onPinClick = useCallback((): void => {
+    const next = !entry.pinned
+    setPinning(true)
+    void setArtifactPinned(entry.name, next).then((ok) => {
+      setPinning(false)
+      if (ok) onPinned(entry.name, next)
+    })
+  }, [entry.name, entry.pinned, onPinned])
 
   const onCopy = useCallback((): void => {
     if (url === null) return
@@ -74,7 +97,7 @@ function ArtifactRow(
   }, [confirming, entry.name, onDeleted])
 
   return (
-    <li className={css.row}>
+    <li className={entry.pinned ? css.rowPinned : css.row}>
       <span className={css.kindBadge}>{entry.kind.toUpperCase()}</span>
       <span className={css.title}>{entry.title}</span>
       <span className={css.meta}>
@@ -83,6 +106,17 @@ function ArtifactRow(
         {formatArtifactTime(entry.mtimeMs)}
       </span>
       <span className={css.actions}>
+        <button
+          type="button"
+          className={entry.pinned ? css.pinToggleActive : css.pinToggle}
+          disabled={pinning}
+          aria-pressed={entry.pinned}
+          onClick={onPinClick}
+          aria-label={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
+          title={entry.pinned ? t('gallery.pinned') : t('gallery.pin')}
+        >
+          {entry.pinned ? <IconPinFill16 size={14} /> : <IconPinOutline16 size={14} />}
+        </button>
         <a
           className={css.action}
           href={url ?? undefined}
@@ -140,6 +174,7 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [dateFilter, setDateFilter] = useState<ArtifactDateFilter>('all')
+  const [pinnedFilter, setPinnedFilter] = useState<PinnedFilter>('all')
 
   const load = useCallback((): void => {
     setState({ status: 'loading' })
@@ -158,6 +193,14 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   const onDeleted = useCallback((name: string): void => {
     setState(current => current.status === 'ready'
       ? { status: 'ready', entries: current.entries.filter(entry => entry.name !== name) }
+      : current)
+  }, [])
+
+  // A pin toggle patches the entry in place and re-sorts pinned-first rather
+  // than refetching — the row should float to (or off) the top immediately.
+  const onPinned = useCallback((name: string, pinned: boolean): void => {
+    setState(current => current.status === 'ready'
+      ? { status: 'ready', entries: sortArtifactEntries(current.entries.map(entry => entry.name === name ? { ...entry, pinned } : entry)) }
       : current)
   }, [])
 
@@ -184,8 +227,9 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
   const filtered = useMemo(() => entries.filter(entry =>
     (trimmedQuery === '' || entry.title.toLowerCase().includes(trimmedQuery))
     && (kindFilter === 'all' || entry.kind === kindFilter)
-    && matchesDateFilter(entry.mtimeMs, dateFilter)), [entries, trimmedQuery, kindFilter, dateFilter])
-  const filtering = trimmedQuery !== '' || kindFilter !== 'all' || dateFilter !== 'all'
+    && matchesDateFilter(entry.mtimeMs, dateFilter)
+    && (pinnedFilter === 'all' || entry.pinned)), [entries, trimmedQuery, kindFilter, dateFilter, pinnedFilter])
+  const filtering = trimmedQuery !== '' || kindFilter !== 'all' || dateFilter !== 'all' || pinnedFilter !== 'all'
 
   return (
     <div className={css.gallery}>
@@ -227,6 +271,10 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
               <FilterChip value="today" active={dateFilter === 'today'} label={t('gallery.filterToday')} onSelect={setDateFilter} />
               <FilterChip value="week" active={dateFilter === 'week'} label={t('gallery.filterWeek')} onSelect={setDateFilter} />
             </div>
+            <div className={css.chipGroup} role="group" aria-label={t('gallery.filterPinnedGroup')}>
+              <FilterChip value="all" active={pinnedFilter === 'all'} label={t('gallery.filterAll')} onSelect={setPinnedFilter} />
+              <FilterChip value="pinned" active={pinnedFilter === 'pinned'} label={t('gallery.filterPinnedOnly')} onSelect={setPinnedFilter} />
+            </div>
           </div>
         </>
       )}
@@ -240,7 +288,7 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
       )}
       {filtered.length > 0 && (
         <ul className={css.list}>
-          {filtered.map(entry => <ArtifactRow key={entry.name} entry={entry} t={t} onDeleted={onDeleted} />)}
+          {filtered.map(entry => <ArtifactRow key={entry.name} entry={entry} t={t} onDeleted={onDeleted} onPinned={onPinned} />)}
         </ul>
       )}
     </div>
