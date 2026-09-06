@@ -8,9 +8,10 @@
  * is the logged `tool/call` arguments themselves, so a replayed transcript
  * re-renders the panel without re-running anything, and the card offers a
  * client-side download of the settled document. Where the surface mounts a
- * web server, the export fanout additionally mirrors the stream into an
- * exports directory and serves each settled document at a suburl the card's
- * share control opens — see `./export-fanout`.
+ * web server and a live sessions store, an export route additionally writes
+ * one document to disk on request — reading it straight from the call's own
+ * durable log, never the request itself — and serves it at a suburl the
+ * card's Share control opens; see `./export-fanout`.
  *
  * @module dsh-visualizer
  */
@@ -54,11 +55,12 @@ export interface Config {
   /** Artifact types the guide teaches and the guide tool serves. */
   guideTypes: string[]
   /**
-   * Whether the export fanout runs at all: the streaming mirror to disk, the
-   * serve route, and the card's share control all hang off this one switch.
+   * Whether the export route runs at all: serving, listing, deleting, and
+   * creating exports on demand, plus the card's Export/Share/Copy-link
+   * controls and the Artifacts tab, all hang off this one switch.
    */
   shareArtifacts: boolean
-  /** Directory the export fanout mirrors streamed documents into. */
+  /** Directory the export route writes exported documents into, on request. */
   artifactDir: string
   /**
    * Days a finalized export survives on disk. Content-digested share names no
@@ -195,15 +197,16 @@ function validateGuideModules(requested: readonly string[]): GuideModule[] {
 export function apply(ctx: Context, config: ResolvedConfig): void {
   const modules = validateGuideModules(config.guideTypes)
 
-  // Export fanout: one switch gates the whole feature — the streaming mirror,
-  // the serve route, and (through the boot-table announcement) the card's
-  // share control. It mounts only where the surface provides a web server
-  // (the web profile), because an export exists exactly when it is shareable;
-  // the sub-fiber unmounts with the service, so TUI/headless profiles keep
+  // Export route: one switch gates the whole feature — the serve/list/export/
+  // delete route, and (through the boot-table announcement) the card's Share
+  // and Artifacts-tab controls. It mounts only where the surface provides a
+  // web server and a live sessions store (the web profile), because an
+  // export can only be produced from a session's own durable log; the
+  // sub-fiber unmounts with either service, so TUI/headless profiles keep
   // the untouched, filesystem-free tool behavior either way.
   if (config.shareArtifacts) {
     const artifactDir = expandHomePath(config.artifactDir).trim() || defaultArtifactDir()
-    ctx.inject(['webServer'], webCtx => {
+    ctx.inject(['webServer', 'sessions'], webCtx => {
       registerExportFanout(webCtx, {
         dir: resolve(artifactDir),
         maxArtifactBytes: config.maxArtifactBytes,
@@ -213,12 +216,13 @@ export function apply(ctx: Context, config: ResolvedConfig): void {
     })
   }
 
-  // Only when sharing is mounted: the fanout already writes every render to
-  // disk under a shareable name, so an extra file-writing tool call after a
-  // render duplicates the artifact and wastes tokens. The tool description
-  // alone cannot carry this — it must track the mount condition.
+  // Only when sharing is mounted: the document is already durable in the
+  // conversation log regardless, but once Share is available the model
+  // should point the user at it instead of also writing a duplicate copy
+  // with a file tool. The tool description alone cannot carry this — it
+  // must track the mount condition.
   const shareNote = config.shareArtifacts
-    ? '\n\nEvery successful render is saved automatically as a shareable standalone page — do not write the document again with a file-writing tool unless the user explicitly asks for a copy at a specific path.'
+    ? '\n\nRendered documents become shareable standalone pages when the user clicks Share on the card — do not write the document again with a file-writing tool unless the user explicitly asks for a copy at a specific path.'
     : ''
 
   ctx.systemPrompt.section({

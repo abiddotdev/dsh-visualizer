@@ -19,6 +19,8 @@ export const TOOL_NAME = 'visualizer'
 
 /** One live document card derived from a streaming or complete call block. */
 export interface GenerativeCardData {
+  /** The underlying call's identity, for the Export control. */
+  readonly callId: string
   /** Live phase of the underlying call block. */
   readonly phase: 'streaming' | 'complete' | 'interrupted'
   /** Explicit `title` argument once decodable, else null (card shows its fallback). */
@@ -213,6 +215,7 @@ export const generativeStreamDefinition: ConversationNodeDefinition<StreamState>
       const view = extractStreamArgs(block.argsRaw)
       if (view === null) continue
       const card: GenerativeCardData = {
+        callId: block.callId,
         phase: block.complete ? 'complete' : interrupted ? 'interrupted' : 'streaming',
         title: view.title,
         height: view.height,

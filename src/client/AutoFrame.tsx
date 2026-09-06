@@ -87,6 +87,13 @@ export interface AutoFrameProps {
   readonly onRuntimeError?: ((message: string, line: number | null) => void) | undefined
   /** Session-scoped store answering `window.storage`; absent disables it. */
   readonly storage?: WidgetStorage | undefined
+  /**
+   * This call's current share state, read-only from the document's own
+   * `window.share` — see `shell.ts`. Absent or `{exported: false, url: null}`
+   * both read as "not shared"; there is no write counterpart on this prop,
+   * matching the frame's own read-only bridge contract.
+   */
+  readonly shareStatus?: { exported: boolean; url: string | null } | undefined
   /** Comment-mode state pushed into the frame; false/undefined leaves it off. */
   readonly annotate?: boolean | undefined
   /** A pick completed in the frame; payload validated by the dispatcher. */
@@ -101,7 +108,7 @@ export interface AutoFrameProps {
  * One content-sized sandboxed frame over the streaming shell.
  * @param props - document, phase, initial height, and frame chrome.
  */
-export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, onRuntimeError, storage, annotate, onAnnotation, onAnnotateExited, annotateMarks }: AutoFrameProps) {
+export function AutoFrame({ title, html, phase, initialHeight, className, onPrompt, onOpenLink, onScriptError, onRuntimeError, storage, shareStatus, annotate, onAnnotation, onAnnotateExited, annotateMarks }: AutoFrameProps) {
   const controller = useRef<StreamFrameController | null>(null)
   const frameEl = useRef<HTMLIFrameElement | null>(null)
   const [heightPx, setHeightPx] = useState(initialHeight)
@@ -113,6 +120,7 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   const onAnnotationRef = useRef(onAnnotation)
   const onAnnotateExitedRef = useRef(onAnnotateExited)
   const storageRef = useRef(storage)
+  const shareStatusRef = useRef(shareStatus)
   const lastPromptAtRef = useRef(0)
   const runtimeErrorCountRef = useRef(0)
   const annotationCountRef = useRef(0)
@@ -124,6 +132,16 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
   useEffect(() => { onAnnotationRef.current = onAnnotation }, [onAnnotation])
   useEffect(() => { onAnnotateExitedRef.current = onAnnotateExited }, [onAnnotateExited])
   useEffect(() => { storageRef.current = storage }, [storage])
+  // Pushed on every change, not just requested: the widget's own
+  // `share-status-request` (sent once at its boot) covers the race where a
+  // change lands before its listener is live; this covers every change after.
+  useEffect(() => {
+    shareStatusRef.current = shareStatus
+    frameEl.current?.contentWindow?.postMessage(
+      { __dshGui: true, type: 'share-status', exported: shareStatus?.exported ?? false, url: shareStatus?.url ?? null },
+      '*',
+    )
+  }, [shareStatus?.exported, shareStatus?.url])
 
   // Comment mode rides the settled bridge only: setAnnotate posts nothing
   // while the stream runs, and the buffered queue drains once the frame
@@ -192,6 +210,14 @@ export function AutoFrame({ title, html, phase, initialHeight, className, onProm
         // The shell asks at boot because a push could race its load queue.
         frameEl.current?.contentWindow?.postMessage(
           { __dshGui: true, type: 'theme', vars: collectThemeTokens() },
+          '*',
+        )
+        return
+      }
+      if (data.type === 'share-status-request') {
+        const current = shareStatusRef.current
+        frameEl.current?.contentWindow?.postMessage(
+          { __dshGui: true, type: 'share-status', exported: current?.exported ?? false, url: current?.url ?? null },
           '*',
         )
         return

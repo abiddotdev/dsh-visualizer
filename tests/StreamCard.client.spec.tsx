@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls this package's LocaleNamespaceMap merge into the program so the
@@ -67,7 +67,7 @@ function elapse(ms: number): void {
 
 describe('StreamCard', () => {
   it('renders a live streaming card with a null-origin shell frame', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>rev' }])
+    renderCard([{ callId: 'call-1', phase: 'streaming', title: 'Dash', height: 320, html: '<p>rev' }])
     const card = document.querySelector('[data-tool="visualizer"][data-phase="streaming"]')
     expect(card).not.toBeNull()
     const frame = document.querySelector('iframe')
@@ -86,7 +86,7 @@ describe('StreamCard', () => {
 
   it('shows the model-authored loading messages, rotating on a dwell', () => {
     vi.useFakeTimers()
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Bribing bars', 'Asking Q4'] }])
+    renderCard([{ callId: 'call-2', phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Bribing bars', 'Asking Q4'] }])
     expect(screen.getByText('Bribing bars…')).toBeTruthy()
     expect(screen.queryByText('Streaming...')).toBeNull()
     // The loader text waves while messages are cycling.
@@ -99,25 +99,25 @@ describe('StreamCard', () => {
 
     // A settled card drops the sweep class and messages for the char count.
     cleanup()
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>', loadingMessages: ['Bribing bars'] }])
+    renderCard([{ callId: 'call-3', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>', loadingMessages: ['Bribing bars'] }])
     expect(screen.queryByText('Bribing bars')).toBeNull()
     expect(screen.getByText('11 chars')).toBeTruthy()
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
   it('does not apply the wave class when messages are absent', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
+    renderCard([{ callId: 'call-4', phase: 'streaming', title: 'Dash', height: null, html: '' }])
     expect(screen.getByText('Composing the document…')).toBeTruthy()
     expect(document.querySelector('[class*="summaryWave"]')).toBeNull()
   })
 
   it('still appends a trailing ellipsis when the message has one mid-string', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Warming up… almost there'] }])
+    renderCard([{ callId: 'call-5', phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Warming up… almost there'] }])
     expect(screen.getByText('Warming up… almost there…')).toBeTruthy()
   })
 
   it('waves the loader message in staggered 3-character bobs, left to right', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
+    renderCard([{ callId: 'call-6', phase: 'streaming', title: 'Dash', height: null, html: '<p>rev', loadingMessages: ['Big wave'] }])
     const wave = document.querySelector('[class*="summaryWave"]')
     expect(wave).not.toBeNull()
     // The screen-reader twin carries the whole message...
@@ -137,21 +137,21 @@ describe('StreamCard', () => {
   })
 
   it('keeps the composing label plain; the frame sweep carries the live phase', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '' }])
+    renderCard([{ callId: 'call-7', phase: 'streaming', title: 'Dash', height: null, html: '' }])
     expect(screen.getByText('Composing the document…')).toBeTruthy()
     expect(document.querySelector('[class*="summaryLive"]')).toBeNull()
     expect(document.querySelector('[class*="streamSweep"]')).not.toBeNull()
   })
 
   it('falls back to the generic title when args carried none', () => {
-    renderCard([{ phase: 'streaming', title: null, height: null, html: '<p>x' }])
+    renderCard([{ callId: 'call-8', phase: 'streaming', title: null, height: null, html: '<p>x' }])
     const frame = document.querySelector('iframe')
     expect(frame?.getAttribute('title')).toBe('HTML preview')
     expect(frame?.style.height).toBe('32px')
   })
 
   it('grows and shrinks the frame to the content size the bridge reports', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: 320, html: '<p>growing' }])
+    renderCard([{ callId: 'call-9', phase: 'streaming', title: 'Dash', height: 320, html: '<p>growing' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const report = (height: number): void => {
@@ -179,7 +179,7 @@ describe('StreamCard', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:doc-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue()
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    renderCard([{ phase: 'complete', title: 'Rev "Q3"/dash', height: 400, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-10', phase: 'complete', title: 'Rev "Q3"/dash', height: 400, html: '<p>done</p>' }])
 
     expect(screen.getByText('11 chars')).toBeTruthy()
     const button = screen.getByRole('button', { name: 'Download HTML' })
@@ -200,7 +200,7 @@ describe('StreamCard', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     vi.useFakeTimers()
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-11', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
 
     await flushClick(() => { screen.getByRole('button', { name: 'Copy HTML' }).click() })
     expect(writeText).toHaveBeenCalledWith('<p>done</p>')
@@ -217,7 +217,7 @@ describe('StreamCard', () => {
   })
 
   it('offers no copy control while the document is still streaming', () => {
-    renderCard([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
+    renderCard([{ callId: 'call-12', phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])
     expect(screen.queryByRole('button', { name: 'Copy HTML' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
@@ -229,7 +229,7 @@ describe('StreamCard', () => {
     const stubElement = (value: Element | null): void => {
       Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => value })
     }
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-13', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const wrapper = document.querySelector('[class*="frameWrap"]')
     if (wrapper === null) throw new Error('frame wrapper not rendered')
 
@@ -251,7 +251,7 @@ describe('StreamCard', () => {
   })
 
   it('hides the fullscreen control on a collapsed card while copy stays', () => {
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-14', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeTruthy()
     act(() => { screen.getByText('Dash').click() })
     // The wrapper unmounts on collapse, so fullscreen has no surface; copy
@@ -260,29 +260,42 @@ describe('StreamCard', () => {
     expect(screen.getByRole('button', { name: 'Copy HTML' })).toBeTruthy()
   })
 
-  it('opens the served export page from the complete card, named for the document', () => {
+  /** Stubs the boot token and a fetch mock answering the export POST with `name`. */
+  function stubExport(name: string): ReturnType<typeof vi.fn> {
     vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
-    const open = vi.spyOn(window, 'open').mockReturnValue(null)
-    const SVG_DOC = '<svg><rect/></svg>'
-    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ name }) })
+    vi.stubGlobal('fetch', fetchSpy)
+    return fetchSpy
+  }
 
+  it('exports on demand, then opens the served page, named for the document', async () => {
+    const SVG_DOC = '<svg><rect/></svg>'
+    const name = exportShareName('中文 图表', SVG_DOC)
+    stubExport(name)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    renderCard([{ callId: 'call-15', phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+    // The write already ran; opening is now synchronous with its own click.
     screen.getByRole('button', { name: 'Open standalone page' }).click()
-    // The URL is the same name the host's export fanout finalized under.
     expect(open).toHaveBeenCalledWith(
-      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}?k=test-boot-token`,
       '_blank',
       'noopener,noreferrer',
     )
   })
 
-  it('copies that same address from the complete card without opening a tab', async () => {
-    vi.stubGlobal('__DSH_VISUALIZER_EXPORTS__', 'test-boot-token')
+  it('copy-link is reachable only once exported, and copies without opening a tab', async () => {
+    const SVG_DOC = '<svg><rect/></svg>'
+    stubExport(exportShareName('中文 图表', SVG_DOC))
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const SVG_DOC = '<svg><rect/></svg>'
-    renderCard([{ phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+    renderCard([{ callId: 'call-16', phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
 
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
     await act(async () => { screen.getByRole('button', { name: 'Copy share link' }).click() })
     expect(writeText).toHaveBeenCalledWith(
       `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
@@ -291,15 +304,34 @@ describe('StreamCard', () => {
     expect(screen.getByRole('button', { name: 'Link copied' })).toBeTruthy()
   })
 
-  it('hides the share controls when the host never announced the route', () => {
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
-    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+  it('unshare arms, confirms, and returns the card all the way to Export', async () => {
+    const SVG_DOC = '<svg><rect/></svg>'
+    const fetchSpy = stubExport(exportShareName('中文 图表', SVG_DOC))
+    renderCard([{ callId: 'call-18', phase: 'complete', title: '中文 图表', height: null, html: SVG_DOC }])
+
+    await act(async () => { screen.getByRole('button', { name: 'Export' }).click() })
+    await act(async () => { screen.getByRole('button', { name: 'Unshare' }).click() })
+    expect(screen.getByRole('button', { name: 'Click again to confirm unshare' })).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Click again to confirm unshare' }).click() })
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('中文 图表', SVG_DOC))}?k=test-boot-token`,
+      { method: 'DELETE' },
+    )
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy() })
     expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+  })
+
+  it('hides the share controls when the host never announced the route', () => {
+    renderCard([{ callId: 'call-17', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    expect(screen.queryByRole('button', { name: 'Open standalone page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unshare' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Download HTML' })).toBeTruthy()
   })
 
   it('shows one load-failure notice when a CDN script fails inside the frame', () => {
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-18', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const fail = (src: unknown, fromFrame = true): void => {
@@ -323,7 +355,7 @@ describe('StreamCard', () => {
   })
 
   it('answers window.storage requests from the session store', () => {
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-19', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const respond = vi.spyOn(frame.contentWindow!, 'postMessage')
@@ -358,7 +390,7 @@ describe('StreamCard', () => {
       2: '--dsw-empty',
       getPropertyValue: (name: string) => (name === '--dsw-alias-label-primary' ? ' #e8e8e8 ' : ''),
     } as unknown as CSSStyleDeclaration)
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-20', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const respond = vi.spyOn(frame.contentWindow!, 'postMessage')
@@ -387,22 +419,22 @@ describe('StreamCard', () => {
   })
 
   it('marks an interrupted card and never offers its partial bytes', () => {
-    renderCard([{ phase: 'interrupted', title: null, height: null, html: '<p>par' }])
+    renderCard([{ callId: 'call-21', phase: 'interrupted', title: null, height: null, html: '<p>par' }])
     expect(screen.getByText('Interrupted; document incomplete')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Download HTML' })).toBeNull()
   })
 
   it('sweeps the frame diagonally only while the document streams', () => {
-    const live = render(<StreamCard node={nodeOf([{ phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])} t={t} {...kit} />)
+    const live = render(<StreamCard node={nodeOf([{ callId: 'call-22', phase: 'streaming', title: 'Dash', height: null, html: '<p>par' }])} t={t} {...kit} />)
     expect(live.container.querySelector('[class*="streamSweep"]')).toBeTruthy()
     live.unmount()
 
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-23', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     expect(document.querySelector('[class*="streamSweep"]')).toBeNull()
   })
 
   it('labels runtime errors from the frame: first message wins, bursts cap, junk drops', () => {
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
+    renderCard([{ callId: 'call-24', phase: 'complete', title: 'Dash', height: null, html: '<p>done</p>' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const raise = (payload: Record<string, unknown>, fromFrame = true): void => {
@@ -445,7 +477,7 @@ describe('StreamCard', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)
     render(<StreamCard
-      node={nodeOf([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])}
+      node={nodeOf([{ callId: 'call-25', phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])}
       t={t}
       {...{ ...kit, inputActions: { setDraft, submit } }}
     />)
@@ -481,7 +513,7 @@ describe('StreamCard', () => {
 
   it('opens a widget link through the host after the frame posts it', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
-    renderCard([{ phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])
+    renderCard([{ callId: 'call-26', phase: 'complete', title: 'Dash', height: null, html: '<p>done' }])
     const frame = document.querySelector('iframe')
     if (frame === null) throw new Error('frame not rendered')
     const link = (url: unknown): void => {
@@ -500,8 +532,8 @@ describe('StreamCard', () => {
 
   it('renders one card per streamed call of the step in block order', () => {
     renderCard([
-      { phase: 'streaming', title: 'One', height: null, html: '<p>1' },
-      { phase: 'streaming', title: 'Two', height: null, html: '<p>2' },
+      { callId: 'call-27', phase: 'streaming', title: 'One', height: null, html: '<p>1' },
+      { callId: 'call-28', phase: 'streaming', title: 'Two', height: null, html: '<p>2' },
     ])
     expect(document.querySelectorAll('iframe')).toHaveLength(2)
     expect(document.querySelectorAll('[data-tool="visualizer"]')).toHaveLength(2)

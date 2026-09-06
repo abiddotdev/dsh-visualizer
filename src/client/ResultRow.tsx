@@ -52,7 +52,7 @@ function errorCause(content: readonly unknown[]): string | null {
 }
 
 /** Render one `visualizer` call: the live frame while running or settled-ok, else a status-only row. */
-export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
+export function ResultRow({ block, t, inputActions, inspect, callId }: ResultRowProps) {
   const settled = 'kind' in block
   const onPrompt = useCallback((text: string): void => { submitWidgetPrompt(inputActions, text) }, [inputActions])
   const argsRaw = argsRawOf(block)
@@ -66,7 +66,16 @@ export function ResultRow({ block, t, inputActions, inspect }: ResultRowProps) {
   )
 
   if (view !== null) {
-    return <SettledDoc argsRaw={argsRaw} t={t} onPrompt={onPrompt} state={settled ? 'ok' : 'running'} inspect={inspect} />
+    return (
+      <SettledDoc
+        argsRaw={argsRaw}
+        t={t}
+        onPrompt={onPrompt}
+        state={settled ? 'ok' : 'running'}
+        inspect={inspect}
+        callId={callId}
+      />
+    )
   }
 
   // No renderable document: either an error result (stated on the row, with

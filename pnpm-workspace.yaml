@@ -1,6 +1,14 @@
 packages:
   - vendor/harness-client-runtime
 linkWorkspacePackages: true
+overrides:
+  # Registry range gap: whatever resolves dsh-session's peer graph asks for
+  # dsh-session-projection@^0.1.2 (no prerelease marker), which excludes every
+  # published prerelease including the "next"-tagged 0.1.2-rc.1 every sibling
+  # package here already runs on. Pin it explicitly so the workspace-wide
+  # resolve reaches the same version instead of a range npm's own semver
+  # rules can never satisfy.
+  '@deepseek-ai/dsh-session-projection': 0.1.2-rc.1
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-default-model@0.1.1-rc.2'
   - '@deepseek-ai/dsh-agent-presets@0.1.1-rc.2'

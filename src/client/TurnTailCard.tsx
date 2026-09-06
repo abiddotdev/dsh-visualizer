@@ -30,7 +30,9 @@ export function TurnTailCard({ matched, t, inputActions, useTranscriptView }: Tu
   if (normalView) return null
   return (
     <div className={css.stack}>
-      {matched.map(card => <SettledDoc key={card.callId} argsRaw={card.argsRaw} t={t} onPrompt={onPrompt} />)}
+      {matched.map(card => (
+        <SettledDoc key={card.callId} argsRaw={card.argsRaw} t={t} onPrompt={onPrompt} callId={card.callId} />
+      ))}
     </div>
   )
 }

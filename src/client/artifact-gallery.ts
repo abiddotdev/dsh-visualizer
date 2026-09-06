@@ -8,7 +8,7 @@
  */
 
 import type { ArtifactListEntry } from '../shared/export-name.ts'
-import { artifactListUrl, artifactPageUrlByName } from './share.ts'
+import { artifactListUrl, artifactPageUrlByName, broadcastArtifactChanged } from './share.ts'
 
 /** Validate one listing entry from the wire. */
 function isEntry(value: unknown): value is ArtifactListEntry {
@@ -46,15 +46,51 @@ export async function fetchArtifactList(): Promise<ArtifactListEntry[]> {
  * Delete one listed export from the host's disk — the same per-name URL the
  * Open/Copy link actions address, over DELETE instead of GET.
  * @param name - a name the listing endpoint returned.
- * @returns whether the host removed it; false where sharing is unavailable
- * or the request was refused, so the caller leaves the row in place rather
- * than assuming success it never confirmed.
+ * @returns whether the host removed it; false where sharing is unavailable,
+ * the request was refused, or the network call itself failed, so the caller
+ * leaves the row in place rather than assuming success it never confirmed.
  */
 export async function deleteArtifact(name: string): Promise<boolean> {
   const url = artifactPageUrlByName(name)
   if (url === null) return false
-  const response = await fetch(url, { method: 'DELETE' })
-  return response.ok
+  try {
+    const response = await fetch(url, { method: 'DELETE' })
+    if (!response.ok) return false
+    broadcastArtifactChanged(name, false)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * In-flight listing request, shared by every concurrent caller rather than
+ * one each. Every settled card mounted at once (a page reload, a switch into
+ * a long transcript) reconciles its own export status against this same
+ * listing (see `export-control.ts`) — without sharing the request, each
+ * would fire its own; a transcript with fifty finalized cards would open
+ * fifty requests where the gallery tab already proves one listing serves
+ * them all. Cleared once resolved so a later, unrelated batch always sees
+ * fresh state rather than a growing cache's staleness.
+ */
+let listingInFlight: Promise<readonly ArtifactListEntry[]> | null = null
+
+/**
+ * {@link fetchArtifactList}, deduped across whichever callers ask for it
+ * inside the same round trip.
+ * @returns the same settled result every concurrent caller awaits; never
+ * throws — a failed listing resolves to an empty list, since callers here
+ * use it only to answer "does this name already exist," not to render a
+ * list a user is watching load (the gallery tab calls {@link fetchArtifactList}
+ * directly for that, where a distinct error state matters).
+ */
+export function fetchArtifactListOnce(): Promise<readonly ArtifactListEntry[]> {
+  if (listingInFlight === null) {
+    listingInFlight = fetchArtifactList()
+      .catch(() => [])
+      .finally(() => { listingInFlight = null })
+  }
+  return listingInFlight
 }
 
 /** A listed export's age bucket, coarsest last, for the gallery's date filter. */

@@ -7,14 +7,15 @@
 // `turn/end`), so that one handoff always remounts a fresh frame; keeping the
 // in-place copy alive until then means it is the only transition that happens.
 
-import { useCallback, useMemo, useState } from 'react'
-import { DisclosureRow, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconEnhanceOutline16, IconFullscreenOutline16, IconInspectOutline12, IconLinkOutline16, IconListPenOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DisclosureRow, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16, IconCopyOutline16, IconDownloadOutline16, IconEnhanceOutline16, IconFullscreenOutline16, IconInspectOutline12, IconLinkOutline16, IconListPenOutline16, IconLoadingOutline16, IconRightUpOutline16, IconShareOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AutoFrame } from './AutoFrame.tsx'
 import { argsView, DEFAULT_FRAME_HEIGHT_PX } from './args-view.ts'
 import { COPY_FEEDBACK_MS, copyDocument, downloadDocument } from './download.ts'
 import { useFrameFullscreen } from './fullscreen.ts'
-import { copyExportLink, exportShareEnabled, openExportPage } from './share.ts'
+import { artifactPageUrlByName, copyArtifactLink, exportShareEnabled, openArtifactPage } from './share.ts'
+import { UNSHARE_CONFIRM_MS, useExportControl } from './export-control.ts'
 import { openWidgetLink } from './bridge-actions.ts'
 import { createWidgetStorage, widgetStorageScope } from './widget-storage.ts'
 import { composeAnnotationPrompt, type AnnotationPick } from './annotate.ts'
@@ -37,10 +38,17 @@ export interface SettledDocProps {
    * capability, so a card rendered there shows no such control.
    */
   inspect?: () => void
+  /**
+   * This call's identity, for the Export control. Omitted or null where the
+   * owner cannot supply one — Export then stays inert (no call to name), not
+   * absent, since there is otherwise no way to distinguish "cannot export
+   * yet" from "will never be able to".
+   */
+  callId?: string | null
 }
 
 /** One document's frame, chrome, and comment-mode state. Null when its arguments carry nothing renderable. */
-export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: SettledDocProps) {
+export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect, callId = null }: SettledDocProps) {
   const view = useMemo(() => argsView(argsRaw), [argsRaw])
   const title = view?.title ?? t('row.title')
   const height = view?.height ?? DEFAULT_FRAME_HEIGHT_PX
@@ -50,7 +58,6 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
     : t('row.missing')
   const [expanded, setExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   // The line rides along for the fix prompt; only the message is displayed.
   const [runtimeError, setRuntimeError] = useState<{ message: string; line: number | null } | null>(null)
@@ -83,6 +90,43 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
   }, [])
   const annotateMarks = useMemo(() => picks.map(pick => pick.id), [picks])
   const shareable = exportShareEnabled()
+  const exportControl = useExportControl(callId, view?.title ?? null, view?.html ?? '')
+  // The rendered document's own read-only view of its share state (window.share
+  // in shell.ts) — derived, not stored: exportControl is already the single
+  // source of truth for whether and where this call is exported.
+  const shareStatus = useMemo(() => {
+    if (exportControl.status !== 'exported' || exportControl.name === null) return { exported: false, url: null }
+    return { exported: true, url: artifactPageUrlByName(exportControl.name) }
+  }, [exportControl.status, exportControl.name])
+  const [linkCopied, setLinkCopied] = useState(false)
+  const onCopyLink = useCallback((): void => {
+    if (exportControl.name === null) return
+    void copyArtifactLink(exportControl.name).then((ok) => {
+      if (!ok) return
+      setLinkCopied(true)
+      window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
+    })
+  }, [exportControl.name])
+  // Two clicks, not a native confirm() dialog — the same arm/confirm pattern
+  // the gallery's own delete uses: first click arms (reverting on its own
+  // after a few seconds), second click while armed actually unshares.
+  const [unshareConfirming, setUnshareConfirming] = useState(false)
+  const [unsharing, setUnsharing] = useState(false)
+  const unshareTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => { window.clearTimeout(unshareTimer.current) }, [])
+  const onUnshareClick = useCallback((): void => {
+    if (!unshareConfirming) {
+      setUnshareConfirming(true)
+      unshareTimer.current = window.setTimeout(() => { setUnshareConfirming(false) }, UNSHARE_CONFIRM_MS)
+      return
+    }
+    window.clearTimeout(unshareTimer.current)
+    setUnsharing(true)
+    void exportControl.unshare().then(() => {
+      setUnsharing(false)
+      setUnshareConfirming(false)
+    })
+  }, [unshareConfirming, exportControl])
   const fullscreen = useFrameFullscreen()
   // The frame's failures never reached the model — the settle-time check
   // compiles scripts without running them — so a broken render otherwise
@@ -226,39 +270,78 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
                   <IconDownloadOutline16 size={14} />
                 </button>
                 {shareable && (
-                  <>
-                    {/* Handing the address to someone else is the other half
-                      * of sharing; opening the page was previously the only
-                      * way to reach the URL at all. */}
+                  exportControl.status === 'exported' && exportControl.name !== null ? (
+                    <>
+                      <button
+                        type="button"
+                        className={css.download}
+                        aria-label={t('row.share')}
+                        title={t('row.share')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openArtifactPage(exportControl.name!)
+                        }}
+                      >
+                        <IconShareOutline16 size={14} />
+                      </button>
+                      {/* Only reachable once exported, so it never needs its
+                        * own ensure() — by the time this renders, the export
+                        * already exists. */}
+                      <button
+                        type="button"
+                        className={css.download}
+                        aria-label={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
+                        title={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onCopyLink()
+                        }}
+                      >
+                        {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
+                      </button>
+                      <button
+                        type="button"
+                        className={unshareConfirming ? css.downloadDanger : css.download}
+                        disabled={unsharing}
+                        aria-label={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
+                        title={unshareConfirming ? t('row.unshareConfirm') : t('row.unshare')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onUnshareClick()
+                        }}
+                      >
+                        <IconCloseOutline16 size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    // Export writes the host's mirror; only once that is
+                    // confirmed does the slot above become Open, so the tab
+                    // it opens is always synchronous with its own click — no
+                    // popup blocker from opening a tab after an awaited write.
                     <button
                       type="button"
                       className={css.download}
-                      aria-label={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
-                      title={linkCopied ? t('row.linkCopied') : t('row.copyLink')}
+                      disabled={exportControl.status === 'exporting'}
+                      aria-label={
+                        exportControl.status === 'exporting' ? t('row.exporting')
+                          : exportControl.status === 'failed' ? t('row.exportFailed')
+                            : t('row.export')
+                      }
+                      title={
+                        exportControl.status === 'exporting' ? t('row.exporting')
+                          : exportControl.status === 'failed' ? t('row.exportFailedTitle')
+                            : t('row.exportTitle')
+                      }
                       onClick={(event) => {
                         event.stopPropagation()
-                        void copyExportLink(view.title, view.html).then((ok) => {
-                          if (!ok) return
-                          setLinkCopied(true)
-                          window.setTimeout(() => { setLinkCopied(false) }, COPY_FEEDBACK_MS)
-                        })
+                        void exportControl.ensure()
                       }}
                     >
-                      {linkCopied ? <IconCheckOutline16 size={14} /> : <IconLinkOutline16 size={14} />}
+                      {exportControl.status === 'exporting'
+                        ? <IconLoadingOutline16 size={14} />
+                        : <IconRightUpOutline16 size={14} />}
                     </button>
-                    <button
-                      type="button"
-                      className={css.download}
-                      aria-label={t('row.share')}
-                      title={t('row.share')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openExportPage(view.title, view.html)
-                      }}
-                    >
-                      <IconShareOutline16 size={14} />
-                    </button>
-                  </>
+                  )
                 )}
               </>
             )}
@@ -277,6 +360,7 @@ export function SettledDoc({ argsRaw, t, onPrompt, state = 'ok', inspect }: Sett
             onScriptError={setFailedSrc}
             onRuntimeError={onRuntimeError}
             storage={storage}
+            shareStatus={shareStatus}
             annotate={annotate}
             onAnnotation={onAnnotation}
             onAnnotateExited={onAnnotateExited}
