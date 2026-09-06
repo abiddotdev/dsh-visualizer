@@ -13,6 +13,39 @@ import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../shared/export-name.t
 import { copyText } from './download.ts'
 
 /**
+ * Fired on `window` whenever an export is created or removed, by whichever
+ * surface asked for it — a card's own `ensure()`/`unshare()`, or the
+ * gallery's Delete. Every surface that keeps its own local copy of a name's
+ * share state (a card's `useExportControl`, the gallery's listing) reconciles
+ * off this instead of only finding out at its own next mount: without it,
+ * unsharing a file from the gallery would leave a still-open card showing
+ * Share/Copy-link/Unshare for a file that already 404s until the page
+ * reloads, and the reverse (exporting elsewhere) would leave a stale gallery
+ * row missing until a manual Refresh.
+ */
+export const ARTIFACT_CHANGED_EVENT = 'dsh-artifact-changed'
+
+/** Payload of {@link ARTIFACT_CHANGED_EVENT}. */
+export interface ArtifactChangedDetail {
+  /** The export's served name — the same identity every surface already keys off. */
+  readonly name: string
+  /** `true` once created; `false` once removed. */
+  readonly exported: boolean
+}
+
+/**
+ * Tell every other surface holding this name that its share state just
+ * changed. Broadcast rather than transported: nothing here carries who
+ * changed it or why, only the fact and the name, which is all a listener
+ * needs to reconcile its own local copy.
+ * @param name - the export's served name.
+ * @param exported - its state after the change.
+ */
+export function broadcastArtifactChanged(name: string, exported: boolean): void {
+  window.dispatchEvent(new CustomEvent<ArtifactChangedDetail>(ARTIFACT_CHANGED_EVENT, { detail: { name, exported } }))
+}
+
+/**
  * Whether the host's export route is live: the served page carries a
  * `globalThis` announcement the route pushes onto the boot table, so a
  * deployment that disabled the feature (`shareArtifacts: false`) never sets
@@ -88,7 +121,9 @@ export async function exportCall(callId: string): Promise<string | null> {
     if (!response.ok) return null
     const data: unknown = await response.json()
     const name = typeof data === 'object' && data !== null ? (data as Record<string, unknown>).name : null
-    return typeof name === 'string' && name.length > 0 ? name : null
+    if (typeof name !== 'string' || name.length === 0) return null
+    broadcastArtifactChanged(name, true)
+    return name
   } catch {
     return null
   }

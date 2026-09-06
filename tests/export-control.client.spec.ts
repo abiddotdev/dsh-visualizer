@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { EXPORT_FAILURE_REVERT_MS, useExportControl } from '../src/client/export-control.ts'
+import { ARTIFACT_CHANGED_EVENT } from '../src/client/share.ts'
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, exportShareName } from '../src/shared/export-name.ts'
 
 afterEach(() => {
@@ -14,23 +15,29 @@ const TITLE = 'Dash'
 const HTML = '<p>revenue</p>'
 const NAME = exportShareName(TITLE, HTML)
 
+/** A minimally valid listing entry for one name — the reconciliation check only ever looks at `name`, but `fetchArtifactList` drops anything failing its full shape check. */
+function listingEntry(name: string): { name: string; title: string; kind: 'html'; bytes: number; mtimeMs: number } {
+  return { name, title: 'Dash', kind: 'html', bytes: 42, mtimeMs: 1_700_000_000_000 }
+}
+
 /**
- * Stubs the boot token and a fetch mock that answers a `HEAD` request (the
- * mount-time reconciliation check) and a `POST` request (an explicit
- * `ensure()`) independently, so a test can drive each path without the
- * other silently satisfying it.
+ * Stubs the boot token and a fetch mock that answers the listing `GET` (the
+ * mount-time reconciliation check, shared across cards via
+ * `fetchArtifactListOnce`), a `POST` (an explicit `ensure()`), and a
+ * `DELETE` independently, so a test can drive each path without the others
+ * silently satisfying it.
  */
-function stubFetch(handlers: { head?: boolean; post?: (body: unknown) => { name?: string } | null; delete?: boolean }): ReturnType<typeof vi.fn> {
+function stubFetch(handlers: { listing?: readonly string[]; post?: (body: unknown) => { name?: string } | null; delete?: boolean }): ReturnType<typeof vi.fn> {
   vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
   const fetchSpy = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-    if (init?.method === 'HEAD') return Promise.resolve({ ok: handlers.head ?? false })
     if (init?.method === 'DELETE') return Promise.resolve({ ok: handlers.delete ?? false })
     if (init?.method === 'POST') {
       const body: unknown = JSON.parse(String(init.body))
       const result = handlers.post?.(body) ?? null
       return Promise.resolve(result === null ? { ok: false, status: 404 } : { ok: true, json: () => Promise.resolve(result) })
     }
-    return Promise.reject(new Error(`unexpected method ${String(init?.method)}`))
+    // The listing GET, addressed at the route's own root with no method set.
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries: (handlers.listing ?? []).map(listingEntry) }) })
   })
   vi.stubGlobal('fetch', fetchSpy)
   return fetchSpy
@@ -38,7 +45,7 @@ function stubFetch(handlers: { head?: boolean; post?: (body: unknown) => { name?
 
 describe('useExportControl mount-time reconciliation', () => {
   it('recognizes an export that already exists — e.g. from before a page reload', async () => {
-    stubFetch({ head: true })
+    stubFetch({ listing: [NAME] })
     const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
 
     expect(result.current.status).toBe('idle')
@@ -47,7 +54,7 @@ describe('useExportControl mount-time reconciliation', () => {
   })
 
   it('stays idle when no matching export exists yet', async () => {
-    stubFetch({ head: false })
+    stubFetch({ listing: [] })
     const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
 
     await act(async () => { await Promise.resolve() })
@@ -55,16 +62,26 @@ describe('useExportControl mount-time reconciliation', () => {
   })
 
   it('checks the exact name both planes derive from title and html, not an arbitrary one', async () => {
-    const fetchSpy = stubFetch({ head: true })
-    renderHook(() => useExportControl('call-1', TITLE, HTML))
+    stubFetch({ listing: [NAME] })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
 
-    await waitFor(() => { expect(fetchSpy).toHaveBeenCalled() })
-    const [url] = fetchSpy.mock.calls[0] as [string]
-    expect(url).toBe(`${window.location.origin}${EXPORTS_ROUTE_PATH}/${encodeURIComponent(NAME)}?k=test-token`)
+    await waitFor(() => { expect(result.current.status).toBe('exported') })
+    expect(result.current.name).toBe(NAME)
+  })
+
+  it('shares one listing request across every card reconciling at the same moment', async () => {
+    const fetchSpy = stubFetch({ listing: [NAME] })
+    renderHook(() => useExportControl('call-1', TITLE, HTML))
+    renderHook(() => useExportControl('call-2', TITLE, HTML))
+    renderHook(() => useExportControl('call-3', TITLE, HTML))
+
+    await act(async () => { await Promise.resolve() })
+    const listingCalls = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === undefined)
+    expect(listingCalls).toHaveLength(1)
   })
 
   it('never checks without a callId — nothing to reconcile', () => {
-    const fetchSpy = stubFetch({ head: true })
+    const fetchSpy = stubFetch({ listing: [NAME] })
     renderHook(() => useExportControl(null, TITLE, HTML))
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -77,14 +94,14 @@ describe('useExportControl mount-time reconciliation', () => {
   })
 
   it('a user\'s own click always wins over a slower reconciliation response', async () => {
-    let resolveHead!: (value: { ok: boolean }) => void
+    let resolveListing!: (value: { ok: boolean; json: () => Promise<unknown> }) => void
     vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
     const fetchSpy = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ name: `${exportShareName(TITLE, HTML)}-clicked` }) })
       }
-      // The HEAD reconciliation hangs until the test releases it.
-      return new Promise(resolve => { resolveHead = resolve })
+      // The listing reconciliation hangs until the test releases it.
+      return new Promise(resolve => { resolveListing = resolve })
     })
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -95,9 +112,42 @@ describe('useExportControl mount-time reconciliation', () => {
 
     // The slow reconciliation now resolves "already exists" — it must not
     // clobber the click's own, already-settled result.
-    await act(async () => { resolveHead({ ok: true }) })
+    await act(async () => { resolveListing({ ok: true, json: () => Promise.resolve({ entries: [listingEntry(NAME)] }) }) })
     expect(result.current.status).toBe('exported')
     expect(result.current.name).toBe(clickedName)
+  })
+})
+
+describe('useExportControl live cross-surface sync', () => {
+  it('drops back to idle when the same name is unshared elsewhere (e.g. the gallery\'s Delete)', async () => {
+    stubFetch({ listing: [NAME] })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await waitFor(() => { expect(result.current.status).toBe('exported') })
+
+    act(() => { window.dispatchEvent(new CustomEvent(ARTIFACT_CHANGED_EVENT, { detail: { name: NAME, exported: false } })) })
+    expect(result.current.status).toBe('idle')
+    expect(result.current.name).toBeNull()
+  })
+
+  it('flips to exported when the same name is exported elsewhere', async () => {
+    stubFetch({ listing: [] })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.status).toBe('idle')
+
+    act(() => { window.dispatchEvent(new CustomEvent(ARTIFACT_CHANGED_EVENT, { detail: { name: NAME, exported: true } })) })
+    expect(result.current.status).toBe('exported')
+    expect(result.current.name).toBe(NAME)
+  })
+
+  it('ignores a broadcast for an unrelated name', async () => {
+    stubFetch({ listing: [NAME] })
+    const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
+    await waitFor(() => { expect(result.current.status).toBe('exported') })
+
+    act(() => { window.dispatchEvent(new CustomEvent(ARTIFACT_CHANGED_EVENT, { detail: { name: 'some-other-name', exported: false } })) })
+    expect(result.current.status).toBe('exported')
+    expect(result.current.name).toBe(NAME)
   })
 })
 
@@ -153,7 +203,7 @@ describe('useExportControl ensure()', () => {
 
 describe('useExportControl unshare()', () => {
   it('is a no-op when nothing is exported yet', async () => {
-    const fetchSpy = stubFetch({ head: false })
+    const fetchSpy = stubFetch({ listing: [] })
     const { result } = renderHook(() => useExportControl('call-1', TITLE, HTML))
     await expect(result.current.unshare()).resolves.toBe(false)
     expect(fetchSpy).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }))

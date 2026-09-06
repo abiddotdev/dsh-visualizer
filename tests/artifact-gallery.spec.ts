@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteArtifact, fetchArtifactList, formatArtifactSize, formatArtifactTime, matchesDateFilter } from '../src/client/artifact-gallery.ts'
+import { deleteArtifact, fetchArtifactList, fetchArtifactListOnce, formatArtifactSize, formatArtifactTime, matchesDateFilter } from '../src/client/artifact-gallery.ts'
+import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail } from '../src/client/share.ts'
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../src/shared/export-name.ts'
 
 afterEach(() => {
@@ -109,6 +110,63 @@ describe('deleteArtifact', () => {
     vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
     await expect(deleteArtifact(ENTRY.name)).resolves.toBe(false)
+  })
+
+  it('broadcasts the removed name so every other surface can reconcile live', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    const onChanged = vi.fn()
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    try {
+      await deleteArtifact(ENTRY.name)
+      expect(onChanged).toHaveBeenCalledTimes(1)
+      const detail = (onChanged.mock.calls[0][0] as CustomEvent<ArtifactChangedDetail>).detail
+      expect(detail).toEqual({ name: ENTRY.name, exported: false })
+    } finally {
+      window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    }
+  })
+
+  it('does not broadcast when the host refuses the delete', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+    const onChanged = vi.fn()
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    try {
+      await deleteArtifact(ENTRY.name)
+      expect(onChanged).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    }
+  })
+})
+
+describe('fetchArtifactListOnce', () => {
+  it('shares one in-flight request across concurrent callers', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ entries: [ENTRY] }) })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const [a, b] = await Promise.all([fetchArtifactListOnce(), fetchArtifactListOnce()])
+    expect(a).toEqual([ENTRY])
+    expect(b).toEqual([ENTRY])
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts a fresh request on the next call once the previous one settles', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ entries: [ENTRY] }) })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await fetchArtifactListOnce()
+    await fetchArtifactListOnce()
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves to an empty list rather than rejecting when the listing fails', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) }))
+    await expect(fetchArtifactListOnce()).resolves.toEqual([])
   })
 })
 

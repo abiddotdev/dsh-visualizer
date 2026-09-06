@@ -8,7 +8,7 @@
  */
 
 import type { ArtifactListEntry } from '../shared/export-name.ts'
-import { artifactListUrl, artifactPageUrlByName } from './share.ts'
+import { artifactListUrl, artifactPageUrlByName, broadcastArtifactChanged } from './share.ts'
 
 /** Validate one listing entry from the wire. */
 function isEntry(value: unknown): value is ArtifactListEntry {
@@ -55,10 +55,42 @@ export async function deleteArtifact(name: string): Promise<boolean> {
   if (url === null) return false
   try {
     const response = await fetch(url, { method: 'DELETE' })
-    return response.ok
+    if (!response.ok) return false
+    broadcastArtifactChanged(name, false)
+    return true
   } catch {
     return false
   }
+}
+
+/**
+ * In-flight listing request, shared by every concurrent caller rather than
+ * one each. Every settled card mounted at once (a page reload, a switch into
+ * a long transcript) reconciles its own export status against this same
+ * listing (see `export-control.ts`) — without sharing the request, each
+ * would fire its own; a transcript with fifty finalized cards would open
+ * fifty requests where the gallery tab already proves one listing serves
+ * them all. Cleared once resolved so a later, unrelated batch always sees
+ * fresh state rather than a growing cache's staleness.
+ */
+let listingInFlight: Promise<readonly ArtifactListEntry[]> | null = null
+
+/**
+ * {@link fetchArtifactList}, deduped across whichever callers ask for it
+ * inside the same round trip.
+ * @returns the same settled result every concurrent caller awaits; never
+ * throws — a failed listing resolves to an empty list, since callers here
+ * use it only to answer "does this name already exist," not to render a
+ * list a user is watching load (the gallery tab calls {@link fetchArtifactList}
+ * directly for that, where a distinct error state matters).
+ */
+export function fetchArtifactListOnce(): Promise<readonly ArtifactListEntry[]> {
+  if (listingInFlight === null) {
+    listingInFlight = fetchArtifactList()
+      .catch(() => [])
+      .finally(() => { listingInFlight = null })
+  }
+  return listingInFlight
 }
 
 /** A listed export's age bucket, coarsest last, for the gallery's date filter. */

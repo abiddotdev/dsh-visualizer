@@ -16,8 +16,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { exportShareName } from '../shared/export-name.ts'
-import { deleteArtifact } from './artifact-gallery.ts'
-import { artifactPageUrlByName, exportCall } from './share.ts'
+import { deleteArtifact, fetchArtifactListOnce } from './artifact-gallery.ts'
+import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail, exportCall } from './share.ts'
 
 /** How long a failed export stays visible before the control resets, offering a retry. */
 export const EXPORT_FAILURE_REVERT_MS = 4_000
@@ -70,23 +70,50 @@ export function useExportControl(callId: string | null, title: string | null, ht
   // (a file on the host's disk), so 'idle' would be a lie for a call that
   // was already exported in an earlier page load. The client already
   // computes the exact name that export would carry (the same digest both
-  // planes always derive), so a HEAD check on mount asks the one question
-  // local state cannot answer: does it already exist. Runs once per callId;
-  // an in-progress or already-settled `ensure()` (from a user's own click
-  // racing ahead of this) always wins, since the check only ever moves
-  // 'idle' state, never overwrites 'exporting'/'exported'/'failed'.
+  // planes always derive), so checking it against the current listing on
+  // mount asks the one question local state cannot answer: does it already
+  // exist. The listing (shared with every other card reconciling at the same
+  // moment through `fetchArtifactListOnce`) rather than a per-name `HEAD`:
+  // a transcript reload mounts every settled card at once, and one shared
+  // listing request serves all of them where N individual requests would
+  // otherwise fire. Runs once per callId; an in-progress or already-settled
+  // `ensure()` (from a user's own click racing ahead of this) always wins,
+  // since the check only ever moves 'idle' state, never overwrites
+  // 'exporting'/'exported'/'failed'.
   useEffect(() => {
     if (callId === null) return
-    const url = artifactPageUrlByName(exportShareName(title, html))
-    if (url === null) return
+    const name = exportShareName(title, html)
     let cancelled = false
-    void fetch(url, { method: 'HEAD' }).then((response) => {
-      if (cancelled || !response.ok || stateRef.current.status !== 'idle') return
-      setState({ status: 'exported', name: exportShareName(title, html) })
-    }).catch(() => {})
+    void fetchArtifactListOnce().then((entries) => {
+      if (cancelled || stateRef.current.status !== 'idle') return
+      if (entries.some(entry => entry.name === name)) setState({ status: 'exported', name })
+    })
     return () => { cancelled = true }
     // title/html are frozen once a call settles, so only callId identifying
     // a fresh card is worth re-checking; deliberately not a dependency.
+  }, [callId])
+
+  // Live cross-surface sync: a name unshared elsewhere (the gallery's own
+  // Delete) drops this card back to idle without waiting for a reload; a
+  // name exported elsewhere (another card rendering identical title/html,
+  // which digests to the same name) flips an idle card straight to exported.
+  // A user's own in-flight `ensure()`/`unshare()` already updates this same
+  // state directly and also raises this same event, so the guards below only
+  // ever confirm a transition already underway rather than fighting it.
+  useEffect(() => {
+    if (callId === null) return
+    const name = exportShareName(title, html)
+    const onChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<ArtifactChangedDetail>).detail
+      if (detail.name !== name) return
+      if (detail.exported && stateRef.current.status === 'idle') {
+        setState({ status: 'exported', name })
+      } else if (!detail.exported && stateRef.current.status === 'exported' && stateRef.current.name === name) {
+        setState({ status: 'idle', name: null })
+      }
+    }
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    return () => { window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged) }
   }, [callId])
 
   const ensure = useCallback((): Promise<string | null> => {

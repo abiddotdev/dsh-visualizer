@@ -15,7 +15,7 @@ import type { ArtifactListEntry } from '../shared/export-name.ts'
 import {
   type ArtifactDateFilter, deleteArtifact, fetchArtifactList, formatArtifactSize, formatArtifactTime, matchesDateFilter,
 } from './artifact-gallery.ts'
-import { artifactPageUrlByName } from './share.ts'
+import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail, artifactPageUrlByName } from './share.ts'
 import { COPY_FEEDBACK_MS, copyText } from './download.ts'
 import css from './ArtifactGallery.module.css'
 
@@ -160,6 +160,21 @@ export function ArtifactGallery({ t }: ArtifactGalleryProps) {
       ? { status: 'ready', entries: current.entries.filter(entry => entry.name !== name) }
       : current)
   }, [])
+
+  // Live cross-surface sync: a card's own Unshare removes a row here without
+  // waiting for a manual Refresh (the same event this tab's own Delete also
+  // raises, so this handler treats both sources identically). A card's own
+  // Export cannot patch a full row locally — a name alone carries no kind,
+  // size, or time — so it reloads the listing instead of synthesizing one.
+  useEffect(() => {
+    const onChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<ArtifactChangedDetail>).detail
+      if (detail.exported) load()
+      else onDeleted(detail.name)
+    }
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    return () => { window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged) }
+  }, [load, onDeleted])
 
   // Filtered client-side over the already-fetched list rather than a fresh
   // request per keystroke or per chip: a listing is at most a few hundred

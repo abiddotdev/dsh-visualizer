@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 // composed props type carries the `t` seat (the merge lives in the entry).
 import type {} from '../src/client/index.ts'
 import { ArtifactGallery, type ArtifactGalleryProps } from '../src/client/ArtifactGallery.tsx'
+import { ARTIFACT_CHANGED_EVENT } from '../src/client/share.ts'
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../src/shared/export-name.ts'
 import { COPY_FEEDBACK_MS } from '../src/client/download.ts'
 import { en } from '../src/client/locales.ts'
@@ -247,6 +248,30 @@ describe('ArtifactGallery', () => {
       await act(async () => { screen.getByRole('button', { name: 'Click again to confirm delete' }).click() })
       await waitFor(() => { expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy() })
       expect(screen.getByText('Dash')).toBeTruthy()
+    })
+  })
+
+  describe('live cross-surface sync', () => {
+    it('drops a row the instant a card unshares it, without waiting for Refresh', async () => {
+      stubFetch(() => ({ ok: true, json: () => Promise.resolve({ entries: [ENTRY, OTHER] }) }))
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+
+      act(() => { window.dispatchEvent(new CustomEvent(ARTIFACT_CHANGED_EVENT, { detail: { name: ENTRY.name, exported: false } })) })
+      expect(screen.queryByText('Dash')).toBeNull()
+      expect(screen.getByText('Q3 revenue')).toBeTruthy()
+    })
+
+    it('reloads the listing when a card exports something new', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ entries: [ENTRY] }) })
+      vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+      vi.stubGlobal('fetch', fetchSpy)
+      renderGallery()
+      await waitFor(() => { expect(screen.getByText('Dash')).toBeTruthy() })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      act(() => { window.dispatchEvent(new CustomEvent(ARTIFACT_CHANGED_EVENT, { detail: { name: OTHER.name, exported: true } })) })
+      await waitFor(() => { expect(fetchSpy).toHaveBeenCalledTimes(2) })
     })
   })
 })

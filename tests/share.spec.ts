@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { artifactListUrl, artifactPageUrlByName, copyArtifactLink, exportCall, openArtifactPage } from '../src/client/share.ts'
+import { ARTIFACT_CHANGED_EVENT, type ArtifactChangedDetail, artifactListUrl, artifactPageUrlByName, copyArtifactLink, exportCall, openArtifactPage } from '../src/client/share.ts'
 import { EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH } from '../src/shared/export-name.ts'
 
 afterEach(() => {
@@ -68,6 +68,34 @@ describe('exportCall', () => {
     vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
     await expect(exportCall('call-1')).resolves.toBeNull()
+  })
+
+  it('broadcasts the confirmed name so every other surface can reconcile live', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ name: 'dash-abc1234567890f.html' }) }))
+    const onChanged = vi.fn()
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    try {
+      await exportCall('call-1')
+      expect(onChanged).toHaveBeenCalledTimes(1)
+      const detail = (onChanged.mock.calls[0][0] as CustomEvent<ArtifactChangedDetail>).detail
+      expect(detail).toEqual({ name: 'dash-abc1234567890f.html', exported: true })
+    } finally {
+      window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    }
+  })
+
+  it('does not broadcast when the request fails', async () => {
+    vi.stubGlobal(EXPORTS_BOOT_GLOBAL, 'test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+    const onChanged = vi.fn()
+    window.addEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    try {
+      await exportCall('call-1')
+      expect(onChanged).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(ARTIFACT_CHANGED_EVENT, onChanged)
+    }
   })
 })
 
