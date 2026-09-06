@@ -174,7 +174,6 @@ async function setPinned(state: FanoutState, name: string, pinned: boolean): Pro
   })
 }
 
-
 /**
  * Run one operation after any prior operation queued under the same key has
  * settled (success or failure), and let the next one queue behind this in
@@ -182,7 +181,8 @@ async function setPinned(state: FanoutState, name: string, pinned: boolean): Pro
  * result — a failed write reports 500, it does not silently vanish into a
  * background chain.
  * @param state - route state carrying the lock map.
- * @param key - the export name being written; the granularity of the lock.
+ * @param key - the granularity of the lock: an export name for a per-call
+ * write, or {@link PIN_STORE_LOCK_KEY} for the shared pin-store file.
  * @param op - the operation to serialize.
  * @returns `op`'s own result or rejection.
  */
@@ -604,7 +604,13 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
       const stats = await lstat(path)
       if (!stats.isFile()) throw new Error('not a regular file')
       await unlink(path)
-      await setPinned(state, name, false) // drop it from pins.json too, so a deleted export never lingers in the pin set
+      // Drop it from pins.json too, so a deleted export never lingers in the
+      // pin set — best-effort and outside the response's own error path: the
+      // delete itself already succeeded, so a pin-store write failure here
+      // must not turn a successful delete into a reported 404.
+      await setPinned(state, name, false).catch((error: unknown) => {
+        state.ctx.logger.warn(`export fanout: could not clear pin for deleted export ${name}: ${error instanceof Error ? error.message : String(error)}`)
+      })
       res.writeHead(204, SERVE_HEADERS)
       res.end()
     } catch {
