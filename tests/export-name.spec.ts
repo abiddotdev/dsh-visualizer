@@ -133,6 +133,9 @@ describe('export naming', () => {
     expect(isServableExportName('..svg')).toBe(false)
     expect(isServableExportName('chart.txt')).toBe(false)
     expect(isServableExportName('')).toBe(false)
+    // The pin-store sidecar carries no .html/.svg extension, so it is never
+    // listed or servable without any special-casing in the fanout route.
+    expect(isServableExportName('pins.json')).toBe(false)
   })
 
   it('derives a readable gallery title from a served name', () => {

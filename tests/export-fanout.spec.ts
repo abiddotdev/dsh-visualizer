@@ -373,7 +373,7 @@ describe('exports serve route', () => {
     const answers = [
       await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`),
       await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/missing.html`),
-      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/Dash.html`),
+      await requestTokened(harness, 'PUT', `${EXPORTS_ROUTE_PATH}/Dash.html`),
     ]
     for (const res of answers) {
       expect(res.headerMap['cache-control']).toBe('no-store')
@@ -390,7 +390,7 @@ describe('exports serve route', () => {
       JSON.stringify({ csp: res.headerMap['content-security-policy'], cc: res.headerMap['cache-control'], nosniff: res.headerMap['x-content-type-options'], rp: res.headerMap['referrer-policy'], xfo: res.headerMap['x-frame-options'], corp: res.headerMap['cross-origin-resource-policy'], pp: res.headerMap['permissions-policy'] })
     expect(hardened(answers[0]!)).toBe(hardened(answers[1]!))
     expect(hardened(answers[1]!)).toBe(hardened(answers[2]!))
-    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, POST, DELETE')
+    expect(answers[2]!.headerMap.allow).toBe('GET, HEAD, POST, PATCH, DELETE')
   })
 
   it('refuses a symlink planted in the exports directory like any unknown name', async () => {
@@ -463,15 +463,17 @@ describe('exports serve route', () => {
       expect(res.status).toBe(200)
       expect(res.headerMap['content-type']).toBe('application/json; charset=utf-8')
       expect(res.headerMap['cache-control']).toBe('no-store')
-      const body = JSON.parse(res.body) as { entries: { name: string; title: string; kind: string; bytes: number; mtimeMs: number }[] }
+      const body = JSON.parse(res.body) as { entries: { name: string; title: string; kind: string; bytes: number; mtimeMs: number; pinned: boolean }[] }
       expect(body.entries).toHaveLength(2)
       // Newest first: the SVG landed after the HTML document.
       expect(body.entries[0]!.title).toBe('Later chart')
       expect(body.entries[0]!.kind).toBe('svg')
       expect(body.entries[0]!.name).toBe(exportShareName('Later chart', '<svg><rect/></svg>'))
+      expect(body.entries[0]!.pinned).toBe(false)
       expect(body.entries[1]!.title).toBe('Dash')
       expect(body.entries[1]!.kind).toBe('html')
       expect(body.entries[1]!.bytes).toBe(Buffer.byteLength(DOC, 'utf8'))
+      expect(body.entries[1]!.pinned).toBe(false)
     })
 
     it('answers an empty list before anything has ever been exported', async () => {
@@ -581,6 +583,24 @@ describe('exports serve route', () => {
     expect(await readFileOrNull(join(dir, 'aged.partial'))).toBe('<p>stray</p>')
   })
 
+  it('keeps a pinned artifact past the retention window while sweeping an unpinned one the same age', async () => {
+    // The sweep reads pins.json at activation, so it must exist before the
+    // plugin mounts — the same "seed state before mounting" rule the aged
+    // fixtures above already follow.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-visualizer-exports-'))
+    const aged = new Date(Date.now() - 40 * 86_400_000)
+    await writeFile(join(dir, 'aged-pinned.html'), '<p>keep</p>')
+    await writeFile(join(dir, 'aged-unpinned.html'), '<p>sweep</p>')
+    await utimes(join(dir, 'aged-pinned.html'), aged, aged)
+    await utimes(join(dir, 'aged-unpinned.html'), aged, aged)
+    await writeFile(join(dir, 'pins.json'), JSON.stringify(['aged-pinned.html']), 'utf8')
+
+    await setup({ artifactDir: dir, artifactRetentionDays: 30 })
+    await new Promise(resolve => { setTimeout(resolve, 20) })
+    expect(await readFileOrNull(join(dir, 'aged-pinned.html'))).toBe('<p>keep</p>')
+    expect(await readFileOrNull(join(dir, 'aged-unpinned.html'))).toBeNull()
+  })
+
   it('pins the announced key to a configured shareKey and serves under it', async () => {
     const harness = await setup({ shareKey: 'my-stable-shared-key-01' })
     const table: unknown[] = []
@@ -603,11 +623,11 @@ describe('exports serve route', () => {
     expect(res.body).toContain('sandbox="allow-scripts"')
   })
 
-  it('answers 405 with the method table for anything but GET, HEAD, POST, and DELETE', async () => {
+  it('answers 405 with the method table for anything but GET, HEAD, POST, PATCH, and DELETE', async () => {
     const harness = await landed('Dash', DOC)
-    const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
+    const res = await requestTokened(harness, 'PUT', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(exportShareName('Dash', DOC))}`)
     expect(res.status).toBe(405)
-    expect(res.headerMap.allow).toBe('GET, HEAD, POST, DELETE')
+    expect(res.headerMap.allow).toBe('GET, HEAD, POST, PATCH, DELETE')
   })
 
   describe('artifact gallery delete', () => {
@@ -665,6 +685,120 @@ describe('exports serve route', () => {
       const res = await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/planted-1234567890abcdef.html`)
       expect(res.status).toBe(404)
       expect(await readFileOrNull(real)).not.toBeNull()
+    })
+
+    it('also drops a pinned export from the pin set, so it cannot accumulate stale names', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+
+      await requestTokened(harness, 'DELETE', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`)
+      const pins = JSON.parse((await readFileOrNull(join(harness.dir, 'pins.json'))) ?? '[]') as string[]
+      expect(pins).not.toContain(name)
+    })
+  })
+
+  describe('artifact pin toggle (PATCH)', () => {
+    it('pins an export and floats it to the top of the next listing', async () => {
+      const harness = await setup()
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(1_000_000)
+      await exportSettled(harness, 'c1', 'Older', DOC)
+      vi.setSystemTime(2_000_000)
+      await exportSettled(harness, 'c2', 'Newer', '<svg><rect/></svg>')
+      vi.useRealTimers()
+
+      const olderName = exportShareName('Older', DOC)
+      const patchRes = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(olderName)}`, { pinned: true })
+      expect(patchRes.status).toBe(204)
+
+      const listRes = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      const body = JSON.parse(listRes.body) as { entries: { name: string; pinned: boolean }[] }
+      expect(body.entries[0]!.name).toBe(olderName)
+      expect(body.entries[0]!.pinned).toBe(true)
+      expect(body.entries[1]!.pinned).toBe(false)
+    })
+
+    it('is idempotent: pinning an already-pinned export twice is a no-op', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+      const second = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+      expect(second.status).toBe(204)
+      const pins = JSON.parse((await readFileOrNull(join(harness.dir, 'pins.json'))) ?? '[]') as string[]
+      expect(pins).toEqual([name])
+    })
+
+    it('unpins on a second PATCH with pinned: false', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+      const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: false })
+      expect(res.status).toBe(204)
+      const pins = JSON.parse((await readFileOrNull(join(harness.dir, 'pins.json'))) ?? '[]') as string[]
+      expect(pins).toEqual([])
+    })
+
+    it('refuses a nonexistent name, identically to DELETE\'s not-found answer', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/missing.html`, { pinned: true })
+      expect(res.status).toBe(404)
+      expect(res.headerMap['content-type']).toBe('text/html; charset=utf-8')
+    })
+
+    it('refuses without the capability token, identically to a bad name', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      const res = await request(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+      expect(res.status).toBe(404)
+      const pins = JSON.parse((await readFileOrNull(join(harness.dir, 'pins.json'))) ?? '[]') as string[]
+      expect(pins).toEqual([])
+    })
+
+    it('answers 400 on a missing or non-boolean pinned field, without writing the pin store', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      const badBodies = [{}, { pinned: 'yes' }, { pinned: 1 }]
+      for (const body of badBodies) {
+        const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, body)
+        expect(res.status, JSON.stringify(body)).toBe(400)
+      }
+      expect(await readFileOrNull(join(harness.dir, 'pins.json'))).toBeNull()
+    })
+
+    it('refuses a malformed name the same way DELETE does', async () => {
+      const harness = await landed('Dash', DOC)
+      const res = await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/..%2Fsecret.html`, { pinned: true })
+      expect(res.status).toBe(404)
+    })
+
+    it('never lists or serves pins.json itself, even when present on disk', async () => {
+      const harness = await landed('Dash', DOC)
+      const name = exportShareName('Dash', DOC)
+      await requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(name)}`, { pinned: true })
+
+      const listRes = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/`)
+      const body = JSON.parse(listRes.body) as { entries: { name: string }[] }
+      expect(body.entries.some(entry => entry.name === 'pins.json')).toBe(false)
+
+      const getRes = await requestTokened(harness, 'GET', `${EXPORTS_ROUTE_PATH}/pins.json`)
+      expect(getRes.status).toBe(404)
+    })
+
+    it('serializes two concurrent pins on different names without losing either', async () => {
+      const harness = await setup()
+      await exportSettled(harness, 'c1', 'First', DOC)
+      await exportSettled(harness, 'c2', 'Second', '<svg><rect/></svg>')
+      const firstName = exportShareName('First', DOC)
+      const secondName = exportShareName('Second', '<svg><rect/></svg>')
+
+      await Promise.all([
+        requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(firstName)}`, { pinned: true }),
+        requestTokened(harness, 'PATCH', `${EXPORTS_ROUTE_PATH}/${encodeURIComponent(secondName)}`, { pinned: true }),
+      ])
+
+      const pins = JSON.parse((await readFileOrNull(join(harness.dir, 'pins.json'))) ?? '[]') as string[]
+      expect(pins.sort()).toEqual([firstName, secondName].sort())
     })
   })
 })

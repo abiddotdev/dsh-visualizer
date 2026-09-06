@@ -152,6 +152,9 @@ export interface ArtifactListEntry {
   bytes: number
   /** Last-modified time, Unix epoch ms — the finalize rename's mtime. */
   mtimeMs: number
+  /** Whether the gallery has pinned this export: floats it above unpinned
+   * entries in the listing and exempts it from the age-based retention sweep. */
+  pinned: boolean
 }
 
 /** Digest suffix {@link exportShareName} appends; stripped before display. */
