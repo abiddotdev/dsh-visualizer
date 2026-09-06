@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-06
+
 ### Changed
 
 - **Sharing is now write-on-demand instead of automatic.** Every render used to mirror to disk the moment it settled, whether or not anyone ever intended to share it; the accumulated directory only bounded itself by `artifactRetentionDays`. Nothing is written now until a card's **Export** control asks for it — and that request names only the call (`{callId}`), never document bytes: the host reads `title`/`html` straight out of the call's own durable session log, verifies it settled successfully as a `visualizer` call, and only then writes it. The write is idempotent (exporting the same call twice reproduces the same file) and rate-limited (30 requests/minute) against a scripted loop.
@@ -132,7 +134,8 @@ Initial tagged release.
 - Frame chrome: diagonal streaming sheen, navigation guard converting anchor clicks, runtime-error notices, host theme token injection.
 - Loading messages with a sweep animation.
 
-[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/abidhmuhsin/dsh-visualizer/compare/v0.5.0...v0.6.0
