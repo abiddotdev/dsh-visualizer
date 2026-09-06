@@ -89,17 +89,11 @@ export async function setArtifactPinned(name: string, pinned: boolean): Promise<
   }
 }
 
-/**
- * Pinned-first, newest-first within each group — the same comparator the
- * host's own listing already applies. Exposed here too so a local pin toggle
- * can re-sort the already-fetched list without a refetch: the row should
- * float to (or off) the top immediately, not wait for the next Refresh.
- * @param entries - the currently loaded listing.
- * @returns a new array in pinned-first, newest-first order.
- */
-export function sortArtifactEntries(entries: readonly ArtifactListEntry[]): ArtifactListEntry[] {
-  return [...entries].sort((a, b) => (a.pinned === b.pinned ? b.mtimeMs - a.mtimeMs : a.pinned ? -1 : 1))
-}
+// Re-exported so a local pin toggle can re-sort the already-fetched list
+// without a refetch (the row should float to/off the top immediately, not
+// wait for the next Refresh) using the exact comparator the host's own
+// listing already applies — one shared implementation, not two.
+export { sortArtifactEntries } from '../shared/export-name.ts'
 
 /**
  * In-flight listing request, shared by every concurrent caller rather than

@@ -39,7 +39,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { RENDER_CSP_DIRECTIVES } from './shared/export-csp.ts'
 import {
   type ArtifactListEntry, EXPORTS_BOOT_GLOBAL, EXPORTS_ROUTE_PATH, displayTitleOf, exportShareName,
-  isServableExportName, partialFileName,
+  isServableExportName, partialFileName, sortArtifactEntries,
 } from './shared/export-name.ts'
 
 /** Wire name of the render tool; only its calls export. */
@@ -174,20 +174,6 @@ async function setPinned(state: FanoutState, name: string, pinned: boolean): Pro
   })
 }
 
-/**
- * Drop one name from the pin set if present — called when an export is
- * deleted, so `pins.json` never accumulates a name for a file that no longer
- * exists.
- * @param state - route state.
- * @param name - the export name being removed.
- */
-async function unpinIfPresent(state: FanoutState, name: string): Promise<void> {
-  await withWriteLock(state, PIN_STORE_LOCK_KEY, async () => {
-    const pins = await readPinSet(state)
-    if (!pins.delete(name)) return
-    await writePinSet(state, pins)
-  })
-}
 
 /**
  * Run one operation after any prior operation queued under the same key has
@@ -249,8 +235,7 @@ async function listArtifacts(state: FanoutState): Promise<ArtifactListEntry[]> {
       pinned: pins.has(name),
     })
   }
-  entries.sort((a, b) => (a.pinned === b.pinned ? b.mtimeMs - a.mtimeMs : a.pinned ? -1 : 1))
-  return entries.slice(0, MAX_LISTING_ENTRIES)
+  return sortArtifactEntries(entries).slice(0, MAX_LISTING_ENTRIES)
 }
 
 /** One resolved visualizer call's durable document — never client-supplied bytes. */
@@ -619,7 +604,7 @@ async function serveExport(state: FanoutState, req: IncomingMessage, res: Server
       const stats = await lstat(path)
       if (!stats.isFile()) throw new Error('not a regular file')
       await unlink(path)
-      await unpinIfPresent(state, name)
+      await setPinned(state, name, false) // drop it from pins.json too, so a deleted export never lingers in the pin set
       res.writeHead(204, SERVE_HEADERS)
       res.end()
     } catch {

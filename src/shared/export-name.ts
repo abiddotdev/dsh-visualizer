@@ -157,6 +157,18 @@ export interface ArtifactListEntry {
   pinned: boolean
 }
 
+/**
+ * Sort artifact listing entries pinned-first, newest-first within each
+ * group. Both planes need this identically — the host's own listing route
+ * and the gallery's local re-sort after an optimistic pin toggle — so it
+ * lives here once rather than as two independently maintained copies.
+ * @param entries - entries to sort; not mutated.
+ * @returns a new array in pinned-first, newest-first order.
+ */
+export function sortArtifactEntries(entries: readonly ArtifactListEntry[]): ArtifactListEntry[] {
+  return [...entries].sort((a, b) => (a.pinned === b.pinned ? b.mtimeMs - a.mtimeMs : a.pinned ? -1 : 1))
+}
+
 /** Digest suffix {@link exportShareName} appends; stripped before display. */
 const DIGEST_SUFFIX = /-[0-9a-f]{16}$/
 
